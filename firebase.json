@@ -1,0 +1,16 @@
+{
+  "hosting": {
+    "site": "starbound-hegemony",
+    "public": "public",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      {
+        "source": "**",
+        "run": {
+          "serviceId": "starbound-hegemony",
+          "region": "europe-west1"
+        }
+      }
+    ]
+  }
+}
