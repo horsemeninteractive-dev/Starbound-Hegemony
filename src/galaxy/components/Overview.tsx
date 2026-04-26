@@ -197,6 +197,7 @@ export function BodyOverview({ body, galaxy, hideHeader }: { body: Body; galaxy:
       <Divider />
       <Row k="Temperature" v={`${body.temperature} K`} />
       <Row k="Environment" v={formatLabel(body.habitabilityZone)} accent={zoneColors[body.habitabilityZone]} />
+      <Row k="Atmosphere" v={body.atmosphere ?? "None"} />
       <Divider />
       <Row k="Population" v={body.population > 0 ? `${body.population.toFixed(1)} M` : "Uninhabited"} />
       <Row k="Economy" v={ECON_META[body.economy].label} accent={ECON_META[body.economy].color} />

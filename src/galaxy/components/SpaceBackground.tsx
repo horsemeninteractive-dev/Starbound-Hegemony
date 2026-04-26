@@ -2,8 +2,8 @@ import { useMemo, useRef } from "react";
 import { useFrame, useThree, useLoader } from "@react-three/fiber";
 import * as THREE from "three";
 import { Stars } from "@react-three/drei";
-import skyboxImg from "@/assets/skybox.png";
-import systemSkyboxImg from "@/assets/skybox.jpg";
+import skyboxImg from "@/assets/galaxy-skybox.jpg";
+import systemSkyboxImg from "@/assets/system-skybox.jpg";
 import { useEffect } from "react";
 
 /** Subtle sky tints keyed by star class. */

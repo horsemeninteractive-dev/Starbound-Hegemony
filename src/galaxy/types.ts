@@ -19,7 +19,19 @@ export interface Empire {
   tag: string;
 }
 
-export type PlanetSubtype = "lava" | "desert" | "temperate" | "ocean" | "ice" | "gas_giant" | "gas_giant_hot" | "gas_giant_cold" | "asteroid" | "station" | "moon" | "gaia" | "hive" | "machine" | "rogue" | "carbon" | "super_earth" | "commander" | "rocky_moon";
+export type PlanetSubtype = 
+  // Habitable: Dry
+  | "desert" | "arid" | "savanna"
+  // Habitable: Temperate
+  | "continental" | "ocean" | "tropical"
+  // Habitable: Cold
+  | "arctic" | "alpine" | "tundra"
+  // Special Habitable
+  | "gaia" | "tomb" | "relic" | "ecumenopolis" | "hive" | "machine" | "nanite"
+  // Uninhabitable
+  | "barren" | "toxic" | "frozen" | "gas_giant" | "molten" | "shrouded" | "broken" | "shattered" | "shielded" | "infested"
+  // Utilities / legacy
+  | "asteroid" | "station" | "moon" | "rocky_moon" | "commander" | "gas_giant_hot" | "gas_giant_cold" | "lava" | "temperate" | "ice" | "rogue" | "carbon" | "super_earth";
 
 export interface Body {
   id: string;
@@ -49,6 +61,7 @@ export interface Body {
   hazards: string[];
   landColor?: string; // hex
   seaColor?: string; // hex
+  atmosphere?: string | null;
   hasRings?: boolean;
   ringHue?: number; // 0-360, tint colour of the ring system
 }

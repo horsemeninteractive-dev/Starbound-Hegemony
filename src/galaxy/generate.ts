@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import {
   Body, BodyType, ContestState, EconomicStatus, Empire,
-  Galaxy, Hyperlane, JumpGate, Sector, StarSystem, StarType,
+  Galaxy, Hyperlane, JumpGate, Sector, StarSystem, StarType, PlanetSubtype,
 } from "./types";
 import { mulberry32, pick, randInt, weightedPick, sectorName, systemName, planetName, moonName, Rng } from "./rng";
 
@@ -40,15 +40,16 @@ function buildEmpires(): Empire[] {
 /** Place sectors across the galaxy disk using a Poisson-disk-ish or spiral distribution. */
 function generateSectors(rng: Rng, count: number): Sector[] {
   const sectors: Sector[] = [];
-  const galaxyRadius = 10000; 
+  const minR = 600;
+  const maxR = 4400;
   for (let i = 0; i < count; i++) {
-    // Linear distribution for more spread-out outer regions
-    const r = (i / count) * galaxyRadius;
-    const angle = (i / count) * Math.PI * 18; // spiral arms
+    // Distribute centroids within the star-populated torus
+    const r = minR + (i / count) * (maxR - minR);
+    const angle = (i / count) * Math.PI * 22; // Maintain spiral density
     
-    const x = Math.cos(angle) * r + (rng() - 0.5) * 1000;
-    const z = Math.sin(angle) * r + (rng() - 0.5) * 1000;
-    const y = (rng() - 0.5) * 250;
+    const x = Math.cos(angle) * r + (rng() - 0.5) * 300;
+    const z = Math.sin(angle) * r + (rng() - 0.5) * 300;
+    const y = (rng() - 0.5) * 100;
 
     sectors.push({
       id: `sec-${i}`,
@@ -62,60 +63,181 @@ function generateSectors(rng: Rng, count: number): Sector[] {
   return sectors;
 }
 
+const getAtmosphere = (subtype: PlanetSubtype, zone: "hot" | "temperate" | "cold"): string | null => {
+  // Pure vacuum bodies
+  if (["barren", "shattered", "broken", "asteroid", "moon", "rocky_moon", "asteroid"].includes(subtype)) return null;
+  
+  // Gas giants have massive H-He atmospheres
+  if (subtype.startsWith("gas_giant")) return "Hydrogen-Helium";
+
+  // Terrestrial variants
+  const MAP: Record<string, string> = {
+    continental: "Nitrogen-Oxygen",
+    ocean: "Nitrogen-Oxygen",
+    tropical: "Nitrogen-Oxygen",
+    gaia: "Nitrogen-Oxygen",
+    savanna: "Nitrogen-Oxygen",
+    arid: "Nitrogen-Oxygen",
+    arctic: "Nitrogen-Methane",
+    alpine: "Nitrogen-Methane",
+    tundra: "Nitrogen-Methane",
+    frozen: "Nitrogen-Methane",
+    desert: "Carbon Dioxide",
+    toxic: "Corrosive Acid",
+    super_earth: "Carbon Dioxide",
+    molten: "Silicate Vapors",
+    machine: "Synthetic Trace",
+    ecumenopolis: "Synthetic Trace",
+    nanite: "Trace Nanites",
+    hive: "Organic Particulates",
+    infested: "Organic Particulates",
+    shrouded: "Psionic Haze",
+    tomb: "Irradiated Dust",
+    relic: "Ancient Ozone",
+    shielded: "Artificially Regulated"
+  };
+
+  return MAP[subtype as string] || (zone === "hot" ? "Thin Carbon" : zone === "temperate" ? "Trace Nitrogen" : null);
+};
+
 function generateBodies(rng: Rng, systemId: string, systemName: string, starType: StarType): Body[] {
   const bodies: Body[] = [];
 
-  // Black holes / neutrons / pulsars rarely have planets; usually asteroid debris.
-  const exotic = starType === "blackhole" || starType === "neutron" || starType === "pulsar";
-  const planetCount = exotic ? randInt(rng, 0, 3) : randInt(rng, 3, 12);
+  // Ultra-exotic stars: quasars/whiteholes produce extreme high-energy environments,
+  // mostly accretion debris, not stable planetary systems.
+  const ultraExotic = starType === "quasar" || starType === "whitehole";
+  // Compact remnants: sparse debris fields.
+  const compactExotic = starType === "blackhole" || starType === "neutron" || starType === "pulsar" || starType === "magnetar";
+  // Dyson swarms: engineered bodies only, no naturals
+  const isDyson = starType === "dyson_swarm";
+
+  const planetCount = ultraExotic ? 0 : compactExotic ? randInt(rng, 0, 3) : isDyson ? 0 : randInt(rng, 3, 12);
+
+  // Ultra-exotic: generate accretion disk debris and anomalous bodies instead
+  if (ultraExotic) {
+    const debrisCount = randInt(rng, 3, 7);
+    let debrisOrbit = 12;
+    for (let d = 0; d < debrisCount; d++) {
+      debrisOrbit += randInt(rng, 20, 40);
+      bodies.push({
+        id: `${systemId}-b${d}`,
+        systemId,
+        name: `${systemName} Accretion Fragment ${d + 1}`,
+        type: "asteroid" as BodyType,
+        subtype: d % 3 === 0 ? "carbon" : "asteroid",
+        orbit: debrisOrbit,
+        phase: rng() * Math.PI * 2,
+        size: 0.3 + rng() * 0.4,
+        hue: Math.floor(rng() * 360),
+        ownerId: null,
+        population: 0,
+        resources: ["Exotic Matter", "Radiogenic Elements"],
+        economy: "untapped",
+        children: [],
+        temperature: 8000 + Math.floor(rng() * 4000),
+        habitabilityZone: "hot",
+        flora: "none",
+        fauna: "none",
+        hazards: ["Extreme Radiation", "Tidal Forces", "Relativistic Jets"],
+      });
+    }
+    return bodies;
+  }
+
+  // Dyson swarms: only artificial structures
+  if (isDyson) {
+    const structureCount = randInt(rng, 4, 8);
+    let dysonOrbit = 8;
+    for (let d = 0; d < structureCount; d++) {
+      dysonOrbit += randInt(rng, 15, 30);
+      const isStation = d === 0 || rng() < 0.4;
+      bodies.push({
+        id: `${systemId}-b${d}`,
+        systemId,
+        name: isStation ? `${systemName} Dyson Node ${d + 1}` : `${systemName} Collector ${d + 1}`,
+        type: isStation ? "station" as BodyType : "asteroid" as BodyType,
+        subtype: isStation ? "station" : "machine",
+        orbit: dysonOrbit,
+        phase: rng() * Math.PI * 2,
+        size: isStation ? 0.8 : 0.4 + rng() * 0.3,
+        hue: 50,
+        ownerId: null,
+        population: isStation ? Math.floor(rng() * 50) / 10 : 0,
+        resources: ["Solar Energy", "Exotic Technology"],
+        economy: "boom",
+        children: [],
+        temperature: 300,
+        habitabilityZone: "temperate",
+        flora: "none",
+        fauna: "none",
+        hazards: [],
+      });
+    }
+    return bodies;
+  }
 
   // Base starting distance scales down for dim stars so they can have planets
+  // Cap spacing multiplier for ultra-bright stars to prevent invisible orbits
+  const luminosity = STAR_LUMINOSITY[starType];
+  const cappedLuminosity = Math.min(luminosity, 5.0); // cap at F-star luminosity for orbit scaling
+
   let orbit = 8 + STAR_BASE_SIZE[starType] * 2.0;
   
   for (let i = 0; i < planetCount; i++) {
-    // Spacing scales with luminosity but has a much higher floor to prevent lunar orbit crossing
-    const spacingMult = Math.max(0.6, Math.pow(STAR_LUMINOSITY[starType], 0.25));
+    // Spacing scales with luminosity but capped so ultra-bright stars don't produce invisible orbits
+    const spacingMult = Math.max(0.6, Math.pow(cappedLuminosity, 0.25));
     orbit += randInt(rng, 60, 110) * spacingMult;
     
     const isGas = rng() < (i > 2 ? 0.55 : 0.15);
     const type: BodyType = isGas ? "gas_giant" : "terrestrial";
     const id = `${systemId}-b${i}`;
     
-    // Solar modelling: Temperature in K
-    // Game-balanced curve so HZ is reachable for all star types
-    const luminosity = STAR_LUMINOSITY[starType];
+    // Solar modelling: Temperature in K (Metadata only)
     const temp = Math.floor(350 * Math.pow(luminosity, 0.35) / Math.pow(orbit / 80, 0.8));
+
+    // --- SYNCHRONIZED ZONE CALCULATION (Matches UnifiedMap.tsx overlay) ---
+    const lPow = Math.pow(luminosity || 1, 0.5);
+    const hotEnd = 120 * lPow;
+    const tempEnd = 240 * lPow;
     
     let zone: "hot" | "temperate" | "cold" = "cold";
-    if (temp > 373) zone = "hot";
-    else if (temp > 250) zone = "temperate";
+    if (orbit < hotEnd) zone = "hot";
+    else if (orbit < tempEnd) zone = "temperate";
     
     let subtype: Body["subtype"];
     if (isGas) {
-      if (temp > 400) subtype = "gas_giant_hot";
-      else if (temp < 150) subtype = "gas_giant_cold";
+      if (zone === "hot") subtype = "gas_giant_hot";
+      else if (zone === "cold") subtype = "gas_giant_cold";
       else subtype = "gas_giant";
     } else {
-      // Terrestrial subtypes are strictly zone-locked.
-      const exotic = rng() < 0.08; // 8% chance of a special exotic type
+      const isExotic = rng() < 0.05; // 5% chance of a special world
+      
       if (zone === "hot") {
-        subtype = exotic ? "carbon" : (temp > 700 ? "lava" : rng() < 0.5 ? "lava" : "desert");
-      } else if (zone === "temperate") {
-        if (exotic) {
-          subtype = rng() < 0.5 ? "hive" : "machine";
-        } else {
-          subtype = weightedPick(rng, [["temperate", 35], ["ocean", 25], ["gaia", 15], ["super_earth", 15], ["desert", 10]]);
-        }
+        if (isExotic) subtype = weightedPick(rng, [["shattered", 30], ["broken", 30], ["shielded", 20], ["nanite", 20]]);
+        else subtype = weightedPick(rng, [["molten", 40], ["toxic", 40], ["barren", 20]]);
+      } else if (zone === "cold") {
+        if (isExotic) subtype = weightedPick(rng, [["shrouded", 50], ["infested", 50]]);
+        else subtype = weightedPick(rng, [["frozen", 60], ["barren", 40]]);
       } else {
-        // cold zone
-        subtype = exotic ? "rogue" : (rng() < 0.7 ? "ice" : "rocky_moon");
+        // Temperate zone (Habitable!)
+        if (isExotic) {
+          subtype = weightedPick(rng, [["gaia", 25], ["relic", 20], ["ecumenopolis", 15], ["tomb", 15], ["hive", 10], ["machine", 15]]);
+        } else {
+          // Sub-divide temperate zone for variety: Inner (Dry), Mid (Temperate), Outer (Cold)
+          const range = tempEnd - hotEnd;
+          const relPos = (orbit - hotEnd) / range;
+          
+          if (relPos < 0.33) subtype = weightedPick(rng, [["desert", 40], ["arid", 40], ["savanna", 20]]);
+          else if (relPos < 0.66) subtype = weightedPick(rng, [["continental", 40], ["ocean", 40], ["tropical", 20]]);
+          else subtype = weightedPick(rng, [["arctic", 40], ["tundra", 40], ["alpine", 20]]);
+        }
       }
     }
 
     const name = planetName(systemName, subtype, i);
 
-    const isHabitable = !isGas && zone === "temperate";
-    const flora: Body["flora"] = isHabitable ? weightedPick(rng, [["none", 10], ["sparse", 40], ["abundant", 40], ["exotic", 10]]) : "none";
+    const isHabitable = !isGas && ["desert", "arid", "savanna", "continental", "ocean", "tropical", "arctic", "alpine", "tundra", "gaia", "relic", "ecumenopolis", "hive", "machine"].includes(subtype);
+    const flora: Body["flora"] = isHabitable && !["machine", "ecumenopolis", "relic"].includes(subtype) ? weightedPick(rng, [["none", 10], ["sparse", 40], ["abundant", 40], ["exotic", 10]]) : "none";
     const fauna: Body["fauna"] = isHabitable && flora !== "none" ? weightedPick(rng, [["none", 10], ["sparse", 40], ["abundant", 40], ["hostile", 10]]) : "none";
     
     const possibleHazards = ["Extreme Pressure", "Corrosive Rain", "Seismic Instability", "High Radiation", "Toxic Atmosphere", "Cryo-Storms"];
@@ -127,7 +249,7 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
     // Aesthetic randomization
     let landColor: string | undefined;
     let seaColor: string | undefined;
-    if (subtype === "temperate" || subtype === "ocean") {
+    if (["temperate", "continental", "tropical", "ocean", "gaia", "hive", "infested", "super_earth", "ecumenopolis", "relic"].includes(subtype)) {
       const landHues = [120, 40, 280, 20]; // Green, Beige, Purple, Red-brown
       const seaHues = [210, 180, 340, 260]; // Blue, Cyan, Red, Violet
       landColor = new THREE.Color().setHSL(pick(rng, landHues) / 360, 0.4, 0.3).getStyle();
@@ -156,6 +278,7 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
       hazards,
       landColor,
       seaColor,
+      atmosphere: getAtmosphere(subtype, zone),
       // Gas giants beyond the frost line (~cold zone) have a higher ring probability
       hasRings: isGas && rng() < (zone === "cold" ? 0.45 : 0.22),
       ringHue: Math.floor(rng() * 360),
@@ -167,24 +290,25 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
       // Moon orbits are local to the planet. Tighter scaling to prevent inter-planetary interference.
       const moonOrbit = planet.size * 1.5 + 2.0 + m * 2.5;
       
-      let moonSubtype: Body["subtype"] = "rocky_moon";
+      let moonSubtype: Body["subtype"] = "barren";
       const parentZone = planet.habitabilityZone;
       // Moon subtypes are strictly zone-locked to prevent environmental mismatches.
       if (parentZone === "hot") {
-        moonSubtype = weightedPick(rng, [["lava", 50], ["desert", 30], ["rocky_moon", 20]]);
+        moonSubtype = weightedPick(rng, [["molten", 50], ["barren", 30], ["toxic", 20]]);
       } else if (parentZone === "cold") {
-        moonSubtype = weightedPick(rng, [["ice", 65], ["rocky_moon", 35]]);
+        moonSubtype = weightedPick(rng, [["frozen", 65], ["barren", 35]]);
       } else {
         // temperate zone moons
-        moonSubtype = weightedPick(rng, [["rocky_moon", 40], ["moon", 30], ["desert", 20], ["ice", 10]]);
+        moonSubtype = weightedPick(rng, [["barren", 50], ["tundra", 20], ["arid", 20], ["frozen", 10]]);
       }
 
       // Moon temperature: derived from same luminosity/orbit formula as planets,
       // slightly cooler since moons are in the shadow of their parent body some of the time.
       const moonTemp = Math.max(20, planet.temperature - randInt(rng, 10, 40));
 
-      const moonFlora: Body["flora"] = moonSubtype === "temperate" ? weightedPick(rng, [["none", 20], ["sparse", 50], ["abundant", 30]]) : "none";
-      const moonFauna: Body["fauna"] = moonSubtype === "temperate" && moonFlora !== "none" ? weightedPick(rng, [["none", 30], ["sparse", 50], ["abundant", 20]]) : "none";
+      const isMoonHabitable = ["tundra", "arid"].includes(moonSubtype);
+      const moonFlora: Body["flora"] = isMoonHabitable ? weightedPick(rng, [["none", 20], ["sparse", 50], ["abundant", 30]]) : "none";
+      const moonFauna: Body["fauna"] = isMoonHabitable && moonFlora !== "none" ? weightedPick(rng, [["none", 30], ["sparse", 50], ["abundant", 20]]) : "none";
 
       const moon: Body = {
         id: `${id}-m${m}`,
@@ -199,13 +323,17 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
         hue: 30 + Math.floor(rng() * 60),
         ownerId: null,
         population: 0,
-        resources: moonSubtype === "lava" ? ["Ore", "Crystals"] : ["Ore", "Silicates"],
+        resources: moonSubtype === "molten" ? ["Ore", "Crystals"] : ["Ore", "Silicates"],
         economy: "untapped",
         temperature: moonTemp,
         habitabilityZone: planet.habitabilityZone,
         flora: moonFlora,
         fauna: moonFauna,
         hazards: [],
+        landColor: undefined,
+        seaColor: undefined,
+        atmosphere: getAtmosphere(moonSubtype, planet.habitabilityZone),
+        hasRings: false,
       };
       planet.children!.push(moon);
       bodies.push(moon);
@@ -302,9 +430,14 @@ function generateHyperlanes(rng: Rng, systems: StarSystem[]): Hyperlane[] {
       .map((o) => [o, distance(s, o)] as const)
       .sort((a, b) => a[1] - b[1]);
 
+    const MAX_LOCAL_DIST = 600;
+    const MAX_HUB_DIST = 1400;
+
     const localLinks = randInt(rng, 2, 3);
     for (let i = 0; i < localLinks && i < sorted.length; i++) {
-      const target = sorted[i][0];
+      const [target, dist] = sorted[i];
+      if (dist > MAX_LOCAL_DIST) continue; // Don't link across voids
+      
       const k = key(s.id, target.id);
       if (seen.has(k)) continue;
       seen.add(k);
@@ -313,9 +446,12 @@ function generateHyperlanes(rng: Rng, systems: StarSystem[]): Hyperlane[] {
 
     // Hub systems (~5%) get extra long-range jumps.
     if (rng() < 0.05) {
-      const extras = randInt(rng, 3, 7);
+      const extras = randInt(rng, 2, 5);
       for (let i = 0; i < extras; i++) {
-        const target = sorted[randInt(rng, 4, Math.min(40, sorted.length - 1))][0];
+        const idx = randInt(rng, 4, Math.min(30, sorted.length - 1));
+        const [target, dist] = sorted[idx];
+        if (dist > MAX_HUB_DIST) continue; 
+
         const k = key(s.id, target.id);
         if (seen.has(k)) continue;
         seen.add(k);
@@ -488,6 +624,32 @@ export function generateGalaxy(seed: number = 42, opts?: {
     };
     sys.bodies = generateBodies(rng, id, sys.name, starType);
     systems.push(sys);
+  }
+
+  // 2b. Guaranteed rare star spawns — without this, low-weight types may never appear
+  const guaranteedTypes: StarType[] = ["quasar", "magnetar", "dyson_swarm", "whitehole"];
+  for (const rareType of guaranteedTypes) {
+    const hasIt = systems.some(s => s.starType === rareType);
+    if (!hasIt) {
+      const angle = rng() * Math.PI * 2;
+      const r = 2500 + rng() * 1500; // outer rim
+      const id = `sys-rare-${rareType}`;
+      const name = systemName(rng);
+      const rarePos: [number, number, number] = [Math.cos(angle) * r, (rng() - 0.5) * 8, Math.sin(angle) * r];
+      const rareSys: StarSystem = {
+        id,
+        sectorId: "",
+        name,
+        pos: rarePos,
+        starType: rareType,
+        contest: "frontier",
+        economy: "untapped",
+        bodies: generateBodies(rng, id, name, rareType),
+        gates: [],
+        sectorHue: 0,
+      };
+      systems.push(rareSys);
+    }
   }
 
   // 2. Assign each system to the nearest sector centroid (Voronoi partitioning)

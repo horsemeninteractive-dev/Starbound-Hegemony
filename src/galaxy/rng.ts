@@ -59,25 +59,53 @@ export const systemName = (rng: Rng) => {
 };
 
 const SUBTYPE_ABBR: Record<string, string> = {
-  lava: "IGN",
+  // Base & Harsh
+  molten: "MLT",
+  toxic: "TOX",
+  barren: "BRN",
+  frozen: "FRZ",
+  // Dry
   desert: "DES",
-  temperate: "HAB",
+  arid: "ARD",
+  savanna: "SAV",
+  // Temperate
+  continental: "CON",
   ocean: "OCE",
-  ice: "CRYO",
+  tropical: "TRO",
+  // Cold
+  arctic: "ARC",
+  alpine: "ALP",
+  tundra: "TUN",
+  // Exotic & Engineered
+  gaia: "GAI",
+  relic: "RLC",
+  ecumenopolis: "ECU",
+  tomb: "TMB",
+  hive: "HIV",
+  machine: "MAC",
+  shattered: "SHT",
+  broken: "BRK",
+  shielded: "SHD",
+  nanite: "NAN",
+  shrouded: "SHR",
+  infested: "INF",
+  // Giants & Special
   gas_giant: "GAS",
-  gas_giant_hot: "HGAS",
-  gas_giant_cold: "CGAS",
+  gas_giant_hot: "HGS",
+  gas_giant_cold: "CGS",
+  super_earth: "SPR",
+  carbon: "CRB",
+  asteroid: "AST",
 };
 
 export const planetName = (parentName: string, subtype: string, idx: number) => {
-  const abbr = SUBTYPE_ABBR[subtype] || "UNM";
-  const letter = String.fromCharCode(97 + idx); // a, b, c...
-  return `${parentName}-${abbr}-${letter}`;
+  const abbr = SUBTYPE_ABBR[subtype] || "UNK";
+  return `${parentName}/${abbr}/${idx + 1}`;
 };
 
 const ROMAN_NUMERALS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
 
 export const moonName = (parent: string, idx: number) => {
   const roman = ROMAN_NUMERALS[idx] || (idx + 1).toString();
-  return `${parent}-${roman}`;
+  return `${parent}/${roman}`;
 };

@@ -144,7 +144,7 @@ function Sun({ scale, color, detailed, quality }: { scale: number; color: THREE.
                        + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
               float n_ = 1.0/7.0;
               vec3  ns = n_ * D.wyz - D.xzx;
-              vec4 j = p - 49.0 * floor(p * ns.z *ns.z);
+              vec4 j = p - 49.0 * floor(p * (1.0 / 49.0)); // Fixed noise typo
               vec4 x_ = floor(j * ns.z);
               vec4 y_ = floor(j - 7.0 * x_ );
               vec4 x = x_ *ns.x + ns.yyyy;
@@ -835,7 +835,7 @@ function Protostar({ scale, detailed, quality }: { scale: number; detailed: bool
       <Sun scale={scale * 0.8} color={new THREE.Color("#ff4400")} detailed={detailed} quality={quality} />
       <mesh ref={dustRef} rotation={[Math.PI / 2.5, 0, 0]}>
         <sphereGeometry args={[scale * 2.5, quality === "low" ? 16 : 32, quality === "low" ? 16 : 32]} />
-        <meshStandardMaterial color="#331100" transparent opacity={0.7} side={THREE.DoubleSide} wireframe={detailed && quality !== "low"} />
+        <meshStandardMaterial color="#331100" transparent opacity={0.7} side={THREE.DoubleSide} />
       </mesh>
       {detailed && <pointLight color="#ff4400" intensity={3} distance={60} />}
     </group>
@@ -846,27 +846,49 @@ function Protostar({ scale, detailed, quality }: { scale: number; detailed: bool
 function DysonSwarm({ scale, detailed, quality }: { scale: number; detailed: boolean; quality: "low" | "medium" | "high" }) {
   const groupRef = useRef<THREE.Group>(null);
   useFrame((state) => {
-    if (groupRef.current) groupRef.current.rotation.y += 0.005;
+    if (groupRef.current) {
+      // Swarm rotates slowly
+      groupRef.current.rotation.y += 0.005;
+      groupRef.current.rotation.z += 0.002;
+    }
   });
+  
   const panels = useMemo(() => {
-    const count = quality === "low" ? 15 : (quality === "medium" ? 30 : 60);
+    const count = quality === "low" ? 50 : (quality === "medium" ? 120 : 250);
     const p = [];
     for (let i = 0; i < count; i++) {
       const phi = Math.acos(-1 + (2 * i) / count);
       const theta = Math.sqrt(count * Math.PI) * phi;
-      p.push(new THREE.Vector3().setFromSphericalCoords(scale * 1.5, phi, theta));
+      const radius = scale * (1.2 + Math.sin(i * 123.45) * 0.15); // tighter, more dense swarm
+      const pos = new THREE.Vector3().setFromSphericalCoords(radius, phi, theta);
+      
+      // Make the panel's +Z face (front) point inwards towards the star (origin)
+      const center = new THREE.Vector3(0, 0, 0);
+      // lookAt(eye, target, up) aligns -Z to (target - eye).
+      // By setting eye=center and target=pos, -Z points outward, meaning +Z points INWARD.
+      const m = new THREE.Matrix4().lookAt(center, pos, new THREE.Vector3(0, 1, 0));
+      const quat = new THREE.Quaternion().setFromRotationMatrix(m);
+      
+      p.push({ pos, quat });
     }
     return p;
   }, [scale, quality]);
 
   return (
     <group>
-      <Sun scale={scale * 0.9} color={new THREE.Color("#ffdd44")} detailed={detailed} quality={quality} />
+      <Sun scale={scale * 0.85} color={new THREE.Color("#ffaa33")} detailed={detailed} quality={quality} />
       <group ref={groupRef}>
-        {panels.map((pos, i) => (
-          <mesh key={i} position={pos}>
-            <planeGeometry args={[scale * 0.2, scale * 0.2]} />
-            <meshStandardMaterial color="#222" metalness={1} roughness={0} side={THREE.DoubleSide} />
+        {panels.map((p, i) => (
+          <mesh key={i} position={p.pos} quaternion={p.quat}>
+            {/* 6 segments = Hexagon */}
+            <circleGeometry args={[scale * 0.18, 6]} />
+            <meshStandardMaterial 
+              color="#2a2a35" 
+              emissive="#1a1a00" 
+              metalness={0.9} 
+              roughness={0.1} 
+              side={THREE.DoubleSide} 
+            />
           </mesh>
         ))}
       </group>

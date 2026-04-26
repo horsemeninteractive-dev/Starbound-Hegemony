@@ -16,6 +16,29 @@ const tempVec2 = new THREE.Vector3();
 const tempVec3 = new THREE.Vector3();
 const tempVec4 = new THREE.Vector3();
 
+function CloudLayer({ body, visualSize, quality }: { body: Body; visualSize: number; quality: string }) {
+  const cloudRef = useRef<THREE.Mesh>(null);
+  const speed = useMemo(() => 0.05 + Math.random() * 0.1, []);
+
+  useFrame((state) => {
+    if (cloudRef.current) {
+      cloudRef.current.rotation.y = state.clock.getElapsedTime() * speed;
+    }
+  });
+
+  return (
+    <mesh ref={cloudRef} scale={1.015}>
+      <sphereGeometry args={[visualSize, quality === "low" ? 16 : 32, quality === "low" ? 16 : 32]} />
+      <PlanetMaterial 
+        subtype={body.subtype} 
+        hue={body.hue} 
+        isWeather 
+        quality={quality as any}
+      />
+    </mesh>
+  );
+}
+
 interface Props {
   galaxy: Galaxy;
   view: ViewMode;
@@ -256,6 +279,7 @@ function MapContent({
               knownSystemIds={knownSystemIds}
             />
             {filters.layers.has("sectorBorders") && <SectorBorders sectors={galaxy.sectors} />}
+            {filters.layers.has("sectorLabels") && <SectorLabels sectors={galaxy.sectors} />}
           </>
         )}
 
@@ -331,11 +355,12 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
     }
     
     if (hitboxRef.current) {
-      // Ensure hitbox has a minimum screen-space size (approx 48px diameter)
-      const vFov = (state.camera as THREE.PerspectiveCamera).fov * Math.PI / 180;
-      const screenH = window.innerHeight;
-      const minHitRadius = 24; // 24px radius
-      const hitScale = (minHitRadius * 2 * Math.tan(vFov / 2) * safeD) / screenH;
+      // Mobile devices need larger touch targets (≥44px radius per Apple HIG)
+      const isMobile = window.innerWidth <= 768;
+      const minHitRadius = isMobile ? 48 : 24; // 24px desktop, 48px mobile
+      const vFov2 = (state.camera as THREE.PerspectiveCamera).fov * Math.PI / 180;
+      const screenH2 = window.innerHeight;
+      const hitScale = (minHitRadius * 2 * Math.tan(vFov2 / 2) * safeD) / screenH2;
       hitboxRef.current.scale.setScalar(Math.max(1.0, hitScale / (baseStarScale * 3.5)));
     }
     
@@ -461,10 +486,10 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
           
           {/* Stellar Temperature Zones Overlay - Smooth Gradient Shader */}
           {filters.layers.has("habitableZones") && (() => {
-            const lPow = Math.pow(STAR_LUMINOSITY[system.starType] || 1, 0.3);
+            const lPow = Math.pow(STAR_LUMINOSITY[system.starType] || 1, 0.5);
             const inner = Math.max(12, 10 * lPow);
-            const hotEnd = 64.34 * lPow;
-            const tempEnd = 96 * lPow;
+            const hotEnd = 120 * lPow;
+            const tempEnd = 240 * lPow;
             
             // Calculate system extent for the cold zone fade
             const maxOrbit = system.bodies.reduce((max: number, b: Body) => Math.max(max, b.orbit), 0);
@@ -550,30 +575,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
   );
 }
 
-function Clouds({ radius, opacity = 0.35, quality = "high" }: { radius: number; opacity?: number; quality?: string }) {
-  const ref = useRef<THREE.Mesh>(null);
-  useFrame((state, dt) => {
-    if (ref.current) {
-      ref.current.rotation.y += dt * 0.04;
-      ref.current.rotation.x += dt * 0.01;
-    }
-  });
 
-  if (quality === "low") return null; // Skip clouds on low
-
-  return (
-    <mesh ref={ref} scale={1.012}>
-      <sphereGeometry args={[radius, quality === "medium" ? 32 : 64, quality === "medium" ? 32 : 64]} />
-      <meshStandardMaterial
-        color="#ffffff"
-        transparent
-        opacity={opacity}
-        alphaTest={0.02}
-        depthWrite={false}
-      />
-    </mesh>
-  );
-}
 
 function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, children, onSelectBody, focusedBodyId, starWorldPos, starType, filters, isMobilePanelExpanded, quality }: any) {
   const { camera } = useThree();
@@ -648,21 +650,21 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
     }
 
     if (hitboxRef.current) {
-      // Dynamically scale hitbox to maintain a constant target screen-space radius
-      // This makes planets easy to click when zoomed out AND prevents overlap when zoomed in.
-      const d = state.camera.position.distanceTo(meshRef.current!.getWorldPosition(new THREE.Vector3()));
+      // Dynamically scale hitbox to maintain a constant target screen-space radius.
+      // Mobile needs significantly larger touch targets (44px+ per Apple HIG).
+      meshRef.current!.getWorldPosition(tempVec4);
+      const d = state.camera.position.distanceTo(tempVec4);
       const safeD = Math.max(0.1, d);
       const vFov = (state.camera as THREE.PerspectiveCamera).fov * Math.PI / 180;
       const screenH = window.innerHeight;
-      // Target: planet's visual size + a small fixed padding in screen pixels
-      const targetScreenRadius = Math.max(18, body.size * 12); // px — shrinks relative to planet at close range
-      // Convert screen pixels → world units at this distance
+      const isMobile = window.innerWidth <= 768;
+      const minPx = isMobile ? 36 : 18; // 36px mobile, 18px desktop
+      const targetScreenRadius = Math.max(minPx, body.size * 12);
       const targetWorldSize = (targetScreenRadius * 2 * Math.tan(vFov / 2) * safeD) / screenH;
-      // Divide by the plane's base size to get the scale multiplier.
-      // We clamp MIN to 1.0 so the hitbox is never smaller than the actual object,
-      // and MAX to 6.0 to prevent overlapping neighboring bodies when zoomed out.
       const baseSize = body.size * 2.0;
-      hitboxRef.current.scale.setScalar(Math.max(1.0, Math.min(6.0, targetWorldSize / baseSize)));
+      // Max 10× on mobile (more generous overlap okay), 6× on desktop
+      const maxScale = isMobile ? 10.0 : 6.0;
+      hitboxRef.current.scale.setScalar(Math.max(1.0, Math.min(maxScale, targetWorldSize / baseSize)));
     }
 
     if (labelRef.current && view !== "galaxy") {
@@ -724,11 +726,16 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
             hue={body.hue} 
             lightDir={lightDirRef.current}
             color={new THREE.Color(`#${STAR_META[starType]?.hex || "ffffff"}`)}
-            showWeather={filters.layers.has("weatherSystems")}
+            showWeather={filters.layers.has("weatherSystems") && !!body.atmosphere}
             showCityLights={filters.layers.has("cityLights")}
             quality={quality}
           />
         </mesh>
+      )}
+
+      {/* Moving Weather System (Clouds) - Separate transparent layer */}
+      {filters.layers.has("weatherSystems") && !!body.atmosphere && (
+        <CloudLayer body={body} visualSize={visualSize} quality={quality || "high"} />
       )}
 
       {/* Invisible Hitbox for easier selection — Billboard ensures it's always a flat disk facing the camera */}
@@ -744,11 +751,10 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
         </mesh>
       </Billboard>
 
-      {/* Premium Atmospheric Effects */}
-      {(body.type === "terrestrial" || body.type === "gaia" || body.subtype === "temperate") && (
+      {/* Premium Atmospheric Effects - Only show if body has an atmosphere */}
+      {body.atmosphere && (
         <>
-          {filters.layers.has("weatherSystems") && <Clouds radius={visualSize} quality={quality} />}
-          {/* Main Atmosphere */}
+          {/* Main Atmosphere Glow */}
           <mesh scale={1.025}>
             <sphereGeometry args={[visualSize, quality === "low" ? 16 : 32, quality === "low" ? 16 : 32]} />
             <meshBasicMaterial
@@ -795,6 +801,7 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
           </div>
         </Html>
       )}
+
 
       {/* Moon Orbits relative to planet */}
       {children && (
@@ -878,9 +885,9 @@ function HyperlaneLines({ galaxy, filters, matches, fogOfWar, knownSystemIds }: 
 /* ---------- Sector Borders (Voronoi) ---------- */
 function SectorBorders({ sectors }: { sectors: Sector[] }) {
   const uniforms = useMemo(() => {
-    const centroids = new Float32Array(50 * 3);
-    const hues = new Float32Array(50);
-    sectors.slice(0, 50).forEach((s, i) => {
+    const centroids = new Float32Array(100 * 3);
+    const hues = new Float32Array(100);
+    sectors.slice(0, 100).forEach((s, i) => {
       centroids[i * 3 + 0] = s.centroid[0];
       centroids[i * 3 + 1] = s.centroid[1];
       centroids[i * 3 + 2] = s.centroid[2];
@@ -889,18 +896,18 @@ function SectorBorders({ sectors }: { sectors: Sector[] }) {
     return {
       uCentroids: { value: centroids },
       uHues: { value: hues },
-      uCount: { value: Math.min(sectors.length, 50) },
+      uCount: { value: Math.min(sectors.length, 100) },
       uTime: { value: 0 }
     };
   }, [sectors]);
 
   useFrame((state) => {
-    uniforms.uTime.value = state.clock.elapsedTime;
+    uniforms.uTime.value = state.clock.getElapsedTime();
   });
 
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -5, 0]} raycast={() => null}>
-      <planeGeometry args={[1200, 1200]} />
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -10, 0]} raycast={() => null}>
+      <planeGeometry args={[15000, 15000]} />
       <shaderMaterial
         transparent
         depthWrite={false}
@@ -914,8 +921,8 @@ function SectorBorders({ sectors }: { sectors: Sector[] }) {
         `}
         fragmentShader={`
           varying vec3 vPos;
-          uniform vec3 uCentroids[50];
-          uniform float uHues[50];
+          uniform vec3 uCentroids[100];
+          uniform float uHues[100];
           uniform int uCount;
           uniform float uTime;
 
@@ -929,7 +936,7 @@ function SectorBorders({ sectors }: { sectors: Sector[] }) {
             float minDist1 = 99999.0;
             float minDist2 = 99999.0;
             int nearestIdx = 0;
-            for (int i = 0; i < 50; i++) {
+            for (int i = 0; i < 100; i++) {
               if (i >= uCount) break;
               float d = distance(vPos.xz, uCentroids[i].xz);
               if (d < minDist1) {
@@ -941,16 +948,47 @@ function SectorBorders({ sectors }: { sectors: Sector[] }) {
               }
             }
             float centerDist = length(vPos.xz);
-            float alpha = smoothstep(600.0, 300.0, centerDist) * 0.12;
-            vec3 sectorColor = hsv2rgb(vec3(uHues[nearestIdx], 0.5, 0.08));
+            
+            // "Hard Donut" mask: 
+            // 1. Sharp inner hole for the Frontier Core
+            float innerAlpha = smoothstep(540.0, 570.0, centerDist);
+            // 2. Sharp outer rim at the edge of the stellar disk
+            float outerAlpha = smoothstep(4600.0, 4570.0, centerDist);
+            
+            float alpha = innerAlpha * outerAlpha * 0.45;
+            if (alpha < 0.01) discard;
+
+            vec3 sectorColor = hsv2rgb(vec3(uHues[nearestIdx], 0.5, 0.12));
             float borderDist = minDist2 - minDist1;
+            // Sharper border lines to prevent ghosting
             float borderLine = 1.0 - smoothstep(0.0, 6.0, borderDist);
-            vec3 finalColor = mix(sectorColor, hsv2rgb(vec3(uHues[nearestIdx], 0.8, 0.4)), borderLine * 0.5);
+            vec3 borderCol = hsv2rgb(vec3(uHues[nearestIdx], 0.8, 0.6));
+            vec3 finalColor = mix(sectorColor, borderCol, borderLine * 0.9);
             gl_FragColor = vec4(finalColor, alpha);
           }
         `}
       />
     </mesh>
+  );
+}
+
+/* ---------- Sector Labels ---------- */
+function SectorLabels({ sectors }: { sectors: Sector[] }) {
+  return (
+    <group>
+      {sectors.map(s => (
+        <Html 
+          key={s.id} 
+          position={[s.centroid[0], 2, s.centroid[2]]} 
+          center 
+          distanceFactor={1500}
+        >
+          <div className="font-mono-hud text-[11px] text-primary/30 uppercase tracking-[0.5em] select-none pointer-events-none whitespace-nowrap drop-shadow-[0_0_10px_rgba(0,255,255,0.2)]">
+            {s.name}
+          </div>
+        </Html>
+      ))}
+    </group>
   );
 }
 
@@ -1491,7 +1529,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
 
       {/* The HTML icon represents the Commander. We conditionally render it to avoid Drei ghosting bugs. */}
       {(view === 'galaxy' || viewedSystemId === playerSystemId) && (
-        <group>
+        <group position={[0, 0.5, 0]}>
           <Html center zIndexRange={[100, 0]}>
             <div ref={labelRef} className="cmdr-label text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-pulse flex flex-col items-center pointer-events-none transition-opacity duration-300">
               <Rocket size={14} className="-rotate-45" />
