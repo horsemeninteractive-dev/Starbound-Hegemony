@@ -7,7 +7,7 @@ import { TopBar } from "@/galaxy/components/TopBar";
 import { FilterPanel } from "@/galaxy/components/FilterPanel";
 import { Legend } from "@/galaxy/components/Legend";
 import { SettingsModal } from "@/galaxy/components/SettingsModal";
-import { DebugPanel } from "@/galaxy/components/DebugPanel";
+import { MiniMap } from "@/galaxy/components/MiniMap";
 import logo from "@/assets/logo.png";
 
 const Index = () => {
@@ -93,6 +93,13 @@ const Index = () => {
               />
             </Suspense>
           </div>
+          
+          <MiniMap 
+            galaxy={app.galaxy} 
+            currentSystem={app.system} 
+            playerSystemId={app.playerSystemId} 
+            view={app.view} 
+          />
 
           {/* HUD Overlay within Map (Bottom Controls) */}
           <div className="relative z-20 flex flex-col h-full pointer-events-none">

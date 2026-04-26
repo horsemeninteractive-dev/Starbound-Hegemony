@@ -280,6 +280,13 @@ function MapContent({
             />
             {filters.layers.has("sectorBorders") && <SectorBorders sectors={galaxy.sectors} />}
             {filters.layers.has("sectorLabels") && <SectorLabels sectors={galaxy.sectors} />}
+            {filters.layers.has("empireColors") && (
+              <EmpireTerritoryRings
+                galaxy={galaxy}
+                fogOfWar={fogOfWar}
+                knownSystemIds={knownSystemIds}
+              />
+            )}
           </>
         )}
 
@@ -450,6 +457,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
               starType={system.starType}
               isMobilePanelExpanded={isMobilePanelExpanded}
               quality={quality}
+              galaxy={galaxy}
             >
               {system.bodies
                 .filter(m => m.parentId === b.id)
@@ -467,13 +475,14 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
                     starWorldPos={new THREE.Vector3(...system.pos)}
                     isMobilePanelExpanded={isMobilePanelExpanded}
                     quality={quality}
+                    galaxy={galaxy}
                   />
                 ))}
             </PlanetNode>
           ))}
-          {/* Orbits */}
+          {/* Orbits — hidden for the focused planet in body view (camera is inside that orbit, causing a horizon-line artifact) */}
           {filters.layers.has("orbitPaths") && system.bodies.map((b: Body) => (
-            !b.parentId && (
+            !b.parentId && !(view === "body" && focusedBodyId === b.id) && (
               <DynamicOrbit 
                 key={`orbit-${b.id}`} 
                 radius={b.orbit} 
@@ -577,7 +586,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
 
 
 
-function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, children, onSelectBody, focusedBodyId, starWorldPos, starType, filters, isMobilePanelExpanded, quality }: any) {
+function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, children, onSelectBody, focusedBodyId, starWorldPos, starType, filters, isMobilePanelExpanded, quality, galaxy }: any) {
   const { camera } = useThree();
   const meshRef = useRef<THREE.Group>(null);
   const sphereRef = useRef<THREE.Object3D>(null);
@@ -731,6 +740,21 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
             quality={quality}
           />
         </mesh>
+      )}
+
+      {/* Empire Territory Marker (System View) */}
+      {filters.layers.has("empireColors") && body.ownerId && galaxy && (
+        (() => {
+          const empire = galaxy.empires.find(e => e.id === body.ownerId);
+          if (!empire) return null;
+          const color = new THREE.Color().setHSL(empire.hue / 360, 0.7, 0.5);
+          return (
+            <mesh rotation={[-Math.PI / 2, 0, 0]}>
+              <ringGeometry args={[visualSize * 1.3, visualSize * 1.5, 32]} />
+              <meshBasicMaterial color={color} transparent opacity={0.6} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>
+          );
+        })()
       )}
 
       {/* Moving Weather System (Clouds) - Separate transparent layer */}
@@ -1075,7 +1099,7 @@ function JumpGateMarkers({ system, galaxy, onSelect }: { system: any; galaxy: an
                   ? "text-red-400 border-red-500/40"
                   : "text-primary border-primary/20"
               }`}>
-                {isLocked ? "⛔ SEALED" : `GATE \u2192 ${galaxy?.systemById?.[gate.targetSystemId]?.name || gate.targetSystemId.split("-")[1] || "DEEP SPACE"}`}
+                {isLocked ? "⛔ SEALED" : `GATE \u2192 ${galaxy?.systemById?.[gate.targetSystemId]?.name ?? "DEEP SPACE"}`}
               </div>
             </Html>
           </group>
@@ -1538,6 +1562,65 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           </Html>
         </group>
       )}
+    </group>
+  );
+}
+
+/* ---------- Empire Territory Rings ---------- */
+function EmpireTerritoryRings({ galaxy, fogOfWar, knownSystemIds }: {
+  galaxy: Galaxy;
+  fogOfWar: boolean;
+  knownSystemIds: Set<string>;
+}) {
+  const entries = useMemo(() => {
+    return galaxy.systems.flatMap((sys) => {
+      if (fogOfWar && !knownSystemIds.has(sys.id)) return [];
+      const ownerCounts = new Map<string, number>();
+      for (const b of sys.bodies) {
+        if (b.ownerId) ownerCounts.set(b.ownerId, (ownerCounts.get(b.ownerId) ?? 0) + 1);
+      }
+      if (ownerCounts.size === 0) return [];
+      const sorted = [...ownerCounts.entries()].sort((a, b) => b[1] - a[1]);
+      const dominantEntry = sorted[0];
+      const totalBodies = sys.bodies.length;
+      const isDominant = dominantEntry[1] / totalBodies >= 0.75;
+      const isContested = ownerCounts.size > 1;
+      
+      // If no one owns 75% and it's not contested by multiple empires, don't show a ring
+      if (!isDominant && !isContested) return [];
+
+      const dominant = galaxy.empires.find((e) => e.id === sorted[0][0]);
+      if (!dominant) return [];
+      const secondary = sorted.length > 1 ? galaxy.empires.find((e) => e.id === sorted[1][0]) : null;
+      
+      return [{ sys, dominant, secondary, contested: isContested && !isDominant }];
+
+    });
+  }, [galaxy, fogOfWar, knownSystemIds]);
+
+  return (
+    <group>
+      {entries.map(({ sys, dominant, secondary, contested }) => {
+        const domColor = new THREE.Color().setHSL(dominant.hue / 360, 0.72, 0.52);
+        return (
+          <group key={sys.id} position={sys.pos}>
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.8, 0]}>
+              <ringGeometry args={[2.8, 4.5, 48]} />
+              <meshBasicMaterial color={domColor} transparent opacity={contested ? 0.20 : 0.28} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.2, 0]}>
+              <ringGeometry args={[4.5, 7.5, 48]} />
+              <meshBasicMaterial color={domColor} transparent opacity={0.06} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>
+            {contested && secondary && (
+              <mesh rotation={[-Math.PI / 2, Math.PI * 0.5, 0]} position={[0, -0.6, 0]}>
+                <ringGeometry args={[2.8, 4.5, 48, 1, 0, Math.PI]} />
+                <meshBasicMaterial color={new THREE.Color().setHSL(secondary.hue / 360, 0.68, 0.48)} transparent opacity={0.22} side={THREE.DoubleSide} depthWrite={false} />
+              </mesh>
+            )}
+          </group>
+        );
+      })}
     </group>
   );
 }

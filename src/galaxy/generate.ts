@@ -480,25 +480,45 @@ function attachJumpGates(systems: StarSystem[], lanes: Hyperlane[]) {
 function assignOwnership(rng: Rng, systems: StarSystem[], empires: Empire[]) {
   // Empires claim contiguous-ish blobs by picking seed systems then nearest neighbours.
   const remaining = new Set(systems.map((s) => s.id));
+  
   for (const emp of empires) {
     const seed = pick(rng, [...remaining]);
     if (!seed) continue;
-    const claimSize = randInt(rng, 18, 38);
+    
+    // Claim a blob of systems
+    const claimSize = randInt(rng, 10, 20);
     const queue = [seed];
-    const claimed: string[] = [];
-    while (queue.length && claimed.length < claimSize) {
+    const claimedInThisBlob: string[] = [];
+    
+    while (queue.length && claimedInThisBlob.length < claimSize) {
       const id = queue.shift()!;
       if (!remaining.has(id)) continue;
       remaining.delete(id);
-      claimed.push(id);
+      claimedInThisBlob.push(id);
+      
       const sys = systems.find((s) => s.id === id)!;
-      // claim some bodies (not all → contestation possible)
+      
+      // Ownership types: Fully Owned (100%), Mostly Owned (80%), or Contested (30-50%)
+      const mode = rng();
+      
       for (const body of sys.bodies) {
-        if ((body.type === "terrestrial" || body.type === "gas_giant" || body.type === "station") && rng() < 0.7) {
-          body.ownerId = emp.id;
+        if (body.type === "terrestrial" || body.type === "gas_giant" || body.type === "station") {
+          if (mode > 0.4) {
+            // HIGH OWNERSHIP (Satisfies 75% rule)
+            body.ownerId = emp.id;
+          } else if (mode > 0.15) {
+            // MIXED/CONTESTED
+            if (rng() < 0.4) body.ownerId = emp.id;
+            else if (rng() < 0.3) {
+              // Pick a different empire for contestation
+              const other = empires[(empires.indexOf(emp) + 1) % empires.length];
+              body.ownerId = other.id;
+            }
+          }
         }
       }
-      // expand to nearest unclaimed
+
+      // Expand to neighbors
       const neighbours = systems
         .filter((o) => remaining.has(o.id))
         .map((o) => {
@@ -506,10 +526,11 @@ function assignOwnership(rng: Rng, systems: StarSystem[], empires: Empire[]) {
           return [o.id, d] as const;
         })
         .sort((a, b) => a[1] - b[1])
-        .slice(0, 3);
+        .slice(0, 2);
       for (const [nid] of neighbours) queue.push(nid);
     }
   }
+
   // Compute contestation per system
   for (const sys of systems) {
     const owners = new Set<string>();

@@ -13,14 +13,15 @@ const CONTEST_ORDER: ContestState[] = ["controlled", "contested", "anarchic", "f
 const ECON_ORDER: EconomicStatus[] = ["boom", "stable", "recession", "blockaded", "untapped"];
 const STAR_ORDER: StarType[] = ["O", "B", "A", "F", "G", "K", "M", "whitedwarf", "neutron", "pulsar", "binary", "blackhole", "whitehole", "quasar", "magnetar", "protostar", "dyson_swarm"];
 const LAYER_ORDER: { key: DisplayLayer; label: string; views?: string[] }[] = [
-  { key: "hyperlanes", label: "Hyperlanes", views: ["galaxy"] },
-  { key: "sectorBorders", label: "Sector Borders", views: ["galaxy"] },
-  { key: "sectorLabels", label: "Sector Labels", views: ["galaxy"] },
-  { key: "objectLabels", label: "Object Labels", views: ["galaxy", "system"] },
-  { key: "habitableZones", label: "Habitable Zones", views: ["system", "body"] },
-  { key: "orbitPaths", label: "Orbit Paths", views: ["system", "body"] },
-  { key: "weatherSystems", label: "Weather Systems", views: ["body"] },
-  { key: "cityLights", label: "City Lights", views: ["body"] },
+  { key: "hyperlanes",    label: "Hyperlanes",      views: ["galaxy"] },
+  { key: "sectorBorders", label: "Sector Borders",  views: ["galaxy"] },
+  { key: "sectorLabels",  label: "Sector Labels",   views: ["galaxy"] },
+  { key: "empireColors",  label: "Empire Territory",views: ["galaxy", "system", "body"] },
+  { key: "objectLabels",  label: "Object Labels",   views: ["galaxy", "system"] },
+  { key: "habitableZones",label: "Habitable Zones", views: ["system", "body"] },
+  { key: "orbitPaths",    label: "Orbit Paths",     views: ["system", "body"] },
+  { key: "weatherSystems",label: "Weather Systems", views: ["body"] },
+  { key: "cityLights",    label: "City Lights",     views: ["body"] },
 ];
 
 export function FilterPanel({ filters, onToggle, view }: Props) {

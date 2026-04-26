@@ -5,7 +5,7 @@ import { generateGalaxy } from "./generate";
 import type { Galaxy, StarSystem, Body, ContestState, EconomicStatus, StarType } from "./types";
 
 export type ViewMode = "galaxy" | "system" | "body";
-export type DisplayLayer = "hyperlanes" | "sectorBorders" | "sectorLabels" | "objectLabels" | "habitableZones" | "orbitPaths" | "weatherSystems" | "cityLights";
+export type DisplayLayer = "hyperlanes" | "sectorBorders" | "sectorLabels" | "objectLabels" | "habitableZones" | "orbitPaths" | "weatherSystems" | "cityLights" | "empireColors";
 
 export interface FilterState {
   contest: Set<ContestState>;
@@ -17,7 +17,7 @@ export interface FilterState {
 const ALL_CONTEST: ContestState[] = ["controlled", "contested", "anarchic", "frontier"];
 const ALL_ECON: EconomicStatus[] = ["boom", "stable", "recession", "blockaded", "untapped"];
 const ALL_STAR: StarType[] = ["O", "B", "A", "F", "G", "K", "M", "whitedwarf", "neutron", "pulsar", "binary", "blackhole", "whitehole", "quasar", "magnetar", "protostar", "dyson_swarm"];
-const ALL_LAYERS: DisplayLayer[] = ["hyperlanes", "sectorBorders", "sectorLabels", "objectLabels", "habitableZones", "orbitPaths", "weatherSystems", "cityLights"];
+const ALL_LAYERS: DisplayLayer[] = ["hyperlanes", "sectorBorders", "sectorLabels", "objectLabels", "habitableZones", "orbitPaths", "weatherSystems", "cityLights", "empireColors"];
 
 export function useGalaxyApp(seed = 42) {
   const galaxy: Galaxy = useMemo(() => generateGalaxy(seed), [seed]);
