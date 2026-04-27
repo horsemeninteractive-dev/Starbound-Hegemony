@@ -1,5 +1,8 @@
 import { useState } from "react";
 import logo from "@/assets/logo.png";
+import avatar from "@/assets/avatar.png";
+import avatar_alt1 from "@/assets/avatar_alt1.png";
+import avatar_alt2 from "@/assets/avatar_alt2.png";
 import { User, Rocket } from "lucide-react";
 
 interface Props {
@@ -7,9 +10,9 @@ interface Props {
 }
 
 const AVATARS = [
-  { id: "male", path: "/src/assets/avatar.png", label: "VANGUARD" },
-  { id: "female", path: "/src/assets/avatar_alt1.png", label: "STRATEGIST" },
-  { id: "veteran", path: "/src/assets/avatar_alt2.png", label: "VETERAN" },
+  { id: "male", path: avatar, label: "VANGUARD" },
+  { id: "female", path: avatar_alt1, label: "STRATEGIST" },
+  { id: "veteran", path: avatar_alt2, label: "VETERAN" },
 ];
 
 export function CommanderOnboarding({ onComplete }: Props) {

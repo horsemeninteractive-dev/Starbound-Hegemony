@@ -629,7 +629,35 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
           
           // --- WEATHER SYSTEM (CLOUDS) MODE ---
           if (uIsWeather > 0.5) {
-            float cloudNoise = fbm(p * 2.5 + uTime * 0.015, 4);
+            float timeScale = 0.015;
+            float noiseScale = 2.5;
+            int octaves = 4;
+            
+            // Adjust pattern based on planet type
+            if (st == 26 || st == 27 || st == 28) { // Gas Giants: Fast, banded clouds
+              timeScale = 0.04;
+              noiseScale = 1.2;
+              octaves = 5;
+            } else if (st == 20 || st == 1) { // Molten/Desert: Thin, swift heat-haze/dust
+              timeScale = 0.06;
+              noiseScale = 4.0;
+              octaves = 2;
+            } else if (st == 7 || st == 19) { // Arctic/Frozen: Sluggish heavy frost-clouds
+              timeScale = 0.005;
+              noiseScale = 1.8;
+              octaves = 3;
+            } else if (st == 6 || st == 10) { // Tropical/Gaia: Dense, slow swirling storm cells
+              timeScale = 0.01;
+              noiseScale = 3.5;
+              octaves = 6;
+            }
+            
+            vec3 weatherP = p;
+            if (st >= 26 && st <= 28) { // Gas giant banding warping
+              weatherP.y *= 2.0;
+            }
+            
+            float cloudNoise = fbm(weatherP * noiseScale + uTime * timeScale, octaves);
             float cloudDensity = smoothstep(0.4, 0.7, cloudNoise);
             
             // Different cloud colors based on planet type
@@ -637,9 +665,10 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
             if (st == 20 || st == 18) cloudCol = vec3(0.8, 0.7, 0.4); // Sulfuric/Ash
             else if (st == 14 || st == 25) cloudCol = vec3(0.3, 0.8, 0.2); // Hive/Bio-haze
             else if (st == 21) cloudCol = vec3(0.6, 0.3, 0.8); // Psionic
+            else if (st == 1) cloudCol = vec3(0.85, 0.75, 0.6); // Sandstorms
             
             float shadow = smoothstep(0.3, -0.1, nDotL) * 0.4;
-            gl_FragColor = vec4(cloudCol * (diff + 0.1), cloudDensity * (1.0 - shadow));
+            gl_FragColor = vec4(cloudCol * (diff + 0.15), cloudDensity * (1.0 - shadow));
             return;
           }
 

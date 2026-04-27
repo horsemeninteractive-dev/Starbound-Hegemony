@@ -66,17 +66,17 @@ function SkyboxMaterial({ tint }: { tint: [number, number, number] }) {
         void main() {
           // Create smooth, non-grainy "clouds" using simple trigonometric combinations
           // This avoids the grain inherent in pseudo-random noise functions.
-          float pulse = Math.sin(vNormal.x * 2.0 + uTime * 0.1) * Math.cos(vNormal.z * 2.0 - uTime * 0.08);
+          float pulse = sin(vNormal.x * 2.0 + uTime * 0.1) * cos(vNormal.z * 2.0 - uTime * 0.08);
           float clouds = pow(max(0.0, pulse * 0.5 + 0.5), 3.0);
           
           // Add a horizon glow
           float horizon = 1.0 - abs(vNormal.y);
           clouds += pow(horizon, 4.0) * 0.2;
 
-          vec3 nebula = uTint * clouds * 0.4 * SKYBOX_INTENSITY;
+          vec3 nebula = uTint * clouds * 0.4 * ${SKYBOX_INTENSITY.toFixed(2)};
           gl_FragColor = vec4(nebula, 1.0);
         }
-      `.replace('Math.sin', 'sin').replace('Math.cos', 'cos')} // Fix for template literal confusion
+      `}
     />
   );
 }

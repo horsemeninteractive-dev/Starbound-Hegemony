@@ -412,7 +412,23 @@ function ContestStatusRing({ contest }: { contest: ContestState }) {
   );
 }
 
-function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocused, focusedBodyId, onSelect, onSelectBody, filters, isExplored, isKnown, isPlayerHere, isMobilePanelExpanded, quality }: any) {
+function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocused, focusedBodyId, onSelect, onSelectBody, filters, isExplored, isKnown, isPlayerHere, isMobilePanelExpanded, quality }: {
+  system: StarSystem;
+  galaxy: Galaxy;
+  view: ViewMode;
+  controlsRef: any;
+  isFocused: boolean;
+  isBodyFocused: boolean;
+  focusedBodyId: string | null;
+  onSelect: () => void;
+  onSelectBody: (id: string) => void;
+  filters: FilterState;
+  isExplored: boolean;
+  isKnown: boolean;
+  isPlayerHere: boolean;
+  isMobilePanelExpanded: boolean;
+  quality: "low" | "medium" | "high";
+}) {
   const { camera } = useThree();
   const starGroupRef = useRef<THREE.Group>(null);
   const htmlGroupRef = useRef<THREE.Group>(null);
@@ -1365,7 +1381,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     const sY = view === 'galaxy' ? 0 : viewedSystem.pos[1];
     const sZ = view === 'galaxy' ? 0 : viewedSystem.pos[2];
     
-    let globalPos = new THREE.Vector3();
+    const globalPos = new THREE.Vector3();
     let scale = 1;
     let engineColor = '#00ffff';
     let engineIntensity = 0.4;
@@ -1529,7 +1545,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
 
     // Orient ship toward velocity
     const velocity = globalPos.clone().sub(prevPosRef.current);
-    if (velocity.lengthSq() > 0.0001) {
+    if (velocity.lengthSq() > 1e-8) {
       const dir = velocity.clone().normalize();
       // Ship forward is +Z in this geometry
       const quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
@@ -1858,40 +1874,48 @@ function EmpireTerritoryRings({ galaxy, fogOfWar, knownSystemIds }: {
       {entries.map(({ sys, segments }) => {
         const starRadius = STAR_BASE_SIZE[sys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
         const innerR = starRadius * 1.8;
-        const midR = starRadius * 2.2;
-        const outerR = starRadius * 3.5;
+        const ringThickness = 1.2;
+        const midR = innerR + ringThickness;
+        const outerR = midR + 3.5;
         
         const dominantColor = new THREE.Color().setHSL(segments[0].empire.hue / 360, 0.72, 0.55);
         let currentAngle = 0;
 
         return (
-          <group key={sys.id} position={[sys.pos[0], sys.pos[1] + 1.5, sys.pos[2]]}>
+          <group key={sys.id} position={[sys.pos[0], sys.pos[1] + 2.0, sys.pos[2]]}>
+            {/* Background Black Ring (Separator) - shifted slightly down */}
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]}>
+              <ringGeometry args={[innerR - 0.1, midR + 0.1, 64]} />
+              <meshBasicMaterial color="#000000" transparent={false} depthWrite={true} />
+            </mesh>
             {/* Proportional Segments */}
             {segments.map((seg) => {
-              const thetaLength = seg.proportion * Math.PI * 2;
+              const gap = 0.04; // Small angular gap
+              const thetaLength = Math.max(0.01, seg.proportion * Math.PI * 2 - gap);
               const color = new THREE.Color().setHSL(seg.empire.hue / 360, 0.72, 0.55);
               
-              // Force fully opaque material with no transparency flags
               const segment = (
-                <mesh key={seg.empire.id} rotation={[-Math.PI / 2, 0, currentAngle]}>
+                <mesh key={seg.empire.id} rotation={[-Math.PI / 2, 0, currentAngle + gap / 2]}>
                   <ringGeometry args={[innerR, midR, 64, 1, 0, thetaLength]} />
                   <meshBasicMaterial 
                     color={color} 
                     transparent={false} 
                     opacity={1.0}
-                    side={THREE.DoubleSide} 
                     depthWrite={true}
                     depthTest={true}
+                    polygonOffset={true}
+                    polygonOffsetFactor={-4} 
+                    polygonOffsetUnits={-4}
                     toneMapped={false}
                   />
                 </mesh>
               );
-              currentAngle += thetaLength;
+              currentAngle += seg.proportion * Math.PI * 2;
               return segment;
             })}
 
-            {/* Outer Influence Glow of dominant owner */}
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]}>
+            {/* Outer Influence Glow of dominant owner - shifted further down */}
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.2, 0]}>
               <ringGeometry args={[midR, outerR, 64]} />
               <meshBasicMaterial 
                 color={dominantColor} 

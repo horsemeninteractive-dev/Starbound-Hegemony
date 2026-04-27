@@ -17,7 +17,7 @@ const LAYER_ORDER: { key: DisplayLayer; label: string; views?: string[] }[] = [
   { key: "sectorBorders", label: "Sector Borders",  views: ["galaxy"] },
   { key: "sectorLabels",  label: "Sector Labels",   views: ["galaxy"] },
   { key: "empireColors",  label: "Empire Territory",views: ["galaxy", "system", "body"] },
-  { key: "objectLabels",  label: "Object Labels",   views: ["galaxy", "system"] },
+  { key: "objectLabels",  label: "Object Labels",   views: ["galaxy", "system", "body"] },
   { key: "habitableZones",label: "Habitable Zones", views: ["system", "body"] },
   { key: "orbitPaths",    label: "Orbit Paths",     views: ["system", "body"] },
   { key: "weatherSystems",label: "Weather Systems", views: ["body"] },

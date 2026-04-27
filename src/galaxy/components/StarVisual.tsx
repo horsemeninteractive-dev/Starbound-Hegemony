@@ -6,7 +6,7 @@
 // white dwarf: tiny intense sphere
 
 import { useRef, useMemo } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, ThreeEvent } from "@react-three/fiber";
 import { Billboard } from "@react-three/drei";
 import * as THREE from "three";
 import type { StarType } from "@/galaxy/types";
@@ -20,9 +20,9 @@ interface Props {
   detailed?: boolean;
   grayscale?: boolean;
   quality?: "low" | "medium" | "high";
-  onClick?: (e: any) => void;
-  onPointerOver?: (e: any) => void;
-  onPointerOut?: (e: any) => void;
+  onClick?: (e: ThreeEvent<MouseEvent>) => void;
+  onPointerOver?: (e: ThreeEvent<MouseEvent>) => void;
+  onPointerOut?: (e: ThreeEvent<MouseEvent>) => void;
 }
 
 export function StarVisual({ type, scale = 1, detailed = false, grayscale = false, quality = "high", onClick, onPointerOver, onPointerOut }: Props) {

@@ -676,31 +676,50 @@ export function generateGalaxy(seed: number = 42, opts?: {
 
   for (let i = 0; i < remainingCount; i++) {
     const t = i / remainingCount;
-    let pos: [number, number, number];
+    let pos: [number, number, number] = [0, 0, 0];
+    let attempts = 0;
+    let valid = false;
+    const minDist = 120; // Minimum distance to prevent visual overlap on map
 
-    if (t < 0.25) {
-      // Bulge Distribution: Uniform random within bulge radius, but OUTSIDE inner rim
-      const minBulge = 550;
-      const r = minBulge + rng() * (bulgeRadius - 20); // Distribution between 100 and 190
-      const angle = rng() * Math.PI * 2;
-      pos = [
-        Math.cos(angle) * r,
-        (rng() - 0.5) * 15,
-        Math.sin(angle) * r,
-      ];
-    } else {
-      // Spiral Arms: Fibonacci spiral with jitter
-      const spiralT = (t - 0.25) / 0.75;
-      const arm = i % spiralArms;
-      const angle = spiralT * Math.PI * 6 + (arm * Math.PI * 2) / spiralArms;
-      const r = 1100 + spiralT * 3200; // Arms start at 1100 and go to 4300
-      const jitter = armWidth * (1.0 - spiralT * 0.3);
-      
-      pos = [
-        Math.cos(angle) * r + (rng() - 0.5) * jitter,
-        (rng() - 0.5) * 10,
-        Math.sin(angle) * r + (rng() - 0.5) * jitter,
-      ];
+    while (!valid && attempts < 15) {
+      attempts++;
+      if (t < 0.25) {
+        // Bulge Distribution
+        const minBulge = 550;
+        const r = minBulge + rng() * (bulgeRadius - minBulge - 20);
+        const angle = rng() * Math.PI * 2;
+        pos = [
+          Math.cos(angle) * r,
+          (rng() - 0.5) * 15,
+          Math.sin(angle) * r,
+        ];
+      } else {
+        // Spiral Arms
+        const spiralT = (t - 0.25) / 0.75;
+        const arm = i % spiralArms;
+        const angle = spiralT * Math.PI * 6 + (arm * Math.PI * 2) / spiralArms;
+        const r = bulgeRadius + 200 + spiralT * 3200;
+        const jitter = armWidth * (1.0 - spiralT * 0.3);
+        
+        pos = [
+          Math.cos(angle) * r + (rng() - 0.5) * jitter,
+          (rng() - 0.5) * 10,
+          Math.sin(angle) * r + (rng() - 0.5) * jitter,
+        ];
+      }
+
+      // Poisson-ish check
+      valid = true;
+      for (let j = 0; j < systems.length; j++) {
+        const other = systems[j];
+        const dx = pos[0] - other.pos[0];
+        const dz = pos[2] - other.pos[2];
+        const dSq = dx * dx + dz * dz;
+        if (dSq < minDist * minDist) {
+          valid = false;
+          break;
+        }
+      }
     }
 
     const starType = weightedPick(rng, STAR_WEIGHTS);

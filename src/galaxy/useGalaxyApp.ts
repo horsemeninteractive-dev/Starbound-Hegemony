@@ -21,7 +21,16 @@ const ALL_ECON: EconomicStatus[] = ["boom", "stable", "recession", "blockaded", 
 const ALL_STAR: StarType[] = ["O", "B", "A", "F", "G", "K", "M", "whitedwarf", "neutron", "pulsar", "binary", "blackhole", "whitehole", "quasar", "magnetar", "protostar", "dyson_swarm"];
 const ALL_LAYERS: DisplayLayer[] = ["hyperlanes", "sectorBorders", "sectorLabels", "objectLabels", "habitableZones", "orbitPaths", "weatherSystems", "cityLights", "empireColors"];
 
-export function useGalaxyApp(seed = 42) {
+import avatar from "@/assets/avatar.png";
+import avatar_alt1 from "@/assets/avatar_alt1.png";
+import avatar_alt2 from "@/assets/avatar_alt2.png";
+
+export function useGalaxyApp(initialSeed = 20260423) {
+  const [seed, setSeed] = useState(() => {
+    const saved = localStorage.getItem("galaxy_seed");
+    return saved ? Number(saved) : initialSeed;
+  });
+
   const galaxy: Galaxy = useMemo(() => generateGalaxy(seed), [seed]);
 
   const [view, setView] = useState<ViewMode>(() => (localStorage.getItem("view") as ViewMode) ?? "galaxy");
@@ -31,8 +40,8 @@ export function useGalaxyApp(seed = 42) {
   const [exploredSystemIds, setExploredSystemIds] = useState<Set<string>>(
     () => new Set(JSON.parse(localStorage.getItem("exploredIds") ?? '["sys-center"]'))
   );
-  const [fogOfWar, setFogOfWar] = useState(true);
-  const [instantJump, setInstantJump] = useState(false);
+  const [fogOfWar, setFogOfWarState] = useState(() => localStorage.getItem("fogOfWar") !== "false");
+  const [instantJump, setInstantJumpState] = useState(() => localStorage.getItem("instantJump") === "true");
   
   const [travel, setTravel] = useState<{ targetId: string; startTime: number; endTime: number } | null>(() => {
     const saved = localStorage.getItem("travel");
@@ -46,13 +55,32 @@ export function useGalaxyApp(seed = 42) {
   const [playerName, setPlayerName] = useState(() => localStorage.getItem("playerName") ?? "Majora");
   const [playerLevel, setPlayerLevel] = useState(() => Number(localStorage.getItem("playerLevel") ?? 1));
   const [playerXP, setPlayerXP] = useState(() => Number(localStorage.getItem("playerXP") ?? 0));
-  const [playerAvatar, setPlayerAvatar] = useState(() => localStorage.getItem("playerAvatar") ?? "/src/assets/avatar.png");
-  const [page, setPage] = useState<"map" | "profile">("map");
+  const [playerAvatar, setPlayerAvatar] = useState(() => localStorage.getItem("playerAvatar") ?? avatar);
+  const [page, setPage] = useState<"map" | "profile" | "articles" | "factories" | "fleets" | "party" | "skills">("map");
   const [systemId, setSystemId] = useState<string | null>(() => localStorage.getItem("systemId"));
   const [bodyId, setBodyId] = useState<string | null>(() => localStorage.getItem("bodyId"));
   const [hoverSystemId, setHoverSystemId] = useState<string | null>(null);
 
   const [onboardingCompleted, setOnboardingCompleted] = useState(() => localStorage.getItem("onboardingCompleted") === "true");
+
+  const setFogOfWar = (v: boolean) => {
+    setFogOfWarState(v);
+    localStorage.setItem("fogOfWar", String(v));
+  };
+
+  const setInstantJump = (v: boolean) => {
+    setInstantJumpState(v);
+    localStorage.setItem("instantJump", String(v));
+  };
+
+  const regenerateGalaxy = () => {
+    const newSeed = Math.floor(Math.random() * 1000000);
+    setSeed(newSeed);
+    localStorage.setItem("galaxy_seed", String(newSeed));
+    toast.success("Galaxy regenerated", {
+      description: `New Seed: ${newSeed}. Coordinates shifted.`
+    });
+  };
 
   // Persist state to localStorage
   useEffect(() => { localStorage.setItem("playerSystemId", playerSystemId); }, [playerSystemId]);
@@ -320,6 +348,8 @@ export function useGalaxyApp(seed = 42) {
     setFogOfWar,
     instantJump,
     setInstantJump,
+    regenerateGalaxy,
+    seed,
     ap,
     setAp,
     sc,
