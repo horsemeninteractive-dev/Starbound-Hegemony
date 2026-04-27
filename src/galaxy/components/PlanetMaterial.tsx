@@ -15,9 +15,11 @@ interface Props {
   showCityLights?: boolean;
   isWeather?: boolean;
   quality?: "low" | "medium" | "high";
+  terrainSeed?: number;
+  geographyType?: "pangaea" | "continental" | "islands";
 }
 
-export function PlanetMaterial({ color, type, size, subtype, hue, landColor, seaColor, lightDir, showWeather, showCityLights, isWeather, quality = "high" }: Props) {
+export function PlanetMaterial({ color, type, size, subtype, hue, landColor, seaColor, lightDir, showWeather, showCityLights, isWeather, quality = "high", terrainSeed, geographyType }: Props) {
   const uniforms = useMemo(() => {
     return {
       uColor: { value: new THREE.Color("#ffffff") },
@@ -29,7 +31,9 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
       uShowWeather: { value: 1.0 },
       uShowCityLights: { value: 1.0 },
       uIsWeather: { value: 0.0 },
-      uQuality: { value: 2.0 }
+      uQuality: { value: 2.0 },
+      uTerrainSeed: { value: 0.0 },
+      uGeographyType: { value: 0.0 } // 0: continental, 1: pangaea, 2: islands
     };
   }, []); // Stable reference
 
@@ -47,7 +51,9 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
     uniforms.uShowCityLights.value = showCityLights !== false ? 1.0 : 0.0;
     uniforms.uIsWeather.value = isWeather ? 1.0 : 0.0;
     uniforms.uQuality.value = quality === "low" ? 0.0 : quality === "medium" ? 1.0 : 2.0;
-  }, [color, hue, landColor, seaColor, showWeather, showCityLights, isWeather, quality, uniforms]);
+    uniforms.uTerrainSeed.value = terrainSeed || 0.0;
+    uniforms.uGeographyType.value = geographyType === "pangaea" ? 1.0 : geographyType === "islands" ? 2.0 : 0.0;
+  }, [color, hue, landColor, seaColor, showWeather, showCityLights, isWeather, quality, terrainSeed, geographyType, uniforms]);
 
   const subtypeVal = useMemo(() => {
     const map: Record<string, number> = {
@@ -128,6 +134,8 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
         uniform float uShowCityLights;
         uniform float uIsWeather;
         uniform float uQuality;
+        uniform float uTerrainSeed;
+        uniform float uGeographyType;
 
         // --- NOISE FUNCTIONS ---
         vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -214,12 +222,11 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
           
           // Terrain height — use normalized position to ensure consistent detail regardless of mesh scale.
           // Scale 5.5 on a unit sphere gives continent-sized features (~6-8 per sphere).
-          vec3 p = normalize(vLocalPosition) * 5.5;
+          vec3 p = normalize(vLocalPosition) * 5.5 + uTerrainSeed * 0.12;
 
           // Domain warping (high quality only): warp the sample point by a secondary noise field.
-          // This folds the noise on itself, producing organic/fractal coastlines instead of round blobs.
-          // Initialize h with plain FBM first — GLSL requires initialization before conditional use.
           float h = fbm(p, 5) * 0.5 + 0.5;
+          
           if (uQuality > 1.5) {
             vec3 warp = vec3(
               fbm(p * 0.45 + vec3(1.3, 2.1, 0.7), 3),
@@ -227,6 +234,21 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
               fbm(p * 0.45 + vec3(7.1, 5.3, 1.9), 2)
             );
             h = fbm(p + warp * 1.8, 6) * 0.5 + 0.5;
+          }
+
+          // Geography Style Modifiers
+          if (uGeographyType > 0.5 && uGeographyType < 1.5) { 
+            // 1.0 = PANGAEA: Single massive landmass
+            // Use low-frequency noise as a "continent mask"
+            float mask = snoise(normalize(vLocalPosition) * 1.1 + uTerrainSeed * 0.04);
+            // Push everything down except for the mask's "hot spot"
+            h = mix(h * 0.4, h * 1.2, smoothstep(-0.25, 0.35, mask));
+          } else if (uGeographyType > 1.5) { 
+            // 2.0 = ISLANDS: Many small archipelagos
+            // Use high-frequency noise and sharpen the peaks
+            float islandNoise = fbm(p * 2.2, 4);
+            h = mix(h, islandNoise, 0.6);
+            h = pow(h, 2.4) * 1.45; // Steep drop-offs, only sharp peaks stay above sea level
           }
           
           vec3 surfaceColor;
@@ -558,18 +580,12 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
              }
              atmoDensity = 0.0; roughness = 0.95;
 
-          // 24: Shielded, 32: Station
-          } else if (st == 24 || st == 32) {
+          // 32: Station
+          } else if (st == 32) {
              float panels = step(0.95, fract(vUv.x * 20.0)) + step(0.95, fract(vUv.y * 20.0));
-             if (st == 24) { // Shielded: Hex grid over a world
-                surfaceColor = mix(vec3(0.2, 0.3, 0.4), vec3(0.0, 0.8, 1.0), panels);
-                cityGlow = vec3(0.0, 0.8, 1.0) * panels * 2.0; atmoColor = vec3(0.0, 0.8, 1.0); atmoDensity = 0.5;
-             } else { // Station
-                surfaceColor = mix(vec3(0.4, 0.42, 0.45), vec3(0.2, 0.22, 0.25), panels);
-                if (uShowCityLights > 0.5) cityGlow = vec3(1.0, 0.8, 0.5) * panels * 2.0;
-                atmoDensity = 0.0; roughness = 0.4;
-             }
-             
+             surfaceColor = mix(vec3(0.4, 0.42, 0.45), vec3(0.2, 0.22, 0.25), panels);
+             if (uShowCityLights > 0.5) cityGlow = vec3(1.0, 0.8, 0.5) * panels * 2.0;
+             atmoDensity = 0.0; roughness = 0.4;
           // 29, 30: Moons, 34: Rogue
           } else {
              float rockBase = fbm(p * 4.0, 5);

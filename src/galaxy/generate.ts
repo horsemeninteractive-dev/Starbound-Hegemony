@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import {
   Body, BodyType, ContestState, EconomicStatus, Empire,
-  Galaxy, Hyperlane, JumpGate, Sector, StarSystem, StarType, PlanetSubtype,
+  Galaxy, Hyperlane, JumpGate, Sector, StarSystem, StarType, PlanetSubtype, ResourceDeposit,
 } from "./types";
 import { mulberry32, pick, randInt, weightedPick, sectorName, systemName, planetName, moonName, Rng } from "./rng";
 
@@ -21,19 +21,45 @@ const ECON_WEIGHTS: [EconomicStatus, number][] = [
   ["stable", 50], ["boom", 14], ["recession", 18], ["blockaded", 5], ["untapped", 13],
 ];
 
-const EMPIRE_NAMES: { name: string; tag: string; hue: number }[] = [
-  { name: "Hegemony Sovereign", tag: "HSO", hue: 185 },
-  { name: "Vorlan Concordat", tag: "VLC", hue: 28 },
-  { name: "Crimson Pact", tag: "CMP", hue: 358 },
-  { name: "Ashen Directorate", tag: "ASD", hue: 280 },
-  { name: "Mira League", tag: "MRL", hue: 145 },
-  { name: "Sable Throne", tag: "SBT", hue: 320 },
-  { name: "Korren Combine", tag: "KRC", hue: 50 },
-  { name: "Free Drift Cooperative", tag: "FDC", hue: 200 },
+const EMPIRE_PREFIXES = [
+  "United", "Imperial", "Grand", "Divine", "Holy", "Zenith", "Omega", "Alpha", 
+  "Sovereign", "Celestial", "Interstellar", "Galactic", "Solar", "Lunar", 
+  "Stellar", "Cosmic", "Astral", "Eternal", "Iron", "Gold", "Void",
+  "Shadow", "Crystal", "Nebula", "Star", "Core", "Rim", "Nexus", "Techno",
+  "Xenon", "Prime", "Ancient", "Vanguard", "Sentinel", "Scion"
+];
+const EMPIRE_NOUNS = [
+  "Hegemony", "Republic", "Empire", "Alliance", "Federation", "Union", "League",
+  "Directorate", "Concordat", "Syndicate", "Combine", "Corp", "Cartel",
+  "Pact", "Covenant", "Dominion", "Kingdom", "Sovereignty", "Council", "Assembly",
+  "Collective", "Swarm", "Consensus", "Authority", "Throne", "State", "Coalition",
+  "Accord", "Order", "Foundry", "Network", "Hierarchy", "Dominance"
 ];
 
-function buildEmpires(): Empire[] {
-  return EMPIRE_NAMES.map((e, i) => ({ id: `emp-${i}`, ...e }));
+function buildEmpires(rng: Rng): Empire[] {
+  const count = 36;
+  const empires: Empire[] = [];
+  const usedTags = new Set<string>();
+
+  for (let i = 0; i < count; i++) {
+    const pre = pick(rng, EMPIRE_PREFIXES);
+    const noun = pick(rng, EMPIRE_NOUNS);
+    const name = `${pre} ${noun}`;
+    
+    // Generate a unique 3-letter tag
+    let tag = (pre[0] + noun[0] + noun[noun.length - 1]).toUpperCase();
+    if (usedTags.has(tag)) tag = (pre[0] + pre[1] + noun[0]).toUpperCase();
+    if (usedTags.has(tag)) tag = (pre[0] + noun[0] + String.fromCharCode(65 + (i % 26))).toUpperCase();
+    usedTags.add(tag);
+
+    empires.push({
+      id: `emp-${i}`,
+      name,
+      tag,
+      hue: (i * (360 / count)) % 360, // Distributed hues
+    });
+  }
+  return empires;
 }
 
 /** Place sectors as gaussian blobs in a disk; then drop systems inside each sector. */
@@ -131,7 +157,10 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
         hue: Math.floor(rng() * 360),
         ownerId: null,
         population: 0,
-        resources: ["Exotic Matter", "Radiogenic Elements"],
+        deposits: [
+          { resource: "Exotic Matter", richness: "moderate", depleted: false },
+          { resource: "Radiogenic Elements", richness: "rich", depleted: false }
+        ],
         economy: "untapped",
         children: [],
         temperature: 8000 + Math.floor(rng() * 4000),
@@ -163,7 +192,9 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
         hue: 50,
         ownerId: null,
         population: isStation ? Math.floor(rng() * 50) / 10 : 0,
-        resources: ["Solar Energy", "Exotic Technology"],
+        deposits: [
+          { resource: isStation ? "Exotic Technology" : "Solar Energy", richness: "abundant", depleted: false }
+        ],
         economy: "boom",
         children: [],
         temperature: 300,
@@ -181,7 +212,8 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
   const luminosity = STAR_LUMINOSITY[starType];
   const cappedLuminosity = Math.min(luminosity, 5.0); // cap at F-star luminosity for orbit scaling
 
-  let orbit = 8 + STAR_BASE_SIZE[starType] * 2.0;
+  // Base starting distance scales with star size to ensure no planets overlap the star surface
+  let orbit = STAR_BASE_SIZE[starType] * 2.2 + randInt(rng, 10, 20);
   
   for (let i = 0; i < planetCount; i++) {
     // Spacing scales with luminosity but capped so ultra-bright stars don't produce invisible orbits
@@ -204,7 +236,9 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
     if (orbit < hotEnd) zone = "hot";
     else if (orbit < tempEnd) zone = "temperate";
     
-    let subtype: Body["subtype"];
+    let isShielded = false;
+    let subtype: PlanetSubtype = "barren";
+    
     if (isGas) {
       if (zone === "hot") subtype = "gas_giant_hot";
       else if (zone === "cold") subtype = "gas_giant_cold";
@@ -212,24 +246,34 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
     } else {
       const isExotic = rng() < 0.05; // 5% chance of a special world
       
+      // Handle base subtype selection first
       if (zone === "hot") {
-        if (isExotic) subtype = weightedPick(rng, [["shattered", 30], ["broken", 30], ["shielded", 20], ["nanite", 20]]);
-        else subtype = weightedPick(rng, [["molten", 40], ["toxic", 40], ["barren", 20]]);
+        subtype = weightedPick(rng, [["molten", 40], ["toxic", 40], ["barren", 20]]) as PlanetSubtype;
+        if (isExotic) {
+          const special = weightedPick(rng, [["shattered", 35], ["broken", 35], ["shielded", 30]]);
+          if (special === "shielded") isShielded = true;
+          else subtype = special as PlanetSubtype;
+        }
       } else if (zone === "cold") {
-        if (isExotic) subtype = weightedPick(rng, [["shrouded", 50], ["infested", 50]]);
-        else subtype = weightedPick(rng, [["frozen", 60], ["barren", 40]]);
+        subtype = weightedPick(rng, [["frozen", 60], ["barren", 40]]) as PlanetSubtype;
+        if (isExotic) {
+          const special = weightedPick(rng, [["shrouded", 40], ["infested", 40], ["shielded", 20]]);
+          if (special === "shielded") isShielded = true;
+          else subtype = special as PlanetSubtype;
+        }
       } else {
         // Temperate zone (Habitable!)
         if (isExotic) {
-          subtype = weightedPick(rng, [["gaia", 25], ["relic", 20], ["ecumenopolis", 15], ["tomb", 15], ["hive", 10], ["machine", 15]]);
+          const special = weightedPick(rng, [["gaia", 25], ["relic", 20], ["ecumenopolis", 15], ["tomb", 15], ["hive", 10], ["machine", 15]]);
+          subtype = special as PlanetSubtype;
+          if (rng() < 0.2) isShielded = true; // Extra chance for shielded temperate worlds
         } else {
-          // Sub-divide temperate zone for variety: Inner (Dry), Mid (Temperate), Outer (Cold)
+          // Sub-divide temperate zone for variety
           const range = tempEnd - hotEnd;
           const relPos = (orbit - hotEnd) / range;
-          
-          if (relPos < 0.33) subtype = weightedPick(rng, [["desert", 40], ["arid", 40], ["savanna", 20]]);
-          else if (relPos < 0.66) subtype = weightedPick(rng, [["continental", 40], ["ocean", 40], ["tropical", 20]]);
-          else subtype = weightedPick(rng, [["arctic", 40], ["tundra", 40], ["alpine", 20]]);
+          if (relPos < 0.33) subtype = weightedPick(rng, [["desert", 40], ["arid", 40], ["savanna", 20]]) as PlanetSubtype;
+          else if (relPos < 0.66) subtype = weightedPick(rng, [["continental", 40], ["ocean", 40], ["tropical", 20]]) as PlanetSubtype;
+          else subtype = weightedPick(rng, [["arctic", 40], ["tundra", 40], ["alpine", 20]]) as PlanetSubtype;
         }
       }
     }
@@ -264,11 +308,12 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
       subtype,
       orbit,
       phase: rng() * Math.PI * 2,
-      size: isGas ? 1.8 + rng() * 1.5 : 0.7 + rng() * 0.8,
+      size: isGas ? 1.4 + rng() * 1.2 : 0.6 + rng() * 0.7,
       hue: Math.floor(rng() * 360),
+      isShielded,
       ownerId: null,
       population: type === "terrestrial" ? Math.floor(rng() * 12000) / 10 : 0,
-      resources: pickResources(rng, type),
+      deposits: pickResources(rng, type),
       economy: weightedPick(rng, ECON_WEIGHTS),
       children: [],
       temperature: temp,
@@ -323,7 +368,9 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
         hue: 30 + Math.floor(rng() * 60),
         ownerId: null,
         population: 0,
-        resources: moonSubtype === "molten" ? ["Ore", "Crystals"] : ["Ore", "Silicates"],
+        deposits: moonSubtype === "molten" 
+          ? [{ resource: "Ore", richness: "moderate", depleted: false }, { resource: "Crystals", richness: "trace", depleted: false }]
+          : [{ resource: "Ore", richness: "trace", depleted: false }, { resource: "Silicates", richness: "moderate", depleted: false }],
         economy: "untapped",
         temperature: moonTemp,
         habitabilityZone: planet.habitabilityZone,
@@ -334,9 +381,14 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
         seaColor: undefined,
         atmosphere: getAtmosphere(moonSubtype, planet.habitabilityZone),
         hasRings: false,
+        terrainSeed: rng() * 10000,
       };
       planet.children!.push(moon);
       bodies.push(moon);
+    }
+    planet.terrainSeed = rng() * 10000;
+    if (isHabitable) {
+      planet.geographyType = weightedPick(rng, [["continental", 50], ["pangaea", 25], ["islands", 25]]);
     }
     bodies.push(planet);
   }
@@ -359,7 +411,7 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
         hue: 30,
         ownerId: null,
         population: 0,
-        resources: ["Ore"],
+        deposits: [{ resource: "Ore", richness: "moderate", depleted: false }],
         economy: "untapped",
         temperature: 150,
         habitabilityZone: "cold",
@@ -384,7 +436,7 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
       hue: 180,
       ownerId: null,
       population: Math.floor(rng() * 20) / 10,
-      resources: ["Trade Hub"],
+      deposits: [{ resource: "Trade Hub", richness: "abundant", depleted: false }],
       economy: "stable",
       temperature: 290,
       habitabilityZone: "temperate",
@@ -397,15 +449,23 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
   return bodies;
 }
 
-function pickResources(rng: Rng, type: BodyType): string[] {
+function pickResources(rng: Rng, type: BodyType): ResourceDeposit[] {
   const pool = type === "gas_giant"
     ? ["Helium-3", "Energy Crystals", "Hydrogen"]
     : ["Ore", "Organics", "Rare Earths", "Silicates", "Water Ice"];
   const count = randInt(rng, 1, 3);
-  const out: string[] = [];
+  const out: ResourceDeposit[] = [];
+  const richnessLevels: ResourceDeposit["richness"][] = ["trace", "moderate", "significant", "rich", "abundant"];
+  
   for (let i = 0; i < count; i++) {
     const p = pick(rng, pool);
-    if (!out.includes(p)) out.push(p);
+    if (!out.some(d => d.resource === p)) {
+      out.push({
+        resource: p,
+        richness: pick(rng, richnessLevels),
+        depleted: false
+      });
+    }
   }
   return out;
 }
@@ -470,7 +530,7 @@ function attachJumpGates(systems: StarSystem[], lanes: Hyperlane[]) {
     if (!a || !b) continue;
 
     // Bidirectional gates — both systems get a gate to each other
-    a.gates.push({ id: `${lane.id}-g0`, systemId: a.id, targetSystemId: b.id, ownerId: null, toll: 0 });
+a.gates.push({ id: `${lane.id}-g0`, systemId: a.id, targetSystemId: b.id, ownerId: null, toll: 0 });
     // Return gates to the central white hole are locked — the structure exists but is non-traversable
     const returnLocked = a.id === "sys-center";
     b.gates.push({ id: `${lane.id}-g1`, systemId: b.id, targetSystemId: a.id, ownerId: null, toll: 0, locked: returnLocked });
@@ -478,56 +538,70 @@ function attachJumpGates(systems: StarSystem[], lanes: Hyperlane[]) {
 }
 
 function assignOwnership(rng: Rng, systems: StarSystem[], empires: Empire[]) {
-  // Empires claim contiguous-ish blobs by picking seed systems then nearest neighbours.
   const remaining = new Set(systems.map((s) => s.id));
   
   for (const emp of empires) {
     const seed = pick(rng, [...remaining]);
     if (!seed) continue;
     
-    // Claim a blob of systems
-    const claimSize = randInt(rng, 10, 20);
+    // Claim a blob of systems — empires are now more aggressive
+    const claimSize = randInt(rng, 8, 16);
     const queue = [seed];
     const claimedInThisBlob: string[] = [];
     
     while (queue.length && claimedInThisBlob.length < claimSize) {
       const id = queue.shift()!;
-      if (!remaining.has(id)) continue;
-      remaining.delete(id);
-      claimedInThisBlob.push(id);
-      
       const sys = systems.find((s) => s.id === id)!;
+      if (!sys) continue;
+
+      // Even if already 'claimed' by someone else's seed, we can still contest it
+      const alreadyClaimed = !remaining.has(id);
       
-      // Ownership types: Fully Owned (100%), Mostly Owned (80%), or Contested (30-50%)
+      // Ownership types: High Control or Heavy Contestation
       const mode = rng();
       
       for (const body of sys.bodies) {
         if (body.type === "terrestrial" || body.type === "gas_giant" || body.type === "station") {
-          if (mode > 0.4) {
-            // HIGH OWNERSHIP (Satisfies 75% rule)
-            body.ownerId = emp.id;
-          } else if (mode > 0.15) {
-            // MIXED/CONTESTED
-            if (rng() < 0.4) body.ownerId = emp.id;
-            else if (rng() < 0.3) {
-              // Pick a different empire for contestation
-              const other = empires[(empires.indexOf(emp) + 1) % empires.length];
-              body.ownerId = other.id;
+          // If the system was already claimed, we have a high chance of creating a contested environment
+          if (alreadyClaimed) {
+            if (rng() < 0.4) body.ownerId = emp.id; // Ninja some bodies
+          } else {
+            // New territory
+            if (mode > 0.4) {
+              // SOLID CONTROL (90% ownership of bodies)
+              if (rng() < 0.9) body.ownerId = emp.id;
+            } else {
+              // SHARED CONTROL
+              if (rng() < 0.5) body.ownerId = emp.id;
+              else if (rng() < 0.4) {
+                const other = empires[randInt(rng, 0, empires.length - 1)];
+                body.ownerId = other.id;
+              }
             }
           }
         }
       }
 
-      // Expand to neighbors
+      if (remaining.has(id)) {
+        remaining.delete(id);
+        claimedInThisBlob.push(id);
+      }
+
+      // Expand to neighbours (even if already claimed, to create friction)
       const neighbours = systems
-        .filter((o) => remaining.has(o.id))
         .map((o) => {
           const d = Math.hypot(o.pos[0] - sys.pos[0], o.pos[2] - sys.pos[2]);
           return [o.id, d] as const;
         })
+        .filter(n => n[0] !== id && n[1] < 800)
         .sort((a, b) => a[1] - b[1])
-        .slice(0, 2);
-      for (const [nid] of neighbours) queue.push(nid);
+        .slice(0, 3);
+      
+      for (const [nid] of neighbours) {
+        if (!queue.includes(nid) && (remaining.has(nid) || rng() < 0.3)) {
+          queue.push(nid);
+        }
+      }
     }
   }
 
@@ -692,6 +766,24 @@ export function generateGalaxy(seed: number = 42, opts?: {
     nearestSector.systemIds.push(sys.id);
   }
 
+  // 2.5. Recalculate centroids for perfect label centering (average of all systems in sector)
+  const sectorSums = new Map<string, { x: number, y: number, z: number, count: number }>();
+  for (const sys of systems) {
+    if (!sys.sectorId) continue;
+    const current = sectorSums.get(sys.sectorId) || { x: 0, y: 0, z: 0, count: 0 };
+    current.x += sys.pos[0];
+    current.y += sys.pos[1];
+    current.z += sys.pos[2];
+    current.count++;
+    sectorSums.set(sys.sectorId, current);
+  }
+  for (const sec of sectors) {
+    const sum = sectorSums.get(sec.id);
+    if (sum && sum.count > 0) {
+      sec.centroid = [sum.x / sum.count, sum.y / sum.count, sum.z / sum.count];
+    }
+  }
+
   // 3. Link Z* to the 12 Inner Rim systems only
   const innerRimSystems = systems.filter(s => s.id.startsWith("sys-inner-"));
   
@@ -714,7 +806,7 @@ export function generateGalaxy(seed: number = 42, opts?: {
   }
   attachJumpGates(systems, hyperlanes);
 
-  const empires = buildEmpires();
+  const empires = buildEmpires(rng);
   assignOwnership(rng, systems, empires);
 
   const systemById = Object.fromEntries(systems.map((s) => [s.id, s]));

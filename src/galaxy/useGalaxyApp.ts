@@ -1,10 +1,12 @@
 // Central UI state for the map app. Galaxy data is generated once (deterministic).
 
 import { useMemo, useState, useCallback, useEffect } from "react";
+import { toast } from "sonner";
 import { generateGalaxy } from "./generate";
 import type { Galaxy, StarSystem, Body, ContestState, EconomicStatus, StarType } from "./types";
+import { STAR_BASE_SIZE } from "./meta";
 
-export type ViewMode = "galaxy" | "system" | "body";
+export type ViewMode = "galaxy" | "system" | "body" | "ship";
 export type DisplayLayer = "hyperlanes" | "sectorBorders" | "sectorLabels" | "objectLabels" | "habitableZones" | "orbitPaths" | "weatherSystems" | "cityLights" | "empireColors";
 
 export interface FilterState {
@@ -22,17 +24,68 @@ const ALL_LAYERS: DisplayLayer[] = ["hyperlanes", "sectorBorders", "sectorLabels
 export function useGalaxyApp(seed = 42) {
   const galaxy: Galaxy = useMemo(() => generateGalaxy(seed), [seed]);
 
-  const [view, setView] = useState<ViewMode>("galaxy");
-  const [playerSystemId, setPlayerSystemId] = useState<string>("sys-center");
-  const [exploredSystemIds, setExploredSystemIds] = useState<Set<string>>(new Set(["sys-center"]));
+  const [view, setView] = useState<ViewMode>(() => (localStorage.getItem("view") as ViewMode) ?? "galaxy");
+  const [playerSystemId, setPlayerSystemId] = useState<string>(
+    () => localStorage.getItem("playerSystemId") ?? "sys-center"
+  );
+  const [exploredSystemIds, setExploredSystemIds] = useState<Set<string>>(
+    () => new Set(JSON.parse(localStorage.getItem("exploredIds") ?? '["sys-center"]'))
+  );
   const [fogOfWar, setFogOfWar] = useState(true);
   const [instantJump, setInstantJump] = useState(false);
   
-  const [travel, setTravel] = useState<{ targetId: string; startTime: number; endTime: number } | null>(null);
+  const [travel, setTravel] = useState<{ targetId: string; startTime: number; endTime: number } | null>(() => {
+    const saved = localStorage.getItem("travel");
+    return saved ? JSON.parse(saved) : null;
+  });
   const [currentTime, setCurrentTime] = useState(Date.now());
 
-  const [ap, setAp] = useState(240);
-  const [sc, setSc] = useState(15200);
+  const [ap, setAp] = useState(() => Number(localStorage.getItem("ap") ?? 240));
+  const [sc, setSc] = useState(() => Number(localStorage.getItem("sc") ?? 15000));
+
+  const [playerName, setPlayerName] = useState(() => localStorage.getItem("playerName") ?? "Majora");
+  const [playerLevel, setPlayerLevel] = useState(() => Number(localStorage.getItem("playerLevel") ?? 1));
+  const [playerXP, setPlayerXP] = useState(() => Number(localStorage.getItem("playerXP") ?? 0));
+  const [playerAvatar, setPlayerAvatar] = useState(() => localStorage.getItem("playerAvatar") ?? "/src/assets/avatar.png");
+  const [page, setPage] = useState<"map" | "profile">("map");
+  const [systemId, setSystemId] = useState<string | null>(() => localStorage.getItem("systemId"));
+  const [bodyId, setBodyId] = useState<string | null>(() => localStorage.getItem("bodyId"));
+  const [hoverSystemId, setHoverSystemId] = useState<string | null>(null);
+
+  const [onboardingCompleted, setOnboardingCompleted] = useState(() => localStorage.getItem("onboardingCompleted") === "true");
+
+  // Persist state to localStorage
+  useEffect(() => { localStorage.setItem("playerSystemId", playerSystemId); }, [playerSystemId]);
+  useEffect(() => { localStorage.setItem("exploredIds", JSON.stringify([...exploredSystemIds])); }, [exploredSystemIds]);
+  useEffect(() => { localStorage.setItem("view", view); }, [view]);
+  useEffect(() => { 
+    if (systemId) localStorage.setItem("systemId", systemId);
+    else localStorage.removeItem("systemId");
+  }, [systemId]);
+  useEffect(() => { 
+    if (bodyId) localStorage.setItem("bodyId", bodyId);
+    else localStorage.removeItem("bodyId");
+  }, [bodyId]);
+  useEffect(() => { 
+    if (travel) localStorage.setItem("travel", JSON.stringify(travel));
+    else localStorage.removeItem("travel");
+  }, [travel]);
+
+  useEffect(() => { localStorage.setItem("ap", String(ap)); }, [ap]);
+  useEffect(() => { localStorage.setItem("sc", String(sc)); }, [sc]);
+  useEffect(() => { localStorage.setItem("playerName", playerName); }, [playerName]);
+  useEffect(() => { localStorage.setItem("playerLevel", String(playerLevel)); }, [playerLevel]);
+  useEffect(() => { localStorage.setItem("playerXP", String(playerXP)); }, [playerXP]);
+  useEffect(() => { localStorage.setItem("playerAvatar", playerAvatar); }, [playerAvatar]);
+  useEffect(() => { localStorage.setItem("onboardingCompleted", String(onboardingCompleted)); }, [onboardingCompleted]);
+
+  // AP regeneration tick: 10 AP/hour (~0.167 AP per minute)
+  useEffect(() => {
+    const t = setInterval(() => {
+      setAp(prev => Math.floor(Math.min(240, prev + 10/60)));
+    }, 60_000);
+    return () => clearInterval(t);
+  }, []);
 
   // Update clock for countdowns
   useEffect(() => {
@@ -41,9 +94,6 @@ export function useGalaxyApp(seed = 42) {
     return () => clearInterval(t);
   }, [travel]);
 
-  const [systemId, setSystemId] = useState<string | null>(null);
-  const [bodyId, setBodyId] = useState<string | null>(null);
-  const [hoverSystemId, setHoverSystemId] = useState<string | null>(null);
 
   const [filters, setFilters] = useState<FilterState>({
     contest: new Set(ALL_CONTEST),
@@ -59,7 +109,7 @@ export function useGalaxyApp(seed = 42) {
       return {
         id: "ship",
         systemId: system.id,
-        name: "HEG Flagship",
+        name: "Commander's Vessel",
         type: "ship",
         subtype: "commander",
         size: 0.0003,
@@ -78,6 +128,33 @@ export function useGalaxyApp(seed = 42) {
         fauna: "none",
         hazards: [],
         ownerId: "hegemony"
+      } as any as Body;
+    }
+    if (bodyId === "star") {
+      return {
+        id: "star",
+        systemId: system.id,
+        name: system.name,
+        type: "star",
+        subtype: system.starType,
+        size: STAR_BASE_SIZE[system.starType] || 2,
+        orbit: 0,
+        phase: 0,
+        hue: 0,
+        hasRings: false,
+        desc: `The central star of the ${system.name} system. A ${system.starType}-class main sequence stellar object.`,
+        resources: [],
+        structures: [],
+        population: 0,
+        economy: system.economy,
+        habitabilityZone: "hot",
+        temperature: 5000,
+        flora: "none",
+        fauna: "none",
+        hazards: ["Radiation", "Extreme Heat"],
+        ownerId: "hegemony",
+        deposits: [],
+        atmosphere: "Stellar Corona"
       } as any as Body;
     }
     return system.bodies.find((b) => b.id === bodyId) ?? null;
@@ -112,8 +189,26 @@ export function useGalaxyApp(seed = 42) {
     return known;
   }, [playerSystemId, galaxy, exploredSystemIds]);
 
+  const getJumpCost = useCallback((targetId: string) => {
+    const s1 = galaxy.systemById[playerSystemId];
+    const s2 = galaxy.systemById[targetId];
+    if (!s1 || !s2) return 0;
+    const dist = Math.hypot(s1.pos[0] - s2.pos[0], s1.pos[1] - s2.pos[1], s1.pos[2] - s2.pos[2]);
+    // Formula: 10 AP base + 1 AP per 30 scene units
+    return Math.floor(10 + dist / 30);
+  }, [galaxy, playerSystemId]);
+
   const initiateJump = useCallback((targetId: string) => {
     if (travel) return; // Already moving
+    
+    const cost = getJumpCost(targetId);
+    if (ap < cost) {
+      toast.error(`Insufficient AP! Jump requires ${cost} AP (Current: ${Math.floor(ap)})`, {
+        description: "AP regenerates at 10/hour while the ship is docked or idle."
+      });
+      return;
+    }
+
     const currentPos = galaxy.systemById[playerSystemId].pos;
     const targetPos = galaxy.systemById[targetId].pos;
     const dist = Math.hypot(currentPos[0] - targetPos[0], currentPos[1] - targetPos[1], currentPos[2] - targetPos[2]);
@@ -125,8 +220,10 @@ export function useGalaxyApp(seed = 42) {
     const subLightBuffer = 25; // Increased buffer for variable local transits
     const durationMs = instantJump ? 0 : (subLightBuffer + dist * 1.5) * 1000;
     const now = Date.now();
+    
+    setAp(prev => prev - cost);
     setTravel({ targetId, startTime: now, endTime: now + durationMs });
-  }, [playerSystemId, galaxy, travel, instantJump]);
+  }, [playerSystemId, galaxy, travel, instantJump, ap, getJumpCost]);
 
   // Arrive at destination
   useEffect(() => {
@@ -151,6 +248,11 @@ export function useGalaxyApp(seed = 42) {
   const openBody = useCallback((id: string) => {
     setBodyId(id);
     setView("body");
+  }, []);
+
+  const openShip = useCallback(() => {
+    setBodyId("ship");
+    setView("ship");
   }, []);
 
   const backToGalaxy = useCallback(() => {
@@ -190,17 +292,30 @@ export function useGalaxyApp(seed = 42) {
     setHoverSystemId,
     filters,
     toggleFilter,
+    knownSystemIds,
     systemMatchesFilter,
+    playerName,
+    setPlayerName,
+    playerLevel,
+    playerXP,
+    playerAvatar,
+    setPlayerAvatar,
+    onboardingCompleted,
+    setOnboardingCompleted,
+    setPage,
+    page,
+    xpToNextLevel: playerLevel * 1000,
     openSystem,
     openBody,
+    openShip,
     backToGalaxy,
     backToSystem,
     playerSystemId,
     travel,
+    getJumpCost,
     initiateJump,
     currentTime,
     exploredSystemIds,
-    knownSystemIds,
     fogOfWar,
     setFogOfWar,
     instantJump,

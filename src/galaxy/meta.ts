@@ -15,9 +15,9 @@ export interface StarMeta {
 }
 
 export const STAR_BASE_SIZE: Record<StarType, number> = {
-  O: 5.2, B: 4.4, A: 3.6, F: 3.0, G: 2.6, K: 2.2, M: 1.8,
-  whitedwarf: 1.0, neutron: 0.7, pulsar: 0.8, binary: 3.2, blackhole: 1.6, whitehole: 6.5,
-  quasar: 8.0, magnetar: 1.2, protostar: 4.5, dyson_swarm: 10.0,
+  O: 32.0, B: 24.0, A: 12.0, F: 6.0, G: 4.5, K: 3.2, M: 2.2,
+  whitedwarf: 0.8, neutron: 0.4, pulsar: 0.5, binary: 18.0, blackhole: 8.0, whitehole: 60.0,
+  quasar: 80.0, magnetar: 0.6, protostar: 12.0, dyson_swarm: 50.0,
 };
 
 export const STAR_MASS: Record<StarType, number> = {
@@ -82,4 +82,5 @@ export const BODY_META = {
   station: { label: "Station", icon: "⬡" },
   jump_gate: { label: "Jump Gate", icon: "⬢" },
   ship: { label: "Flagship", icon: "🚀" },
+  star: { label: "Star", icon: "★" },
 } as const;

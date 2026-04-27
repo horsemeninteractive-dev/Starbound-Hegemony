@@ -22,13 +22,14 @@ export function GalaxyOverview({ galaxy, hideHeader }: { galaxy: Galaxy; hideHea
 }
 
 /* ======================= SYSTEM OVERVIEW ======================= */
-export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, travel, initiateJump, currentTime, isExplored, hideHeader }: {
+export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, travel, initiateJump, getJumpCost, currentTime, isExplored, hideHeader }: {
   system: StarSystem;
   galaxy: Galaxy;
   onSelectBody: (id: string) => void;
   playerSystemId: string;
   travel: { targetId: string; startTime: number; endTime: number } | null;
   initiateJump: (id: string) => void;
+  getJumpCost: (id: string) => number;
   currentTime: number;
   isExplored: boolean;
   hideHeader?: boolean;
@@ -81,10 +82,13 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, t
       {!isCurrent && !travel && isAdjacent && (
         <button 
           onClick={() => initiateJump(system.id)}
-          className="w-full mt-4 bg-primary hover:bg-primary/80 text-background font-bold py-2 px-4 rounded text-xs tracking-widest transition-colors flex items-center justify-center gap-2"
+          className="w-full mt-4 bg-primary hover:bg-primary/80 text-background font-bold py-2 px-4 rounded text-xs tracking-widest transition-colors flex items-center justify-between gap-2"
         >
-          <span>INITIATE FTL JUMP</span>
-          <span className="opacity-60">→</span>
+          <span className="flex items-center gap-2">
+            <span>INITIATE FTL JUMP</span>
+            <span className="opacity-60">→</span>
+          </span>
+          <span className="text-[9px] font-mono-hud text-background/80 border-l border-background/20 pl-2">{getJumpCost(system.id)} AP</span>
         </button>
       )}
 
@@ -134,24 +138,54 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, t
           <Divider />
           <SubTitle>Bodies (tap to view)</SubTitle>
           <div className="flex flex-col gap-1 max-h-[40vh] sm:max-h-[50vh] overflow-y-auto pr-1 custom-scrollbar">
+            {/* 1. Ships (Top of the list) */}
+            {isCurrent && (
+              <button
+                onClick={() => onSelectBody("ship")}
+                className="flex items-center justify-between gap-2 px-2 py-1 text-[10px] uppercase tracking-wider border border-primary/30 bg-primary/10 hover:bg-primary/20 text-left transition mb-1 shadow-[0_0_10px_rgba(16,185,129,0.1)]"
+              >
+                <span className="text-primary">{BODY_META.ship.icon}</span>
+                <span className="flex-1 truncate text-primary font-bold">Commander's Vessel</span>
+                <span className="text-primary/60">{BODY_META.ship.label}</span>
+              </button>
+            )}
+
+            {/* 2. Sorted Hierarchical Bodies (Planets -> Moons) */}
             {system.bodies
-              .filter((b) => b.type !== "asteroid" || system.bodies.filter(x => x.type === "asteroid").indexOf(b) < 3)
-              .slice(0, 20)
+              .filter(b => !b.parentId) // Top-level only
+              .filter((b) => b.type !== "asteroid" || system.bodies.filter(x => x.type === "asteroid").indexOf(b) < 3) // Cap asteroids
+              .sort((a, b) => a.orbit - b.orbit) // Orbital order
+              .slice(0, 30) // Increased cap
               .map((b) => (
-                <button
-                  key={b.id}
-                  onClick={() => onSelectBody(b.id)}
-                  className="flex items-center justify-between gap-2 px-2 py-1 text-[10px] uppercase tracking-wider border border-border hover:border-primary/60 hover:bg-primary/5 text-left transition"
-                >
-                  <span className="text-primary">{BODY_META[b.type].icon}</span>
-                  <span className="flex-1 truncate text-foreground">{b.name}</span>
-                  <span className="text-muted-foreground">{BODY_META[b.type].label}</span>
-                </button>
+                <BodyListEntry key={b.id} body={b} onSelect={onSelectBody} depth={0} />
               ))}
           </div>
         </>
       )}
     </Panel>
+  );
+}
+
+function BodyListEntry({ body, onSelect, depth }: { body: Body; onSelect: (id: string) => void; depth: number }) {
+  const meta = BODY_META[body.type as keyof typeof BODY_META];
+  return (
+    <>
+      <button
+        onClick={() => onSelect(body.id)}
+        className="flex items-center justify-between gap-2 px-2 py-1 text-[10px] uppercase tracking-wider border border-border hover:border-primary/60 hover:bg-primary/5 text-left transition"
+        style={{ marginLeft: `${depth * 10}px` }}
+      >
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          {depth > 0 && <span className="text-primary/20">└</span>}
+          <span className="text-primary shrink-0">{meta?.icon || "•"}</span>
+          <span className="flex-1 truncate text-foreground">{body.name}</span>
+        </div>
+        <span className="text-muted-foreground shrink-0">{meta?.label || body.type}</span>
+      </button>
+      {body.children?.map(child => (
+        <BodyListEntry key={child.id} body={child} onSelect={onSelect} depth={depth + 1} />
+      ))}
+    </>
   );
 }
 
@@ -189,16 +223,39 @@ export function BodyOverview({ body, galaxy, hideHeader }: { body: Body; galaxy:
   const zoneColors = { hot: "text-error", temperate: "text-success", cold: "text-info" };
   const bioColors = { none: "text-muted-foreground", sparse: "text-foreground", abundant: "text-success", exotic: "text-accent", hostile: "text-error" };
 
+  const isStar = body.type === "star";
+  const isPlanet = body.type === "terrestrial" || body.type === "gas_giant";
+  const isMoon = body.type === "moon";
+  const isStation = body.type === "station";
+  const isShip = body.type === "ship";
+
   return (
     <Panel title={body.name} subtitle={BODY_META[body.type].label} hideHeader={hideHeader}>
-      <Row k="Type" v={formatLabel(body.subtype)} />
-      <Row k="Orbit" v={`${body.orbit.toFixed(2)} AU`} />
-      <Row k="Size" v={`${(body.size * 6371).toFixed(0)} km radius`} />
+      <Row k={isStar ? "Stellar Class" : "Type"} v={formatLabel(body.subtype)} />
+      {!isStar && !isShip && <Row k="Orbit" v={`${body.orbit.toFixed(2)} AU`} />}
+      
+      <Row 
+        k="Size" 
+        v={isStar 
+          ? `${(body.size * 0.4).toFixed(2)} R☉` // Approximate Solar Radii
+          : isShip 
+            ? `${(body.size * 100).toFixed(0)} m length`
+            : `${(body.size * 6371).toFixed(0)} km radius`
+        } 
+      />
+
+      {isPlanet && (
+        <Row k="Satellites" v={body.children?.length ? `${body.children.length} Moons` : "None"} />
+      )}
+
       <Divider />
+      
       <Row k="Temperature" v={`${body.temperature} K`} />
       <Row k="Environment" v={formatLabel(body.habitabilityZone)} accent={zoneColors[body.habitabilityZone]} />
       <Row k="Atmosphere" v={body.atmosphere ?? "None"} />
+      
       <Divider />
+      
       <Row k="Population" v={body.population > 0 ? `${body.population.toFixed(1)} M` : "Uninhabited"} />
       <Row k="Economy" v={ECON_META[body.economy].label} accent={ECON_META[body.economy].color} />
       <Row
@@ -230,15 +287,97 @@ export function BodyOverview({ body, galaxy, hideHeader }: { body: Body; galaxy:
         </>
       )}
 
-      <Divider />
-      <SubTitle>Resources</SubTitle>
-      <div className="flex flex-wrap gap-1.5">
-        {body.resources.map((r) => (
-          <span key={r} className="px-2 py-0.5 text-[10px] uppercase tracking-wider border border-primary/30 text-primary/90">
-            {r}
-          </span>
-        ))}
+      {!isStar && body.deposits.length > 0 && (
+        <>
+          <Divider />
+          <SubTitle>Resources</SubTitle>
+          <div className="flex flex-wrap gap-1.5">
+            {body.deposits.map((d) => {
+              const richnessColor = {
+                trace: "text-muted-foreground/80",
+                moderate: "text-info/90",
+                significant: "text-primary/90",
+                rich: "text-success/90",
+                abundant: "text-warning/90"
+              }[d.richness];
+              const richnessSymbols = {
+                trace: "★",
+                moderate: "★★",
+                significant: "★★★",
+                rich: "★★★★",
+                abundant: "★★★★★"
+              }[d.richness];
+
+              return (
+                <div key={d.resource} className="px-2 py-1 flex flex-col border border-primary/20 bg-primary/5 rounded-sm min-w-[70px]">
+                  <span className="text-[9px] uppercase tracking-wider text-primary/80 font-bold leading-tight">
+                    {d.resource}
+                  </span>
+                  <span className={`text-[9px] font-mono-hud font-bold tracking-tighter ${richnessColor}`}>
+                    {richnessSymbols}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </Panel>
+  );
+}
+
+/* ======================= SHIP OVERVIEW ======================= */
+export function ShipOverview({ system, travel, currentTime, onDeselect, hideHeader }: {
+  system: StarSystem | null;
+  travel: { targetId: string; startTime: number; endTime: number } | null;
+  currentTime: number;
+  onDeselect?: () => void;
+  hideHeader?: boolean;
+}) {
+  const isInTransit = !!travel;
+  const transitPct = travel
+    ? Math.min(100, ((currentTime - travel.startTime) / (travel.endTime - travel.startTime)) * 100)
+    : 0;
+  const etaSec = travel ? Math.max(0, Math.ceil((travel.endTime - currentTime) / 1000)) : 0;
+
+  return (
+    <Panel title="Commander's Vessel" subtitle="Fleet · CMDR Ship" hideHeader={hideHeader}>
+      <div className="mb-3 p-2 bg-primary/10 border border-primary/20 rounded flex items-center gap-2">
+        <span className="text-xl">🚀</span>
+        <div>
+          <div className="text-[10px] font-bold text-primary uppercase tracking-widest">IXS Hegemony</div>
+          <div className="text-[9px] text-muted-foreground uppercase">Commander Vessel · Class I</div>
+        </div>
       </div>
+      <Row k="Status" v={isInTransit ? "FTL Transit" : "Stationary"} accent={isInTransit ? "text-warning" : "text-success"} />
+      <Row k="Location" v={system?.name ?? "Deep Space"} />
+      <Row k="Hull Integrity" v="100%" accent="text-success" />
+      <Row k="Shield Status" v="Online" accent="text-info" />
+      <Divider />
+      <SubTitle>Drive Systems</SubTitle>
+      <Row k="Sub-Light Drive" v="Online" accent="text-success" />
+      <Row k="FTL Drive" v={isInTransit ? "Active" : "Standby"} accent={isInTransit ? "text-warning" : "text-success"} />
+      {isInTransit && (
+        <>
+          <Divider />
+          <SubTitle>FTL Transit</SubTitle>
+          <Row k="ETA" v={`${etaSec}s`} accent="text-warning" />
+          <div className="h-1 w-full bg-warning/20 rounded-full overflow-hidden mt-1">
+            <div className="h-full bg-warning rounded-full" style={{ width: `${transitPct}%` }} />
+          </div>
+        </>
+      )}
+      {onDeselect && (
+        <>
+          <Divider />
+          <button
+            onClick={onDeselect}
+            className="w-full mt-1 px-3 py-1.5 text-[9px] uppercase tracking-widest font-bold text-muted-foreground border border-border hover:border-primary/40 hover:text-primary transition"
+          >
+            Dismiss
+          </button>
+        </>
+      )}
     </Panel>
   );
 }

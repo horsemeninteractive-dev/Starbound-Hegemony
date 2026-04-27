@@ -3,7 +3,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { CameraControls, Html, PerspectiveCamera, Line, Billboard } from "@react-three/drei";
 import { Rocket } from "lucide-react";
 import * as THREE from "three";
-import type { Galaxy, StarSystem, Body, Sector } from "@/galaxy/types";
+import type { Galaxy, StarSystem, Body, Sector, ContestState } from "@/galaxy/types";
 import type { FilterState, ViewMode } from "@/galaxy/useGalaxyApp";
 import { SpaceBackground } from "./SpaceBackground";
 import { StarVisual } from "./StarVisual";
@@ -11,10 +11,10 @@ import { PlanetMaterial } from "./PlanetMaterial";
 import { PlanetaryRing } from "./PlanetaryRing";
 import { STAR_LUMINOSITY, STAR_META, STAR_BASE_SIZE, getOrbitalSpeed } from "@/galaxy/meta";
 
+// Shared temporary vectors for internal calculations within a single function call.
+// DO NOT use these across async boundaries or between different components' useFrame calls.
 const tempVec = new THREE.Vector3();
 const tempVec2 = new THREE.Vector3();
-const tempVec3 = new THREE.Vector3();
-const tempVec4 = new THREE.Vector3();
 
 function CloudLayer({ body, visualSize, quality }: { body: Body; visualSize: number; quality: string }) {
   const cloudRef = useRef<THREE.Mesh>(null);
@@ -34,6 +34,8 @@ function CloudLayer({ body, visualSize, quality }: { body: Body; visualSize: num
         hue={body.hue} 
         isWeather 
         quality={quality as any}
+        terrainSeed={body.terrainSeed}
+        geographyType={body.geographyType}
       />
     </mesh>
   );
@@ -94,36 +96,65 @@ function MapContent({
 }: Props & { containerRef: React.RefObject<HTMLDivElement> }) {
   const { camera, gl } = useThree();
   const controlsRef = useRef<any>(null);
+  const lastSystemRef = useRef<StarSystem | null>(null);
+
+  const lastViewRef = useRef<ViewMode>(view);
 
   // Transition camera when view changes
   useEffect(() => {
     if (!controlsRef.current) return;
 
+    if (system) {
+      lastSystemRef.current = system;
+    }
+
     if (view === "galaxy") {
-      // ONLY if we just entered galaxy view
-      controlsRef.current.setLookAt(0, 400, 500, 0, 0, 0, true);
+      // If we just entered galaxy view, try to focus on the last system we were looking at
+      const target = system || lastSystemRef.current;
+      if (target) {
+        const isNewEntry = lastViewRef.current !== "galaxy";
+        
+        // If we're coming from a system/body view, we need to compensate for the world-shift being removed.
+        // We do an instant snap first so the user doesn't see the galaxy "jump" to the center,
+        // then a smooth transition to the final preferred angle.
+        controlsRef.current.setLookAt(
+          target.pos[0], target.pos[1] + 400, target.pos[2] + 500,
+          target.pos[0], target.pos[1], target.pos[2],
+          !isNewEntry // Only smooth if we were already in galaxy view (e.g. clicking a star)
+        );
+      } else {
+        controlsRef.current.setLookAt(0, 400, 500, 0, 0, 0, true);
+      }
     } else if (view === "system" && system) {
-      // Dynamically calculate altitude based on system size
       const maxOrbit = system.bodies.reduce((max, b) => Math.max(max, b.orbit), 0) || 150;
       const vFov = (camera as THREE.PerspectiveCamera).fov * (Math.PI / 180);
-      
-      // Calculate required height to fit the entire orbital plane with 20% margin
-      const padding = 1.2;
       const aspect = window.innerWidth / window.innerHeight;
-      const radiusToFit = maxOrbit * padding;
+      const radiusToFit = maxOrbit * 1.2;
       
-      // Use the limiting dimension (vertical or horizontal) to ensure it fits
       const heightForVerticalFit = radiusToFit / Math.tan(vFov / 2);
       const heightForHorizontalFit = (radiusToFit / aspect) / Math.tan(vFov / 2);
       const idealHeight = Math.max(800, heightForVerticalFit, heightForHorizontalFit);
 
+      // In system view, the galaxy is shifted so the system is at [0,0,0]
       controlsRef.current.setLookAt(
         0, idealHeight, 1, 
         0, 0, 0,
         true
       );
+    } else if (view === "body" && body?.id === "star") {
+      // Direct focus on the central star
+      const starScale = system.id === "sys-center" ? 4.5 : 2.4;
+      const zoomDist = starScale * 15;
+      controlsRef.current.setLookAt(
+        0, zoomDist * 0.6, zoomDist,
+        0, 0, 0,
+        true
+      );
+    } else if (view === "ship") {
+      // Logic for snapping to ship handled in PlayerFleetVisual tracking
     }
-    // Body zoom is now handled by PlanetNode's internal tracking for better precision
+    
+    lastViewRef.current = view;
   }, [view, system?.id, body?.id, camera]);
 
   // Keyboard movement keys
@@ -173,7 +204,7 @@ function MapContent({
     if (isMobilePanelExpanded) {
       if (view === "galaxy") targetViewPercentage = 0.28; // Galaxy core needs a high shift
       else if (view === "system") targetViewPercentage = 0.20;
-      else if (view === "body") targetViewPercentage = 0.25; // Planets need significant clearance
+      else if (view === "body" || view === "ship") targetViewPercentage = 0.25;
     }
     
     const targetViewOffset = targetViewPercentage * window.innerHeight;
@@ -261,7 +292,7 @@ function MapContent({
         maxDistance={10000}
         minPolarAngle={0}
         maxPolarAngle={Math.PI / 2}
-        smoothTime={body ? 0 : 0.4}
+        smoothTime={0.4}
         dollySpeed={1.0}
       />
         <PerspectiveCamera makeDefault position={[0, 400, 500]} far={20000} near={0.1} />
@@ -304,7 +335,14 @@ function MapContent({
             isFocused={system?.id === s.id}
             isBodyFocused={body?.systemId === s.id}
             focusedBodyId={body?.id}
-            onSelect={() => onSelectSystem(s.id)}
+            onSelect={() => {
+              if (view === "galaxy") {
+                onSelectSystem(s.id);
+              } else {
+                // If already in a system, ship, or body view, click the star to focus it
+                onSelectBody("star");
+              }
+            }}
             onSelectBody={onSelectBody}
             filters={filters}
             isExplored={!fogOfWar || exploredSystemIds.has(s.id)}
@@ -322,11 +360,55 @@ function MapContent({
           travel={travel}
           view={view}
           controlsRef={controlsRef}
-          focusedBodyId={body?.id}
+          trackingShip={view === 'ship'}
           onSelect={() => onSelectBody("ship")}
         />
       </group>
     </>
+  );
+}
+
+function ContestStatusRing({ contest }: { contest: ContestState }) {
+  const ref = useRef<THREE.Group>(null);
+  const color = contest === "contested" ? "#ffaa00" : "#ff3300"; // Amber vs Red
+  
+  useFrame((state) => {
+    if (ref.current) {
+      if (contest === "contested") {
+        const s = 1.0 + Math.sin(state.clock.elapsedTime * 3.0) * 0.1;
+        ref.current.scale.setScalar(s);
+      }
+    }
+  });
+
+  return (
+    <group ref={ref}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[1.5, 1.7, 32]} />
+        <meshBasicMaterial 
+          color={color} 
+          transparent 
+          opacity={contest === "contested" ? 0.4 : 0.25} 
+          side={THREE.DoubleSide} 
+          depthWrite={false} 
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+      {/* Outer faint glow for contested */}
+      {contest === "contested" && (
+        <mesh rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[1.7, 2.2, 32]} />
+          <meshBasicMaterial 
+            color={color} 
+            transparent 
+            opacity={0.1} 
+            side={THREE.DoubleSide} 
+            depthWrite={false} 
+            blending={THREE.AdditiveBlending}
+          />
+        </mesh>
+      )}
+    </group>
   );
 }
 
@@ -337,11 +419,17 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
   const labelRef = useRef<HTMLDivElement>(null);
   const hitboxRef = useRef<THREE.Mesh>(null);
   const [isNear, setIsNear] = useState(false);
+  const hasInitialStarPosRef = useRef(false);
+  
+  // Component-local vectors for useFrame to avoid clobbering
+  const localVec = useMemo(() => new THREE.Vector3(), []);
+  const localVec2 = useMemo(() => new THREE.Vector3(), []);
+  const localVec3 = useMemo(() => new THREE.Vector3(), []);
   
   // Core is always visible/explored
   const explored = isExplored || system.id === "sys-center";
   const known = isKnown || system.id === "sys-center";
-  const baseStarScale = system.id === "sys-center" ? 4.5 : 2.4;
+  const baseStarScale = system.id === "sys-center" ? 40.0 : (STAR_BASE_SIZE[system.starType as keyof typeof STAR_BASE_SIZE] || 2.4);
   
   // Pre-calculate system vector to avoid instantiation in useFrame
   const sysPos = useMemo(() => new THREE.Vector3(...system.pos), [system.pos]);
@@ -362,13 +450,14 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
     }
     
     if (hitboxRef.current) {
-      // Mobile devices need larger touch targets (≥44px radius per Apple HIG)
+      // Reduced for 36-empire density: 12px desktop, 36px mobile (diameter ~24px/72px)
       const isMobile = window.innerWidth <= 768;
-      const minHitRadius = isMobile ? 48 : 24; // 24px desktop, 48px mobile
+      const minHitRadius = isMobile ? 36 : 12; 
       const vFov2 = (state.camera as THREE.PerspectiveCamera).fov * Math.PI / 180;
       const screenH2 = window.innerHeight;
       const hitScale = (minHitRadius * 2 * Math.tan(vFov2 / 2) * safeD) / screenH2;
-      hitboxRef.current.scale.setScalar(Math.max(1.0, hitScale / (baseStarScale * 3.5)));
+      // Cap the scale to prevent massive overlapping hitboxes at extreme zoom
+      hitboxRef.current.scale.setScalar(Math.min(12.0, Math.max(1.0, hitScale / (baseStarScale * 4.5))));
     }
     
     if (htmlGroupRef.current) {
@@ -396,12 +485,26 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
     const isCamTooHigh = state.camera.position.y > 2500;
     const shouldBeNear = safeD < threshold && !isCamTooHigh;
     if (shouldBeNear !== isNear) setIsNear(shouldBeNear);
+
+    // Continuous Camera Tracking for Star (only needed if it actually moves, 
+    // but useful for maintaining focus if something else moves the camera target)
+    if (isFocused && focusedBodyId === "star" && controlsRef.current && view === "body") {
+      const controls = controlsRef.current;
+      controls.smoothTime = 0;
+      
+      // The star is at [0,0,0] in shifted space, so we just move to [0,0,0].
+      // We force a matrix update to be sure.
+      if (starGroupRef.current) {
+        starGroupRef.current.updateWorldMatrix(true, false);
+        controls.moveTo(0, 0, 0, false);
+      }
+    }
   });
 
   if (!known && !isFocused) return null; // Hidden in Fog of War
 
   // Only show details (planets, orbits) if explicitly focused in system or body view
-  const showDetails = isFocused && (view === "system" || view === "body");
+  const showDetails = isFocused && (view === "system" || view === "body" || view === "ship");
 
   return (
     <group position={system.pos}>
@@ -412,22 +515,30 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
           detailed={showDetails} 
           grayscale={!explored}
           quality={quality}
-          onClick={(e: any) => { e.stopPropagation(); onSelect(); }}
+          onClick={(e: any) => { 
+            e.stopPropagation(); 
+            onSelect();
+          }}
           onPointerOver={() => { document.body.style.cursor = "pointer"; }}
           onPointerOut={() => { document.body.style.cursor = "default"; }}
         />
+        {/* Contest Status Ring (only in galaxy view, non-frontier) */}
+        {view === "galaxy" && (system.contest === "contested" || system.contest === "anarchic") && (
+          <ContestStatusRing contest={system.contest} />
+        )}
         {/* Invisible Hitbox for easier selection — Billboard ensures it's always a flat disk facing the camera */}
-        <Billboard>
-          <mesh 
-            ref={hitboxRef}
-            onClick={(e: any) => { e.stopPropagation(); onSelect(); }}
-            onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
-            onPointerOut={() => { document.body.style.cursor = "default"; }}
-          >
-            <planeGeometry args={[baseStarScale * 3.5, baseStarScale * 3.5]} />
-            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-          </mesh>
-        </Billboard>
+        <mesh 
+          ref={hitboxRef}
+          onClick={(e: any) => { 
+            e.stopPropagation(); 
+            onSelect();
+          }}
+          onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
+          onPointerOut={() => { document.body.style.cursor = "default"; }}
+        >
+          <sphereGeometry args={[baseStarScale * 1.8, 16, 16]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
       </group>
       
 
@@ -586,6 +697,63 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
 
 
 
+function TerritoryMarker({ body, visualSize, galaxy }: any) {
+  const meshRef = useRef<THREE.Group>(null);
+  const empire = useMemo(() => galaxy.empires.find((e: any) => e.id === body.ownerId), [galaxy, body.ownerId]);
+  
+  const color = useMemo(() => {
+    if (!empire) return new THREE.Color("#ffffff");
+    return new THREE.Color().setHSL(empire.hue / 360, 0.72, 0.55);
+  }, [empire]);
+
+  const worldPos = useMemo(() => new THREE.Vector3(), []);
+
+  useFrame((state) => {
+    if (meshRef.current) {
+      meshRef.current.getWorldPosition(worldPos);
+      const d = state.camera.position.distanceTo(worldPos);
+      
+      // LOD Scaling: Marker grows when far away to maintain visibility
+      const lodScale = Math.max(1.0, d / 250); 
+      const pulse = 1.0 + Math.sin(state.clock.elapsedTime * 2.5) * 0.08;
+      const s = lodScale * pulse;
+      meshRef.current.scale.set(s, s, s);
+    }
+  });
+
+  if (!empire) return null;
+
+  return (
+    <group ref={meshRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.5, 0]}>
+      {/* Inner solid ring for high contrast visibility */}
+      <mesh>
+        <ringGeometry args={[visualSize * 1.35, visualSize * 1.65, 64]} />
+        <meshBasicMaterial 
+          color={color} 
+          transparent={false} 
+          opacity={1.0}
+          side={THREE.DoubleSide} 
+          depthWrite={true}
+          depthTest={true}
+          toneMapped={false}
+        />
+      </mesh>
+      {/* Large outer influence pulse */}
+      <mesh>
+        <ringGeometry args={[visualSize * 1.8, visualSize * 3.8, 64]} />
+        <meshBasicMaterial 
+          color={color} 
+          transparent 
+          opacity={0.12} 
+          side={THREE.DoubleSide} 
+          depthWrite={false} 
+          blending={THREE.AdditiveBlending} 
+        />
+      </mesh>
+    </group>
+  );
+}
+
 function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, children, onSelectBody, focusedBodyId, starWorldPos, starType, filters, isMobilePanelExpanded, quality, galaxy }: any) {
   const { camera } = useThree();
   const meshRef = useRef<THREE.Group>(null);
@@ -603,6 +771,11 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
     for (let i = 0; i < body.id.length; i++) hash = (hash << 5) - hash + body.id.charCodeAt(i);
     return Math.abs(hash % 100) / 100;
   }, [body.id]);
+
+  const localVec = useMemo(() => new THREE.Vector3(), []);
+  const localVec2 = useMemo(() => new THREE.Vector3(), []);
+  const localVec3 = useMemo(() => new THREE.Vector3(), []);
+  const localVec4 = useMemo(() => new THREE.Vector3(), []);
 
   // Analytical tracking to eliminate jitter.
   // IMPORTANT: `t` is captured ONCE and reused for both the mesh position and camera tracking.
@@ -627,8 +800,8 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
     meshRef.current.updateWorldMatrix(true, false);
 
     // High-precision Light Direction
-    meshRef.current.getWorldPosition(tempVec);
-    lightDirRef.current.copy(tempVec).normalize().multiplyScalar(-1);
+    meshRef.current.getWorldPosition(localVec);
+    lightDirRef.current.copy(localVec).normalize().multiplyScalar(-1);
 
     // Camera Tracking: use the mesh's ACTUAL world position (already computed above via getWorldPosition).
     // This guarantees zero divergence between where the mesh is and where the camera looks.
@@ -639,15 +812,15 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
       if (!hasInitialPosRef.current) {
         const zoomDist = body.size * 12;
         controls.setLookAt(
-          tempVec.x, tempVec.y + zoomDist * 0.6, tempVec.z + zoomDist,
-          tempVec.x, tempVec.y, tempVec.z,
+          localVec.x, localVec.y + zoomDist * 0.6, localVec.z + zoomDist,
+          localVec.x, localVec.y, localVec.z,
           true
         );
         hasInitialPosRef.current = true;
       } else {
         // moveTo keeps the camera's angle and distance while moving the orbit center
         // to the body's exact current world position — no formula, no drift.
-        controls.moveTo(tempVec.x, tempVec.y, tempVec.z, false);
+        controls.moveTo(localVec.x, localVec.y, localVec.z, false);
       }
     } else {
       hasInitialPosRef.current = false;
@@ -661,8 +834,8 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
     if (hitboxRef.current) {
       // Dynamically scale hitbox to maintain a constant target screen-space radius.
       // Mobile needs significantly larger touch targets (44px+ per Apple HIG).
-      meshRef.current!.getWorldPosition(tempVec4);
-      const d = state.camera.position.distanceTo(tempVec4);
+      meshRef.current!.getWorldPosition(localVec2);
+      const d = state.camera.position.distanceTo(localVec2);
       const safeD = Math.max(0.1, d);
       const vFov = (state.camera as THREE.PerspectiveCamera).fov * Math.PI / 180;
       const screenH = window.innerHeight;
@@ -677,8 +850,8 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
     }
 
     if (labelRef.current && view !== "galaxy") {
-      meshRef.current.getWorldPosition(tempVec3);
-      const d = camera.position.distanceTo(tempVec3);
+      meshRef.current.getWorldPosition(localVec3);
+      const d = camera.position.distanceTo(localVec3);
       const vFov = (camera as THREE.PerspectiveCamera).fov * Math.PI / 180;
       const screenH = window.innerHeight;
       const sizeToUse = (body.hasRings && body.type === "gas_giant") ? body.size * 2.25 : body.size;
@@ -738,23 +911,45 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
             showWeather={filters.layers.has("weatherSystems") && !!body.atmosphere}
             showCityLights={filters.layers.has("cityLights")}
             quality={quality}
+            terrainSeed={body.terrainSeed}
+            geographyType={body.geographyType}
           />
         </mesh>
       )}
 
+      {/* Planetary Shield Orb - Multi-layered for volume */}
+      {body.isShielded && (
+        <group>
+          {/* Main Shield Shell */}
+          <mesh scale={1.15}>
+            <sphereGeometry args={[visualSize, quality === "low" ? 16 : 32, quality === "low" ? 16 : 32]} />
+            <meshBasicMaterial 
+              color="#7be9ff" 
+              transparent 
+              opacity={0.2} 
+              blending={THREE.AdditiveBlending} 
+              side={THREE.DoubleSide}
+              depthWrite={false}
+            />
+          </mesh>
+          {/* Outer Shield Glow */}
+          <mesh scale={1.22}>
+            <sphereGeometry args={[visualSize, quality === "low" ? 16 : 32, quality === "low" ? 16 : 32]} />
+            <meshBasicMaterial 
+              color="#00ffff" 
+              transparent 
+              opacity={0.1} 
+              blending={THREE.AdditiveBlending} 
+              side={THREE.BackSide}
+              depthWrite={false}
+            />
+          </mesh>
+        </group>
+      )}
+
       {/* Empire Territory Marker (System View) */}
       {filters.layers.has("empireColors") && body.ownerId && galaxy && (
-        (() => {
-          const empire = galaxy.empires.find(e => e.id === body.ownerId);
-          if (!empire) return null;
-          const color = new THREE.Color().setHSL(empire.hue / 360, 0.7, 0.5);
-          return (
-            <mesh rotation={[-Math.PI / 2, 0, 0]}>
-              <ringGeometry args={[visualSize * 1.3, visualSize * 1.5, 32]} />
-              <meshBasicMaterial color={color} transparent opacity={0.6} side={THREE.DoubleSide} depthWrite={false} />
-            </mesh>
-          );
-        })()
+        <TerritoryMarker body={body} visualSize={visualSize} galaxy={galaxy} />
       )}
 
       {/* Moving Weather System (Clouds) - Separate transparent layer */}
@@ -763,17 +958,15 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
       )}
 
       {/* Invisible Hitbox for easier selection — Billboard ensures it's always a flat disk facing the camera */}
-      <Billboard>
-        <mesh 
-          ref={hitboxRef}
-          onClick={(e) => { e.stopPropagation(); onSelect(); }}
-          onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
-          onPointerOut={() => { document.body.style.cursor = "default"; }}
-        >
-          <planeGeometry args={[visualSize * 2.0, visualSize * 2.0]} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-        </mesh>
-      </Billboard>
+      <mesh 
+        ref={hitboxRef}
+        onClick={(e) => { e.stopPropagation(); onSelect(); }}
+        onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
+        onPointerOut={() => { document.body.style.cursor = "default"; }}
+      >
+        <sphereGeometry args={[visualSize * 1.3, 16, 16]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
 
       {/* Premium Atmospheric Effects - Only show if body has an atmosphere */}
       {body.atmosphere && (
@@ -818,8 +1011,17 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
       {/* Body Label */}
       {view !== "galaxy" && filters.layers.has("objectLabels") && (
         <Html position={[0, 0, 0]} center zIndexRange={[100, 0]}>
-          <div ref={labelRef} className="px-1 h-[10px] flex items-center justify-center bg-black/30 rounded-sm pointer-events-none whitespace-nowrap">
-            <span className="font-mono-hud text-[6px] leading-none uppercase tracking-wider text-primary/50">
+          <div ref={labelRef} className="px-1.5 py-0.5 flex items-center gap-1.5 bg-black/40 backdrop-blur-[2px] border border-white/5 rounded-sm pointer-events-none whitespace-nowrap">
+            {body.ownerId && filters.layers.has("empireColors") && (
+              <div 
+                className="w-1.5 h-1.5 rounded-full shrink-0 shadow-[0_0_6px_currentColor]" 
+                style={{ 
+                  backgroundColor: `hsl(${galaxy.empires.find((e: any) => e.id === body.ownerId)?.hue || 0} 70% 55%)`,
+                  color: `hsl(${galaxy.empires.find((e: any) => e.id === body.ownerId)?.hue || 0} 70% 55%)`
+                }} 
+              />
+            )}
+            <span className="font-mono-hud text-[6px] leading-none uppercase tracking-wider text-primary/70">
               {body.name}
             </span>
           </div>
@@ -1080,21 +1282,19 @@ function JumpGateMarkers({ system, galaxy, onSelect }: { system: any; galaxy: an
               />
             </mesh>
             {/* Invisible Hitbox for easier selection — Billboard ensures it's always a flat disk facing the camera */}
-            <Billboard>
-              <mesh
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (!isLocked) onSelect(`gate:${gate.targetSystemId}`);
-                }}
-                onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = isLocked ? "not-allowed" : "pointer"; }}
-                onPointerOut={() => { document.body.style.cursor = "default"; }}
-              >
-                <planeGeometry args={[9.0, 9.0]} />
-                <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-              </mesh>
-            </Billboard>
-            <Html distanceFactor={25} position={[0, 1.8, 0]} center occlude>
-              <div className={`font-mono-hud text-[8px] bg-background/80 px-1 border whitespace-nowrap uppercase tracking-widest ${
+            <mesh
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!isLocked) onSelect(`gate:${gate.targetSystemId}`);
+              }}
+              onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = isLocked ? "not-allowed" : "pointer"; }}
+              onPointerOut={() => { document.body.style.cursor = "default"; }}
+            >
+              <sphereGeometry args={[4.5, 16, 16]} />
+              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+            </mesh>
+            <Html distanceFactor={500} position={[0, 3.5, 0]} center zIndexRange={[100, 0]}>
+              <div className={`font-mono-hud text-[7px] bg-background/90 px-1.5 py-0.5 border backdrop-blur-sm whitespace-nowrap uppercase tracking-widest ${
                 isLocked
                   ? "text-red-400 border-red-500/40"
                   : "text-primary border-primary/20"
@@ -1119,7 +1319,7 @@ function getGateLocalPosition(system: any, targetSystemId: string) {
   return new THREE.Vector3(Math.cos(angle) * outer, 0, Math.sin(angle) * outer);
 }
 
-function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, view, controlsRef, focusedBodyId, onSelect }: { galaxy: Galaxy, playerSystemId: string, viewedSystemId: string | null, travel: any, view: string, controlsRef?: any, focusedBodyId?: string, onSelect?: () => void }) {
+function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, view, controlsRef, trackingShip, onSelect }: { galaxy: Galaxy, playerSystemId: string, viewedSystemId: string | null, travel: any, view: string, controlsRef?: any, trackingShip?: boolean, onSelect?: () => void }) {
   const groupRef = useRef<THREE.Group>(null);
   const shipMeshRef = useRef<THREE.Group>(null);
   const engineGlowRef = useRef<THREE.Group>(null);
@@ -1156,6 +1356,14 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     const now = Date.now();
     const sourceSys = galaxy.systemById[playerSystemId];
     if (!sourceSys) return;
+
+    const currentViewedId = viewedSystemId || playerSystemId;
+    const viewedSystem = galaxy.systemById[currentViewedId];
+    if (!viewedSystem) return;
+
+    const sX = view === 'galaxy' ? 0 : viewedSystem.pos[0];
+    const sY = view === 'galaxy' ? 0 : viewedSystem.pos[1];
+    const sZ = view === 'galaxy' ? 0 : viewedSystem.pos[2];
     
     let globalPos = new THREE.Vector3();
     let scale = 1;
@@ -1168,7 +1376,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     const getIdlePos = (sysPos: number[], time: number, starType: string) => {
       const t = time * 0.00008; // Slower, more majestic orbit
       const starRadius = STAR_BASE_SIZE[starType as keyof typeof STAR_BASE_SIZE] || 2.4;
-      const orbitRadius = starRadius * 3.8; // Further from star surface
+      const orbitRadius = starRadius * 1.6; // Closer to star surface for better cinematic feel
       return new THREE.Vector3(
         sysPos[0] + Math.cos(t) * orbitRadius,
         sysPos[1],
@@ -1211,21 +1419,38 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           // 1: Transit to gate
           const p = elapsed / transitTime;
           const t = Math.pow(p, 1.2); 
-          globalPos.lerpVectors(startPos, gatePos, t);
+          
+          if (view === 'galaxy') {
+            const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
+            globalPos.set(sourceSys.pos[0] - starRadius * 3.0, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 3.0);
+          } else {
+            globalPos.lerpVectors(startPos, gatePos, t);
+          }
+          
           engineColor = '#00ffff';
           engineIntensity = (0.8 + t * 2.5) * (1.0 + Math.random() * 0.15);
           if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
         } else if (elapsed < transitTime + chargeTime) {
           // 2: Charge at gate
           const p = (elapsed - transitTime) / chargeTime;
-          globalPos.copy(gatePos);
+          if (view === 'galaxy') {
+            const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
+            globalPos.set(sourceSys.pos[0] - starRadius * 3.0, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 3.0);
+          } else {
+            globalPos.copy(gatePos);
+          }
           engineColor = `hsl(${180 - p * 60}, 100%, 70%)`; // Blue to Green
           engineIntensity = 2.5 + Math.sin(p * Math.PI * 10) * 1.0;
           if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
         } else {
           // 3: Flash and enter hyperspace
           const p = (elapsed - (transitTime + chargeTime)) / jumpTime;
-          globalPos.copy(gatePos);
+          if (view === 'galaxy') {
+            const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
+            globalPos.set(sourceSys.pos[0] - starRadius * 3.0, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 3.0);
+          } else {
+            globalPos.copy(gatePos);
+          }
           scale = Math.max(0, 1.0 - p * 3);
           flashScale = p * 12;
           flashOpacity = 1.0 - p;
@@ -1263,7 +1488,12 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
         if (elapsed < matTime) {
           // 1: Arrival flash & Materialize
           const p = elapsed / matTime;
-          globalPos.copy(gatePos);
+          if (view === 'galaxy') {
+            const starRadius = STAR_BASE_SIZE[targetSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
+            globalPos.set(targetSys.pos[0] - starRadius * 3.0, targetSys.pos[1], targetSys.pos[2] - starRadius * 3.0);
+          } else {
+            globalPos.copy(gatePos);
+          }
           scale = p;
           flashScale = (1.0 - p) * 10;
           flashOpacity = 1.0 - p;
@@ -1273,7 +1503,12 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           // 2: Transit from gate to star
           const p = (elapsed - matTime) / transitTime;
           const eased = 1 - Math.pow(1 - p, 2.0);
-          globalPos.lerpVectors(gatePos, targetIdlePos, eased);
+          if (view === 'galaxy') {
+            const starRadius = STAR_BASE_SIZE[targetSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
+            globalPos.set(targetSys.pos[0] - starRadius * 3.0, targetSys.pos[1], targetSys.pos[2] - starRadius * 3.0);
+          } else {
+            globalPos.lerpVectors(gatePos, targetIdlePos, eased);
+          }
           engineColor = '#00ffff';
           engineIntensity = (2.0 - p * 1.5) * (1.0 + Math.random() * 0.15);
           if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
@@ -1302,6 +1537,8 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     }
     prevPosRef.current.copy(globalPos);
 
+    const localVec = new THREE.Vector3(); // PlayerFleetVisual is singleton, so local var in useFrame is okay but memo is better
+
     // Blinking navigation lights
     const isNavOn = Math.sin(now * 0.003) > 0;
     const navRed = groupRef.current.getObjectByName('navRed') as THREE.Mesh;
@@ -1315,7 +1552,12 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     }
 
     // Dynamic Opacity for the CMDR HTML icon so it doesn't cover the 3D model
-    const distToCamera = state.camera.position.distanceTo(globalPos);
+    // Use world coordinates for the camera and local for the mesh
+    groupRef.current.position.set(globalPos.x, globalPos.y, globalPos.z);
+    groupRef.current.updateWorldMatrix(true, false);
+    groupRef.current.getWorldPosition(localVec);
+    
+    const distToCamera = state.camera.position.distanceTo(localVec);
     
     let htmlOpacity = 0;
     if (view === 'galaxy') {
@@ -1332,50 +1574,29 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     }
 
     // Camera Tracking
-    if (focusedBodyId === "ship" && controlsRef?.current) {
+    if (trackingShip && controlsRef?.current) {
       const controls = controlsRef.current;
       controls.smoothTime = 0;
       controls.restThreshold = 0.0001; // Increase precision for extreme zoom tracking
-      
-      const sX = view === "galaxy" ? 0 : sourceSys.pos[0];
-      const sY = view === "galaxy" ? 0 : sourceSys.pos[1];
-      const sZ = view === "galaxy" ? 0 : sourceSys.pos[2];
-      const wx = globalPos.x - sX;
-      const wy = globalPos.y - sY;
-      const wz = globalPos.z - sZ;
 
       if (!hasInitialPosRef.current) {
         // INITIAL SNAP: cinematic zoom to ship position
         const zoomDist = 6.0;
         controls.setLookAt(
-          wx + zoomDist * 0.8, wy + zoomDist * 0.6, wz + zoomDist,
-          wx, wy, wz,
+          localVec.x + zoomDist * 0.8, localVec.y + zoomDist * 0.6, localVec.z + zoomDist,
+          localVec.x, localVec.y, localVec.z,
           true
         );
         hasInitialPosRef.current = true;
       } else {
-        // Delta-synchronized movement for ship tracking
-        const currentTarget = new THREE.Vector3();
-        controls.getTarget(currentTarget);
-        const currentPos = new THREE.Vector3();
-        controls.getPosition(currentPos);
-
-        const dx = wx - currentTarget.x;
-        const dy = wy - currentTarget.y;
-        const dz = wz - currentTarget.z;
-
-        controls.setLookAt(
-          currentPos.x + dx, currentPos.y + dy, currentPos.z + dz,
-          wx, wy, wz,
-          false
-        );
+        // High-precision tracking
+        controls.moveTo(localVec.x, localVec.y, localVec.z, false);
       }
     } else {
       hasInitialPosRef.current = false;
     }
 
-    // Apply physical transform
-    groupRef.current.position.copy(globalPos);
+    // Apply physical transform with coordinate shifting for system view
     groupRef.current.scale.setScalar(scale);
 
     // Apply engine glow color + intensity
@@ -1401,83 +1622,112 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
       flashRef.current.visible = flashOpacity > 0;
     }
 
-    // Apply HTML icon opacity via ref
+    // Apply HTML icon properties via ref
     if (labelRef.current) {
       labelRef.current.style.opacity = htmlOpacity.toString();
+      // Dynamically scale the icon based on distance in galaxy view
+      const s = view === 'galaxy' ? Math.max(0.4, Math.min(1.5, 500 / distToCamera)) : 1.0;
+      labelRef.current.style.transform = `scale(${s})`;
     }
   });
 
   return (
     <group ref={groupRef}>
       <group ref={shipMeshRef}>
-        {/* Main Hull (Cylindrical) */}
+        {/* Main Hull (Cylindrical) — highly polished */}
         <mesh position={[0, 0, 0.05]} rotation={[Math.PI / 2, 0, 0]}>
           <cylinderGeometry args={[0.1, 0.1, 0.5, 32]} />
-          <meshStandardMaterial color="#d0d5dc" metalness={0.6} roughness={0.3} />
+          <meshStandardMaterial color="#c8d0dc" metalness={0.98} roughness={0.04} envMapIntensity={2.5} />
         </mesh>
         
-        {/* Forward Nose (Cone) */}
-        <mesh position={[0, 0, 0.4]} rotation={[Math.PI / 2, 0, 0]}>
-          <coneGeometry args={[0.1, 0.2, 16]} />
-          <meshStandardMaterial color="#ffffff" metalness={0.5} roughness={0.3} />
-        </mesh>
-
-        {/* Cockpit / Command Bridge (Moved Forward to intersect hull and cone) */}
-        <mesh position={[0, 0.07, 0.28]}>
-          <boxGeometry args={[0.08, 0.05, 0.18]} />
-          <meshStandardMaterial color="#111111" metalness={0.9} roughness={0.1} emissive="#0088ff" emissiveIntensity={0.6} />
+        {/* Forward Hull Section (Tapered) */}
+        <mesh position={[0, 0, 0.28]} rotation={[Math.PI / 2, 0, 0]}>
+          <coneGeometry args={[0.08, 0.18, 16]} />
+          <meshStandardMaterial color="#a0aab8" metalness={0.98} roughness={0.03} envMapIntensity={2.5} />
         </mesh>
         
-        {/* Cockpit Viewport Glass */}
-        <mesh position={[0, 0.08, 0.36]}>
-          <boxGeometry args={[0.07, 0.03, 0.03]} />
-          <meshStandardMaterial color="#ffffff" emissive="#00ffff" emissiveIntensity={1.5} />
+        <mesh position={[0, 0, 0.1]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.09, 0.1, 0.2, 16]} />
+          <meshStandardMaterial color="#9aa4b4" metalness={0.95} roughness={0.06} envMapIntensity={2.5} />
         </mesh>
 
-        {/* Swept Wings */}
-        <mesh position={[0.18, 0, -0.05]} rotation={[0, -0.2, 0]}>
-          <boxGeometry args={[0.16, 0.03, 0.35]} />
-          <meshStandardMaterial color="#8a95a5" metalness={0.7} roughness={0.4} />
-        </mesh>
-        <mesh position={[-0.18, 0, -0.05]} rotation={[0, 0.2, 0]}>
-          <boxGeometry args={[0.16, 0.03, 0.35]} />
-          <meshStandardMaterial color="#8a95a5" metalness={0.7} roughness={0.4} />
+        {/* Engineering Section (Rear) */}
+        <mesh position={[0, 0, -0.1]}>
+          <boxGeometry args={[0.18, 0.1, 0.2]} />
+          <meshStandardMaterial color="#7a8898" metalness={0.95} roughness={0.08} envMapIntensity={2.5} />
         </mesh>
 
-        {/* Engine Nacelles */}
-        <mesh position={[0.22, 0, -0.15]} rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[0.04, 0.05, 0.25, 8]} />
-          <meshStandardMaterial color="#606a75" metalness={0.8} roughness={0.3} />
+        {/* Command Bridge (Detailed Top Deck) */}
+        <mesh position={[0, 0.08, 0.12]}>
+          <boxGeometry args={[0.07, 0.06, 0.15]} />
+          <meshStandardMaterial color="#222222" metalness={0.9} roughness={0.1} emissive="#00ccff" emissiveIntensity={0.4} />
         </mesh>
-        <mesh position={[-0.22, 0, -0.15]} rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[0.04, 0.05, 0.25, 8]} />
-          <meshStandardMaterial color="#606a75" metalness={0.8} roughness={0.3} />
-        </mesh>
-
-        {/* Warp Coil Glows */}
-        <mesh position={[0.22, 0.02, -0.15]}>
-          <boxGeometry args={[0.02, 0.02, 0.18]} />
-          <meshStandardMaterial color="#ffffff" emissive="#0088ff" emissiveIntensity={2.0} />
-        </mesh>
-        <mesh position={[-0.22, 0.02, -0.15]}>
-          <boxGeometry args={[0.02, 0.02, 0.18]} />
-          <meshStandardMaterial color="#ffffff" emissive="#0088ff" emissiveIntensity={2.0} />
+        {/* Bridge Viewport */}
+        <mesh position={[0, 0.09, 0.18]}>
+          <boxGeometry args={[0.06, 0.02, 0.02]} />
+          <meshStandardMaterial color="#ffffff" emissive="#00ffff" emissiveIntensity={2} />
         </mesh>
 
-        {/* Forward Deflector Dish */}
-        <mesh position={[0, -0.04, 0.4]} rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[0.03, 0.03, 0.02, 16]} />
-          <meshStandardMaterial color="#ffffff" emissive="#00ccff" emissiveIntensity={2.0} />
+        {/* Port Wing & Nacelle Assembly */}
+        <group position={[0.2, 0, -0.05]}>
+          {/* Wing Strut */}
+          <mesh rotation={[0, -0.3, 0]}>
+            <boxGeometry args={[0.15, 0.02, 0.1]} />
+            <meshStandardMaterial color="#9aa4b4" metalness={0.95} roughness={0.08} envMapIntensity={2} />
+          </mesh>
+          {/* Nacelle Housing */}
+          <mesh position={[0.08, 0, -0.08]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.035, 0.045, 0.28, 12]} />
+            <meshStandardMaterial color="#6a7888" metalness={0.98} roughness={0.04} envMapIntensity={2.5} />
+          </mesh>
+          {/* Warp Coil Glow */}
+          <mesh position={[0.08, 0.03, -0.08]}>
+            <boxGeometry args={[0.015, 0.01, 0.18]} />
+            <meshStandardMaterial color="#ffffff" emissive="#0088ff" emissiveIntensity={3} />
+          </mesh>
+        </group>
+
+        {/* Starboard Wing & Nacelle Assembly */}
+        <group position={[-0.2, 0, -0.05]}>
+          {/* Wing Strut */}
+          <mesh rotation={[0, 0.3, 0]}>
+            <boxGeometry args={[0.15, 0.02, 0.1]} />
+            <meshStandardMaterial color="#9aa4b4" metalness={0.95} roughness={0.08} envMapIntensity={2} />
+          </mesh>
+          {/* Nacelle Housing */}
+          <mesh position={[-0.08, 0, -0.08]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.035, 0.045, 0.28, 12]} />
+            <meshStandardMaterial color="#6a7888" metalness={0.98} roughness={0.04} envMapIntensity={2.5} />
+          </mesh>
+          {/* Warp Coil Glow */}
+          <mesh position={[-0.08, 0.03, -0.08]}>
+            <boxGeometry args={[0.015, 0.01, 0.18]} />
+            <meshStandardMaterial color="#ffffff" emissive="#0088ff" emissiveIntensity={3} />
+          </mesh>
+        </group>
+
+        {/* Decorative Surface Plating (Greebles) */}
+        <mesh position={[0, -0.06, 0.05]}>
+          <boxGeometry args={[0.08, 0.02, 0.1]} />
+          <meshStandardMaterial color="#404a55" />
+        </mesh>
+        <mesh position={[0.06, 0.04, -0.15]}>
+          <boxGeometry args={[0.04, 0.04, 0.04]} />
+          <meshStandardMaterial color="#404a55" />
+        </mesh>
+        <mesh position={[-0.06, 0.04, -0.15]}>
+          <boxGeometry args={[0.04, 0.04, 0.04]} />
+          <meshStandardMaterial color="#404a55" />
         </mesh>
 
-        {/* Navigation Lights (Blinking) */}
-        <mesh name="navRed" position={[-0.26, 0.02, -0.1]}>
-          <sphereGeometry args={[0.015, 8, 8]} />
-          <meshBasicMaterial color="#ff0000" />
-        </mesh>
-        <mesh name="navGreen" position={[0.26, 0.02, -0.1]}>
+        {/* Navigation Lights */}
+        <mesh position={[0.3, 0.02, -0.1]} name="navGreen">
           <sphereGeometry args={[0.015, 8, 8]} />
           <meshBasicMaterial color="#00ff00" />
+        </mesh>
+        <mesh position={[-0.3, 0.02, -0.1]} name="navRed">
+          <sphereGeometry args={[0.015, 8, 8]} />
+          <meshBasicMaterial color="#ff0000" />
         </mesh>
 
         {/* Hull Windows (Emissive) */}
@@ -1488,6 +1738,16 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
         <mesh position={[-0.08, 0, 0.1]}>
           <boxGeometry args={[0.045, 0.02, 0.05]} />
           <meshBasicMaterial color="#ffffff" />
+        </mesh>
+
+        {/* 3D Hitbox for Ship */}
+        <mesh 
+          onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
+          onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
+          onPointerOut={() => { document.body.style.cursor = "default"; }}
+        >
+          <sphereGeometry args={[0.5, 16, 16]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
         </mesh>
         <mesh position={[0.08, 0, -0.05]}>
           <boxGeometry args={[0.045, 0.02, 0.05]} />
@@ -1509,22 +1769,19 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           target-position={[0, 0, 5]} 
         />
 
-        {/* Engine Plumes (Volumetric Cones) */}
+        {/* Engine Plumes — Exhaust pointing backward (-Z) */}
         <group ref={engineGlowRef}>
-          {/* Main central exhaust */}
-          <mesh position={[0, 0, -0.35]} rotation={[Math.PI / 2, 0, 0]}>
-            <coneGeometry args={[0.12, 0.4, 16, 1, true]} />
+          <mesh position={[0, 0, -0.21]} rotation={[-Math.PI / 2, 0, 0]}>
+            <coneGeometry args={[0.10, 0.35, 16, 1, true]} />
             <meshBasicMaterial color="#00ffff" transparent opacity={0.6} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
           </mesh>
-          {/* Port side nacelle exhaust */}
-          <mesh position={[0.22, 0, -0.28]} rotation={[Math.PI / 2, 0, 0]}>
-            <coneGeometry args={[0.04, 0.18, 12, 1, true]} />
-            <meshBasicMaterial color="#00ffff" transparent opacity={0.5} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
+          <mesh position={[0.28, 0, -0.26]} rotation={[-Math.PI / 2, 0, 0]}>
+            <coneGeometry args={[0.035, 0.16, 12, 1, true]} />
+            <meshBasicMaterial color="#00ffff" transparent opacity={0.55} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
           </mesh>
-          {/* Starboard side nacelle exhaust */}
-          <mesh position={[-0.22, 0, -0.28]} rotation={[Math.PI / 2, 0, 0]}>
-            <coneGeometry args={[0.04, 0.18, 12, 1, true]} />
-            <meshBasicMaterial color="#00ffff" transparent opacity={0.5} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
+          <mesh position={[-0.28, 0, -0.26]} rotation={[-Math.PI / 2, 0, 0]}>
+            <coneGeometry args={[0.035, 0.16, 12, 1, true]} />
+            <meshBasicMaterial color="#00ffff" transparent opacity={0.55} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
           </mesh>
         </group>
         <pointLight ref={engineLightRef} position={[0, 0, -0.4]} color="#00ffff" distance={15} />
@@ -1553,7 +1810,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
 
       {/* The HTML icon represents the Commander. We conditionally render it to avoid Drei ghosting bugs. */}
       {(view === 'galaxy' || viewedSystemId === playerSystemId) && (
-        <group position={[0, 0.5, 0]}>
+        <group position={[0, 1.2, 0]}>
           <Html center zIndexRange={[100, 0]}>
             <div ref={labelRef} className="cmdr-label text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-pulse flex flex-col items-center pointer-events-none transition-opacity duration-300">
               <Rocket size={14} className="-rotate-45" />
@@ -1575,49 +1832,76 @@ function EmpireTerritoryRings({ galaxy, fogOfWar, knownSystemIds }: {
   const entries = useMemo(() => {
     return galaxy.systems.flatMap((sys) => {
       if (fogOfWar && !knownSystemIds.has(sys.id)) return [];
+      
       const ownerCounts = new Map<string, number>();
       for (const b of sys.bodies) {
         if (b.ownerId) ownerCounts.set(b.ownerId, (ownerCounts.get(b.ownerId) ?? 0) + 1);
       }
+      
       if (ownerCounts.size === 0) return [];
-      const sorted = [...ownerCounts.entries()].sort((a, b) => b[1] - a[1]);
-      const dominantEntry = sorted[0];
-      const totalBodies = sys.bodies.length;
-      const isDominant = dominantEntry[1] / totalBodies >= 0.75;
-      const isContested = ownerCounts.size > 1;
       
-      // If no one owns 75% and it's not contested by multiple empires, don't show a ring
-      if (!isDominant && !isContested) return [];
+      const totalOwned = [...ownerCounts.values()].reduce((a, b) => a + b, 0);
+      const segments = [...ownerCounts.entries()]
+        .map(([id, count]) => ({
+          empire: galaxy.empires.find(e => e.id === id)!,
+          proportion: count / totalOwned
+        }))
+        .filter(s => s.empire)
+        .sort((a, b) => b.proportion - a.proportion);
 
-      const dominant = galaxy.empires.find((e) => e.id === sorted[0][0]);
-      if (!dominant) return [];
-      const secondary = sorted.length > 1 ? galaxy.empires.find((e) => e.id === sorted[1][0]) : null;
-      
-      return [{ sys, dominant, secondary, contested: isContested && !isDominant }];
-
+      return [{ sys, segments }];
     });
   }, [galaxy, fogOfWar, knownSystemIds]);
 
   return (
     <group>
-      {entries.map(({ sys, dominant, secondary, contested }) => {
-        const domColor = new THREE.Color().setHSL(dominant.hue / 360, 0.72, 0.52);
+      {entries.map(({ sys, segments }) => {
+        const starRadius = STAR_BASE_SIZE[sys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
+        const innerR = starRadius * 1.8;
+        const midR = starRadius * 2.2;
+        const outerR = starRadius * 3.5;
+        
+        const dominantColor = new THREE.Color().setHSL(segments[0].empire.hue / 360, 0.72, 0.55);
+        let currentAngle = 0;
+
         return (
-          <group key={sys.id} position={sys.pos}>
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.8, 0]}>
-              <ringGeometry args={[2.8, 4.5, 48]} />
-              <meshBasicMaterial color={domColor} transparent opacity={contested ? 0.20 : 0.28} side={THREE.DoubleSide} depthWrite={false} />
+          <group key={sys.id} position={[sys.pos[0], sys.pos[1] + 1.5, sys.pos[2]]}>
+            {/* Proportional Segments */}
+            {segments.map((seg) => {
+              const thetaLength = seg.proportion * Math.PI * 2;
+              const color = new THREE.Color().setHSL(seg.empire.hue / 360, 0.72, 0.55);
+              
+              // Force fully opaque material with no transparency flags
+              const segment = (
+                <mesh key={seg.empire.id} rotation={[-Math.PI / 2, 0, currentAngle]}>
+                  <ringGeometry args={[innerR, midR, 64, 1, 0, thetaLength]} />
+                  <meshBasicMaterial 
+                    color={color} 
+                    transparent={false} 
+                    opacity={1.0}
+                    side={THREE.DoubleSide} 
+                    depthWrite={true}
+                    depthTest={true}
+                    toneMapped={false}
+                  />
+                </mesh>
+              );
+              currentAngle += thetaLength;
+              return segment;
+            })}
+
+            {/* Outer Influence Glow of dominant owner */}
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]}>
+              <ringGeometry args={[midR, outerR, 64]} />
+              <meshBasicMaterial 
+                color={dominantColor} 
+                transparent 
+                opacity={0.06} 
+                side={THREE.DoubleSide} 
+                depthWrite={false} 
+                blending={THREE.AdditiveBlending}
+              />
             </mesh>
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.2, 0]}>
-              <ringGeometry args={[4.5, 7.5, 48]} />
-              <meshBasicMaterial color={domColor} transparent opacity={0.06} side={THREE.DoubleSide} depthWrite={false} />
-            </mesh>
-            {contested && secondary && (
-              <mesh rotation={[-Math.PI / 2, Math.PI * 0.5, 0]} position={[0, -0.6, 0]}>
-                <ringGeometry args={[2.8, 4.5, 48, 1, 0, Math.PI]} />
-                <meshBasicMaterial color={new THREE.Color().setHSL(secondary.hue / 360, 0.68, 0.48)} transparent opacity={0.22} side={THREE.DoubleSide} depthWrite={false} />
-              </mesh>
-            )}
           </group>
         );
       })}

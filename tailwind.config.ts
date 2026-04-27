@@ -81,22 +81,37 @@ export default {
         "accordion-down": { from: { height: "0" }, to: { height: "var(--radix-accordion-content-height)" } },
         "accordion-up": { from: { height: "var(--radix-accordion-content-height)" }, to: { height: "0" } },
         "fade-in": { from: { opacity: "0", transform: "translateY(4px)" }, to: { opacity: "1", transform: "translateY(0)" } },
-      },
-      animation: {
-        "accordion-down": "accordion-down 0.2s ease-out",
-        "accordion-up": "accordion-up 0.2s ease-out",
-        "fade-in": "fade-in 0.4s ease-out both",
-        "spin-slow": "spin 8s linear infinite",
-        "pulse-slow": "pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite",
-        "loading-bar": "loading-bar 2s ease-in-out infinite",
-      },
-      keyframes: {
+        "page-enter": {
+          "0%": { opacity: "0", transform: "translateY(12px) scale(0.99)" },
+          "100%": { opacity: "1", transform: "translateY(0) scale(1)" },
+        },
+        "page-exit": {
+          "0%": { opacity: "1", transform: "translateY(0) scale(1)" },
+          "100%": { opacity: "0", transform: "translateY(-8px) scale(1.005)" },
+        },
+        "scan-wipe": {
+          "0%": { transform: "scaleX(0)", opacity: "0" },
+          "30%": { transform: "scaleX(1)", opacity: "0.7" },
+          "70%": { transform: "scaleX(1)", opacity: "0.7" },
+          "100%": { transform: "scaleX(0)", opacity: "0" },
+        },
         "loading-bar": {
           "0%": { transform: "translateX(-100%)" },
           "50%": { transform: "translateX(0)" },
           "100%": { transform: "translateX(100%)" },
         }
-      }
+      },
+      animation: {
+        "accordion-down": "accordion-down 0.2s ease-out",
+        "accordion-up": "accordion-up 0.2s ease-out",
+        "fade-in": "fade-in 0.4s ease-out both",
+        "page-enter": "page-enter 0.45s cubic-bezier(0.22, 1, 0.36, 1) both",
+        "page-exit": "page-exit 0.3s ease-in both",
+        "scan-wipe": "scan-wipe 0.55s ease-in-out both",
+        "spin-slow": "spin 8s linear infinite",
+        "pulse-slow": "pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        "loading-bar": "loading-bar 2s ease-in-out infinite",
+      },
     },
   },
   plugins: [require("tailwindcss-animate")],

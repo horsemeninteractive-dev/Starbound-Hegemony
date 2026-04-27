@@ -184,7 +184,7 @@ function Sun({ scale, color, detailed, quality }: { scale: number; color: THREE.
             void main() {
               // Domain Warping: distort coordinates with a first noise layer for a fluid "swirling" look
               float t = uTime * 0.15;
-              vec3 p = vPosition * 2.2;
+              vec3 p = normalize(vPosition) * 2.2;
               
               // Distortion layer
               vec3 q = vec3(

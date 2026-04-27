@@ -5,17 +5,25 @@ import { Newspaper, Factory, Rocket, Users, User, Sparkles, Settings, X, Coins, 
 
 interface Props {
   onOpenSettings: () => void;
+  onOpenProfile: () => void;
+  onOpenMap: () => void;
   ap: number;
   sc: number;
+  playerName: string;
+  playerLevel: number;
+  playerXP: number;
+  xpToNextLevel: number;
+  playerAvatar: string;
   fogOfWar: boolean;
   setFogOfWar: (v: boolean) => void;
   instantJump: boolean;
   setInstantJump: (v: boolean) => void;
 }
 
-import { Eye, EyeOff, Zap } from "lucide-react";
+import { Eye, EyeOff, Zap, Globe } from "lucide-react";
 
 const GAME_MENU = [
+  { icon: Globe, label: "Galaxy Map", desc: "Celestial navigation" },
   { icon: Newspaper, label: "Articles", desc: "Galactic news feed" },
   { icon: Factory, label: "Factories", desc: "Production lines" },
   { icon: Rocket, label: "Fleets", desc: "Fleet command" },
@@ -26,7 +34,8 @@ const GAME_MENU = [
 ];
 
 export function TopBar({ 
-  onOpenSettings, ap, sc,
+  onOpenSettings, onOpenProfile, onOpenMap, ap, sc,
+  playerName, playerLevel, playerXP, xpToNextLevel, playerAvatar,
   fogOfWar, setFogOfWar, instantJump, setInstantJump
 }: Props) {
   // Game menu state - Radix Sheet handles escape/outside-click automatically
@@ -48,26 +57,66 @@ export function TopBar({
           />
         </button>
 
+        {/* Player Profile HUD */}
+        <div 
+          className="flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-1 bg-primary/5 border border-primary/20 rounded-lg group hover:bg-primary/10 transition-colors cursor-pointer" 
+          onClick={onOpenProfile}
+        >
+          {/* Avatar with level badge */}
+          <div className="relative shrink-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full border-2 border-primary/40 overflow-hidden shadow-[0_0_10px_hsl(var(--primary)/0.2)]">
+              <img src={playerAvatar} alt="" className="w-full h-full object-cover" />
+            </div>
+            <div className="absolute -bottom-1 -right-1 w-4 h-4 sm:w-5 sm:h-5 bg-background border border-primary/40 rounded-full flex items-center justify-center">
+              <span className="text-[7px] sm:text-[9px] font-bold text-primary">{playerLevel}</span>
+            </div>
+          </div>
+
+          {/* Name and XP details - hidden on mobile to save space */}
+          <div className="hidden sm:flex flex-col gap-0.5 min-w-[140px] lg:min-w-[180px]">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-display text-[10px] sm:text-[11px] uppercase tracking-wider text-primary text-glow truncate max-w-[120px] lg:max-w-[none]">
+                {playerName}
+              </span>
+              <span className="font-mono-hud text-[7px] sm:text-[8px] text-muted-foreground uppercase tracking-tighter whitespace-nowrap">LVL {playerLevel}</span>
+            </div>
+            
+            {/* XP Progress Bar */}
+            <div className="w-full h-1 bg-primary/10 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-primary shadow-[0_0_5px_hsl(var(--primary))]" 
+                style={{ width: `${(playerXP / xpToNextLevel) * 100}%` }}
+              />
+            </div>
+            
+            {/* XP Stats */}
+            <div className="flex justify-between text-[7px] font-mono-hud uppercase tracking-widest text-primary/40">
+              <span>XP {playerXP.toLocaleString()}</span>
+              <span>NEXT: {(xpToNextLevel - playerXP).toLocaleString()}</span>
+            </div>
+          </div>
+        </div>
+
         {/* Spacer to push content right */}
         <div className="flex-1" />
 
         {/* Action Points and Credits */}
-        <div className="flex items-center gap-2 sm:gap-4 pr-1 sm:pr-4">
+        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1 sm:gap-4 pr-1 sm:pr-4">
           {/* Action Points */}
-          <div className="flex items-center gap-2 px-2 sm:px-3 py-1 sm:py-1.5 border-l-2 border-primary bg-primary/5">
+          <div className="flex items-center gap-1 sm:gap-2 px-1.5 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-primary bg-primary/5 min-w-[60px] sm:min-w-0">
             <ZapIcon size={14} className="text-primary animate-pulse" fill="currentColor" />
             <div className="flex flex-col leading-none">
-              <span className="text-[10px] sm:text-[11px] text-primary font-bold tracking-wider">{ap}</span>
+              <span className="text-[10px] sm:text-[11px] text-primary font-bold tracking-wider">{Math.floor(ap)}</span>
               <span className="hidden sm:block text-[7px] text-primary/60 uppercase tracking-widest font-mono-hud">Action Points</span>
             </div>
           </div>
 
           {/* Standard Credits */}
-          <div className="flex items-center gap-2 px-2 sm:px-3 py-1 sm:py-1.5 border-l-2 border-warning bg-warning/5">
+          <div className="flex items-center gap-1 sm:gap-2 px-1.5 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-warning bg-warning/5 min-w-[60px] sm:min-w-0">
             <Coins size={14} className="text-warning" />
             <div className="flex flex-col leading-none">
               <span className="text-[10px] sm:text-[11px] text-warning font-bold tracking-wider">
-                {sc > 1000 && window.innerWidth < 640 ? `${(sc / 1000).toFixed(1)}k` : sc.toLocaleString()}
+                {sc > 1000 && window.innerWidth < 640 ? `${Math.floor(sc / 1000)}k` : Math.floor(sc).toLocaleString()}
               </span>
               <span className="hidden sm:block text-[7px] text-warning/60 uppercase tracking-widest font-mono-hud">Standard Credits</span>
             </div>
@@ -93,17 +142,12 @@ export function TopBar({
         </div>
       </div>
 
-      {/* Game menu drawer using Sheet for smooth animations */}
+      {/* Game Menu Drawer */}
       <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
-        <SheetContent 
-          side="left" 
-          className="p-0 border-r border-primary/20 w-[min(360px,100vw)] bg-background/95 shadow-[4px_0_24px_hsl(var(--primary)/0.15)] flex flex-col"
-          hideCloseButton // We have our own custom close button in the header
-          overlayClassName="bg-background/40 backdrop-blur-md duration-500"
-        >
-          
-          {/* Header matching TopBar height */}
-          <div className="h-[60px] sm:h-[72px] flex items-center justify-between px-4 sm:px-6 border-b border-primary/20 bg-primary/5 shrink-0">
+        <SheetOverlay className="bg-black/60 backdrop-blur-sm z-[60]" />
+        <SheetContent side="left" className="w-[300px] sm:w-[380px] bg-background/95 backdrop-blur-xl border-r border-primary/20 p-0 flex flex-col z-[70] shadow-[10px_0_50px_rgba(0,0,0,0.8)]">
+          {/* Menu Header matching TopBar height */}
+          <div className="h-[60px] sm:h-[72px] px-6 border-b border-primary/20 flex items-center justify-between bg-primary/5">
             <div className="flex items-center gap-3 sm:gap-4">
               <img src={logo} alt="" className="h-12 sm:h-14 w-auto drop-shadow-[0_0_8px_hsl(var(--primary)/0.4)]" />
               <div className="flex flex-col leading-none">
@@ -124,6 +168,8 @@ export function TopBar({
                 onClick={() => {
                   setMenuOpen(false);
                   if (item.label === "Settings") onOpenSettings();
+                  if (item.label === "Profile") onOpenProfile();
+                  if (item.label === "Galaxy Map") onOpenMap();
                 }}
                 className="flex items-center gap-4 px-4 py-4 text-left border border-transparent hover:border-primary/30 rounded-lg hover:bg-primary/10 transition group"
               >

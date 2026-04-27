@@ -6,7 +6,7 @@ import type { ContestState, EconomicStatus, StarType } from "@/galaxy/types";
 interface Props {
   filters: FilterState;
   onToggle: <K extends keyof FilterState>(kind: K, value: FilterState[K] extends Set<infer V> ? V : never) => void;
-  view: "galaxy" | "system" | "body";
+  view: "galaxy" | "system" | "body" | "ship";
 }
 
 const CONTEST_ORDER: ContestState[] = ["controlled", "contested", "anarchic", "frontier"];
@@ -36,7 +36,7 @@ export function FilterPanel({ filters, onToggle, view }: Props) {
         {open ? "× Filters" : "⚙ Filters"}
       </button>
       {open && (
-        <div className="absolute bottom-full left-0 mb-2 hud-panel hud-corner p-3 w-[260px] max-h-[70vh] overflow-y-auto animate-fade-in-up">
+        <div className="absolute bottom-full right-0 mb-2 hud-panel hud-corner p-3 w-[260px] max-h-[70vh] overflow-y-auto animate-fade-in-up">
           <Section title="Display Layers">
             {layers.map((l) => (
               <Chip

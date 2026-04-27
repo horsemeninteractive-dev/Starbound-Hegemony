@@ -3,7 +3,7 @@ import { Info, ChevronUp, ChevronDown } from "lucide-react";
 import { STAR_META, BODY_META } from "@/galaxy/meta";
 
 interface Props {
-  view: "galaxy" | "system" | "body";
+  view: "galaxy" | "system" | "body" | "ship";
 }
 
 export function Legend({ view }: Props) {
@@ -32,7 +32,7 @@ export function Legend({ view }: Props) {
               </LegendSection>
             )}
 
-            {(view === "system" || view === "body") && (
+            {(view === "system" || view === "body" || view === "ship") && (
               <LegendSection title="Celestial Bodies">
                 {Object.entries(BODY_META).map(([key, meta]) => (
                   <div key={key} className="flex items-center gap-3">
@@ -58,7 +58,7 @@ export function Legend({ view }: Props) {
                   </div>
                 </>
               )}
-              {view === "system" && (
+              {(view === "system" || view === "ship") && (
                 <div className="flex items-center gap-3">
                   <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin-slow scale-50" />
                   <span className="text-[10px] font-mono-hud text-foreground uppercase">Jump Gate</span>

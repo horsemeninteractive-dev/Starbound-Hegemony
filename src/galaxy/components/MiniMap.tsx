@@ -6,7 +6,7 @@ interface Props {
   galaxy: Galaxy;
   currentSystem: StarSystem | null;
   playerSystemId?: string;
-  view: "galaxy" | "system" | "body";
+  view: "galaxy" | "system" | "body" | "ship";
 }
 
 export function MiniMap({ galaxy, currentSystem, playerSystemId, view }: Props) {
