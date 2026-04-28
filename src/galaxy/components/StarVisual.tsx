@@ -54,12 +54,14 @@ export function StarVisual({ type, scale = 1, detailed = false, grayscale = fals
         return <NeutronStar scale={scale} color={color} pulsar={type === "pulsar"} detailed={detailed} quality={quality} />;
       case "binary":
         return <BinaryStar scale={scale} detailed={detailed} quality={quality} />;
+      case "trinary":
+        return <TrinaryStar scale={scale} detailed={detailed} quality={quality} />;
       case "whitedwarf":
         return <Sun scale={scale * 0.45} color={color} detailed={detailed} quality={quality} />;
       default:
         return <Sun scale={scale} color={color} detailed={detailed} quality={quality} />;
     }
-  }, [type, scale, detailed, color]);
+  }, [type, scale, detailed, color, quality]);
 
   return (
     <group 
@@ -423,6 +425,42 @@ function BinaryStar({ scale, detailed, quality }: { scale: number; detailed: boo
       </group>
       <group position={[-scale * 1.1, 0, 0]}>
         <Sun scale={scale * 0.55} color={b} detailed={detailed} quality={quality} />
+      </group>
+    </group>
+  );
+}
+
+/* ---------- Trinary ---------- */
+function TrinaryStar({ scale, detailed, quality }: { scale: number; detailed: boolean; quality: "low" | "medium" | "high" }) {
+  const binaryRef = useRef<THREE.Group>(null);
+  const outerRef = useRef<THREE.Group>(null);
+  
+  useFrame((state, dt) => {
+    if (binaryRef.current) binaryRef.current.rotation.y += dt * 0.8;
+    if (outerRef.current) outerRef.current.rotation.y += dt * 0.3;
+  });
+  
+  const a = useMemo(() => new THREE.Color("#ffd24a"), []);
+  const b = useMemo(() => new THREE.Color("#ff7a3d"), []);
+  const c = useMemo(() => new THREE.Color("#aac8ff"), []);
+  
+  return (
+    <group ref={outerRef}>
+      {/* Inner Binary Pair */}
+      <group position={[scale * 0.8, 0, 0]}>
+        <group ref={binaryRef}>
+          <group position={[scale * 0.5, 0, 0]}>
+            <Sun scale={scale * 0.5} color={a} detailed={detailed} quality={quality} />
+          </group>
+          <group position={[-scale * 0.5, 0, 0]}>
+            <Sun scale={scale * 0.4} color={b} detailed={detailed} quality={quality} />
+          </group>
+        </group>
+      </group>
+      
+      {/* Distant Orbiting Star */}
+      <group position={[-scale * 1.5, 0, 0]}>
+        <Sun scale={scale * 0.6} color={c} detailed={detailed} quality={quality} />
       </group>
     </group>
   );

@@ -5,6 +5,8 @@ import { Sheet, SheetContent, SheetOverlay, SheetClose, SheetTitle } from "@/com
 import { Newspaper, Factory, Rocket, Users, User, Sparkles, Settings, X, Coins, Zap as ZapIcon } from "lucide-react";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 
+import type { Galaxy } from "@/galaxy/types";
+
 interface Props {
   onOpenSettings: () => void;
   onOpenProfile: () => void;
@@ -27,7 +29,8 @@ interface Props {
   setInstantJump: (v: boolean) => void;
   playerSystemName?: string;
   travel?: { targetId?: string; endTime: number; startTime: number } | null;
-  galaxy: any;
+  currentTime: number;
+  galaxy: Galaxy;
   onRegenerate: () => void;
 }
 
@@ -49,7 +52,7 @@ export function TopBar({
   onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills,
   ap, sc, playerName, playerLevel, playerXP, xpToNextLevel, playerAvatar,
   fogOfWar, setFogOfWar, instantJump, setInstantJump,
-  playerSystemName, travel, galaxy, onRegenerate
+  playerSystemName, travel, currentTime, galaxy, onRegenerate
 }: Props) {
   // Game menu state - Radix Sheet handles escape/outside-click automatically
   const [menuOpen, setMenuOpen] = useState(false);
@@ -135,12 +138,18 @@ export function TopBar({
             <div className="flex items-center gap-1.5 sm:gap-2 mt-0.5 h-2.5">
               {travel ? (
                 <div className="flex-1 flex flex-col justify-center">
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className="text-[6px] sm:text-[7px] font-mono-hud text-cyan-400/80 uppercase tracking-widest">Warping...</span>
+                    <span className="text-[6px] sm:text-[7px] font-mono-hud text-cyan-400 font-bold uppercase tracking-widest">
+                      ETA {Math.max(0, Math.ceil((travel.endTime - currentTime) / 1000))}S
+                    </span>
+                  </div>
                   <div className="h-1 bg-cyan-950 rounded-full overflow-hidden w-full border border-cyan-500/20">
                     <div 
                       className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_8px_cyan]"
                       style={{ 
-                        width: `${Math.min(100, ((Date.now() - (travel as any).startTime) / ((travel as any).endTime - (travel as any).startTime)) * 100)}%`,
-                        transition: "width 1s linear"
+                        width: `${Math.min(100, ((currentTime - travel.startTime) / (travel.endTime - travel.startTime)) * 100)}%`,
+                        transition: "width 0.1s linear"
                       }}
                     />
                   </div>

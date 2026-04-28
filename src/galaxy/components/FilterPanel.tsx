@@ -11,7 +11,7 @@ interface Props {
 
 const CONTEST_ORDER: ContestState[] = ["controlled", "contested", "anarchic", "frontier"];
 const ECON_ORDER: EconomicStatus[] = ["boom", "stable", "recession", "blockaded", "untapped"];
-const STAR_ORDER: StarType[] = ["O", "B", "A", "F", "G", "K", "M", "whitedwarf", "neutron", "pulsar", "binary", "blackhole", "whitehole", "quasar", "magnetar", "protostar", "dyson_swarm"];
+const STAR_ORDER: StarType[] = ["O", "B", "A", "F", "G", "K", "M", "whitedwarf", "neutron", "pulsar", "binary", "trinary", "blackhole", "whitehole", "quasar", "magnetar", "protostar", "dyson_swarm"];
 const LAYER_ORDER: { key: DisplayLayer; label: string; views?: string[] }[] = [
   { key: "hyperlanes",    label: "Hyperlanes",      views: ["galaxy"] },
   { key: "sectorBorders", label: "Sector Borders",  views: ["galaxy"] },

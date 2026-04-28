@@ -24,7 +24,7 @@ export function Legend({ view }: Props) {
                   <div key={key} className="flex items-center gap-3">
                     <div className={`w-3 h-3 rounded-full bg-current ${meta.color} shadow-[0_0_8px_currentColor]`} />
                     <div className="flex flex-col leading-none">
-                      <span className="text-[10px] font-mono-hud text-foreground">{meta.label}</span>
+                      <span className="text-[10px] font-mono-hud text-foreground uppercase tracking-widest">★ {meta.label}</span>
                       <span className="text-[8px] text-muted-foreground uppercase tracking-wider">{meta.description}</span>
                     </div>
                   </div>
@@ -36,12 +36,26 @@ export function Legend({ view }: Props) {
               <LegendSection title="Celestial Bodies">
                 {Object.entries(BODY_META).map(([key, meta]) => (
                   <div key={key} className="flex items-center gap-3">
-                    <span className="w-5 text-center text-primary font-mono-hud text-sm">{meta.icon}</span>
-                    <span className="text-[10px] font-mono-hud text-foreground uppercase tracking-widest">{meta.label}</span>
+                    <span className="text-[10px] font-mono-hud text-foreground uppercase tracking-widest">{meta.icon} {meta.label}</span>
                   </div>
                 ))}
               </LegendSection>
             )}
+
+            <LegendSection title="Affiliation Symbols">
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-mono-hud text-foreground uppercase tracking-widest">★ System (Unowned)</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-mono-hud text-primary uppercase tracking-widest">★ System (Owned)</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-mono-hud text-foreground uppercase tracking-widest">○ Body (Unowned)</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-mono-hud text-primary uppercase tracking-widest">○ Body (Owned)</span>
+              </div>
+            </LegendSection>
 
             <LegendSection title="Map Symbols">
               {view === "galaxy" && (

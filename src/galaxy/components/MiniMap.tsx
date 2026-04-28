@@ -26,7 +26,7 @@ export function MiniMap({ galaxy, currentSystem, playerSystemId, view }: Props) 
       const y = (s.pos[2] / bounds) * (innerSize / 2) + (size / 2);
       return { id: s.id, x, y };
     });
-  }, [galaxy.systems]);
+  }, [galaxy.systems, innerSize, size]);
 
   const playerPos = useMemo(() => {
     const pSys = galaxy.systems.find(s => s.id === playerSystemId);
@@ -35,7 +35,7 @@ export function MiniMap({ galaxy, currentSystem, playerSystemId, view }: Props) 
       x: (pSys.pos[0] / bounds) * (innerSize / 2) + (size / 2),
       y: (pSys.pos[2] / bounds) * (innerSize / 2) + (size / 2)
     };
-  }, [galaxy.systems, playerSystemId]);
+  }, [galaxy.systems, playerSystemId, innerSize, size]);
 
   const currentPos = useMemo(() => {
     if (!currentSystem) return null;
@@ -43,7 +43,7 @@ export function MiniMap({ galaxy, currentSystem, playerSystemId, view }: Props) 
       x: (currentSystem.pos[0] / bounds) * (innerSize / 2) + (size / 2),
       y: (currentSystem.pos[2] / bounds) * (innerSize / 2) + (size / 2)
     };
-  }, [currentSystem]);
+  }, [currentSystem, innerSize, size]);
 
   if (view === "galaxy") return null;
 

@@ -3,13 +3,13 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { CameraControls, Html, PerspectiveCamera, Line, Billboard } from "@react-three/drei";
 import { Rocket } from "lucide-react";
 import * as THREE from "three";
-import type { Galaxy, StarSystem, Body, Sector, ContestState } from "@/galaxy/types";
+import type { Galaxy, StarSystem, Body, Sector, ContestState, StarType } from "@/galaxy/types";
 import type { FilterState, ViewMode } from "@/galaxy/useGalaxyApp";
 import { SpaceBackground } from "./SpaceBackground";
 import { StarVisual } from "./StarVisual";
 import { PlanetMaterial } from "./PlanetMaterial";
 import { PlanetaryRing } from "./PlanetaryRing";
-import { STAR_LUMINOSITY, STAR_META, STAR_BASE_SIZE, getOrbitalSpeed } from "@/galaxy/meta";
+import { STAR_LUMINOSITY, STAR_META, STAR_BASE_SIZE, getOrbitalSpeed, BODY_META } from "@/galaxy/meta";
 
 // Shared temporary vectors for internal calculations within a single function call.
 // DO NOT use these across async boundaries or between different components' useFrame calls.
@@ -33,7 +33,7 @@ function CloudLayer({ body, visualSize, quality }: { body: Body; visualSize: num
         subtype={body.subtype} 
         hue={body.hue} 
         isWeather 
-        quality={quality as any}
+        quality={quality as "low" | "medium" | "high"}
         terrainSeed={body.terrainSeed}
         geographyType={body.geographyType}
       />
@@ -56,7 +56,7 @@ interface Props {
   knownSystemIds: Set<string>;
   systemMatchesFilter: (s: StarSystem) => boolean;
   currentSystemId?: string;
-  travel?: any;
+  travel?: { targetId: string; startTime: number; endTime: number } | null;
   isMobilePanelExpanded?: boolean;
   graphicsQuality?: "low" | "medium" | "high";
 }
@@ -95,7 +95,7 @@ function MapContent({
   currentSystemId, travel, isMobilePanelExpanded, containerRef, graphicsQuality
 }: Props & { containerRef: React.RefObject<HTMLDivElement> }) {
   const { camera, gl } = useThree();
-  const controlsRef = useRef<any>(null);
+  const controlsRef = useRef<CameraControls>(null);
   const lastSystemRef = useRef<StarSystem | null>(null);
 
   const lastViewRef = useRef<ViewMode>(view);
@@ -155,7 +155,7 @@ function MapContent({
     }
     
     lastViewRef.current = view;
-  }, [view, system?.id, body?.id, camera]);
+  }, [view, system, body?.id, camera]);
 
   // Keyboard movement keys
   const keys = useRef<Record<string, boolean>>({});
@@ -187,10 +187,11 @@ function MapContent({
     // Left: Rotate
     // Middle: Dolly (Zoom)
     // Right: Truck (Pan) - Force to XZ plane
-    controls.mouseButtons.right = 2; // ACTION.TRUCK
-    controls.touches.two = 2; // ACTION.TOUCH_TRUCK (Two fingers pan on mobile)
-    controls.touches.three = 2; // ACTION.TOUCH_TRUCK
-    controls.screenSpacePanning = false; // CRITICAL: Pan on the XZ plane, not screen XY
+    controls.mouseButtons.right = 2; // TRUCK
+    // @ts-ignore
+    controls.touches.two = "truck"; 
+    // @ts-ignore
+    controls.touches.three = "truck"; 
   }, []);
 
   const targetOffsetRef = useRef(0);
@@ -416,7 +417,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
   system: StarSystem;
   galaxy: Galaxy;
   view: ViewMode;
-  controlsRef: any;
+  controlsRef: React.RefObject<CameraControls | null>;
   isFocused: boolean;
   isBodyFocused: boolean;
   focusedBodyId: string | null;
@@ -445,7 +446,10 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
   // Core is always visible/explored
   const explored = isExplored || system.id === "sys-center";
   const known = isKnown || system.id === "sys-center";
-  const baseStarScale = system.id === "sys-center" ? 40.0 : (STAR_BASE_SIZE[system.starType as keyof typeof STAR_BASE_SIZE] || 2.4);
+  const rawBaseSize = system.id === "sys-center" ? 40.0 : (STAR_BASE_SIZE[system.starType as keyof typeof STAR_BASE_SIZE] || 2.4);
+  const baseStarScale = view === "galaxy" 
+    ? (Math.sqrt(rawBaseSize) * 1.1 + 0.9) * (system.starType === "binary" || system.starType === "trinary" ? 0.5 : 1.0)
+    : rawBaseSize;
   
   // Pre-calculate system vector to avoid instantiation in useFrame
   const sysPos = useMemo(() => new THREE.Vector3(...system.pos), [system.pos]);
@@ -459,7 +463,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
     const d = state.camera.position.distanceTo(sysPos);
     const safeD = Math.max(0.1, d); // Prevent division by zero
     
-    const currentScale = isFocused ? baseStarScale : Math.min(20.0, Math.max(baseStarScale, safeD / 250));
+    const currentScale = isFocused ? baseStarScale : Math.min(10.0, Math.max(baseStarScale, safeD / 500));
     
     if (starGroupRef.current) {
       starGroupRef.current.scale.setScalar(currentScale / baseStarScale);
@@ -531,7 +535,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
           detailed={showDetails} 
           grayscale={!explored}
           quality={quality}
-          onClick={(e: any) => { 
+          onClick={(e) => { 
             e.stopPropagation(); 
             onSelect();
           }}
@@ -545,7 +549,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
         {/* Invisible Hitbox for easier selection — Billboard ensures it's always a flat disk facing the camera */}
         <mesh 
           ref={hitboxRef}
-          onClick={(e: any) => { 
+          onClick={(e) => { 
             e.stopPropagation(); 
             onSelect();
           }}
@@ -570,43 +574,24 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
           {system.bodies
             .filter(b => !b.parentId) // Only top-level planets/stations
             .map((b: Body) => (
-            <PlanetNode 
-              key={b.id} 
-              body={b} 
-              view={view}
-              controlsRef={controlsRef}
-              isFocused={focusedBodyId === b.id}
-              filters={filters}
-              onSelect={() => onSelectBody(b.id)} 
-              onSelectBody={onSelectBody}
-              focusedBodyId={focusedBodyId}
-              starWorldPos={new THREE.Vector3(...system.pos)}
-              starType={system.starType}
-              isMobilePanelExpanded={isMobilePanelExpanded}
-              quality={quality}
-              galaxy={galaxy}
-            >
-              {system.bodies
-                .filter(m => m.parentId === b.id)
-                .map(m => (
-                  <PlanetNode 
-                    key={m.id} 
-                    body={m} 
-                    parentBody={b}
-                    view={view}
-                    controlsRef={controlsRef}
-                    isFocused={focusedBodyId === m.id}
-                    filters={filters}
-                    onSelect={() => onSelectBody(m.id)} 
-                    starType={system.starType}
-                    starWorldPos={new THREE.Vector3(...system.pos)}
-                    isMobilePanelExpanded={isMobilePanelExpanded}
-                    quality={quality}
-                    galaxy={galaxy}
-                  />
-                ))}
-            </PlanetNode>
-          ))}
+              <PlanetNode 
+                key={b.id} 
+                body={b} 
+                parentBody={null}
+                view={view}
+                controlsRef={controlsRef}
+                isFocused={focusedBodyId === b.id}
+                filters={filters}
+                onSelect={onSelectBody} 
+                onSelectBody={onSelectBody}
+                focusedBodyId={focusedBodyId}
+                starWorldPos={new THREE.Vector3(...system.pos)}
+                starType={system.starType}
+                isMobilePanelExpanded={isMobilePanelExpanded}
+                quality={quality}
+                galaxy={galaxy}
+              />
+            ))}
           {/* Orbits — hidden for the focused planet in body view (camera is inside that orbit, causing a horizon-line artifact) */}
           {filters.layers.has("orbitPaths") && system.bodies.map((b: Body) => (
             !b.parentId && !(view === "body" && focusedBodyId === b.id) && (
@@ -697,12 +682,33 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
           <Html center zIndexRange={[100, 0]}>
             <div 
               ref={labelRef}
-              className="px-1 h-[12px] flex items-center justify-center bg-black/40 rounded-sm pointer-events-none whitespace-nowrap transition-opacity duration-300"
+              className="px-2 py-1 flex items-center gap-2 bg-black/50 backdrop-blur-sm border border-white/10 rounded-sm pointer-events-none whitespace-nowrap shadow-lg transition-opacity duration-300"
               style={{ opacity: 0 }}
             >
-              <span className="font-mono-hud text-[7px] leading-none uppercase tracking-wider text-primary/60">
-                {system.name}
-              </span>
+              {isPlayerHere && (
+                <div className="flex items-center justify-center w-3 h-3 bg-cyan-400 rounded-full animate-pulse">
+                  <div className="w-1 h-1 bg-white rounded-full" />
+                </div>
+              )}
+              {isKnown && (
+                <div className="flex flex-col items-center">
+                  <span 
+                    className="font-display text-[10px] uppercase tracking-wider"
+                    style={{ 
+                      color: system.ownerId 
+                        ? `hsl(${galaxy.empires.find(e => e.id === system.ownerId)?.hue || 0} 75% 65%)` 
+                        : "rgba(255,255,255,0.8)"
+                    }}
+                  >
+                    ★ {system.name}
+                  </span>
+                  {system.ownerId && (
+                    <span className="font-mono-hud text-[6px] uppercase tracking-[0.2em] text-white/60 mt-0.5">
+                      {galaxy.empires.find(e => e.id === system.ownerId)?.name}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </Html>
         </group>
@@ -713,9 +719,9 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
 
 
 
-function TerritoryMarker({ body, visualSize, galaxy }: any) {
+function TerritoryMarker({ body, visualSize, galaxy }: { body: Body; visualSize: number; galaxy: Galaxy }) {
   const meshRef = useRef<THREE.Group>(null);
-  const empire = useMemo(() => galaxy.empires.find((e: any) => e.id === body.ownerId), [galaxy, body.ownerId]);
+  const empire = useMemo(() => galaxy.empires.find((e) => e.id === body.ownerId), [galaxy, body.ownerId]);
   
   const color = useMemo(() => {
     if (!empire) return new THREE.Color("#ffffff");
@@ -770,10 +776,25 @@ function TerritoryMarker({ body, visualSize, galaxy }: any) {
   );
 }
 
-function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, children, onSelectBody, focusedBodyId, starWorldPos, starType, filters, isMobilePanelExpanded, quality, galaxy }: any) {
+function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, onSelectBody, focusedBodyId, starWorldPos, starType, filters, isMobilePanelExpanded, quality, galaxy }: {
+  body: Body;
+  parentBody: Body | null;
+  view: ViewMode;
+  controlsRef: React.RefObject<CameraControls | null>;
+  isFocused: boolean;
+  onSelect: (id: string) => void;
+  onSelectBody: (id: string) => void;
+  focusedBodyId: string | null;
+  starWorldPos: THREE.Vector3;
+  starType: StarType;
+  filters: FilterState;
+  isMobilePanelExpanded?: boolean;
+  quality: "low" | "medium" | "high";
+  galaxy: Galaxy;
+}) {
   const { camera } = useThree();
   const meshRef = useRef<THREE.Group>(null);
-  const sphereRef = useRef<THREE.Object3D>(null);
+  const sphereRef = useRef<any>(null);
   const labelRef = useRef<HTMLDivElement>(null);
   const hitboxRef = useRef<THREE.Mesh>(null);
   const lastWorldPosRef = useRef<THREE.Vector3>(new THREE.Vector3());
@@ -886,7 +907,7 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
   return (
     <group ref={meshRef}>
       {body.subtype === "station" ? (
-        <group ref={sphereRef as any}>
+        <group ref={sphereRef}>
           {/* Central Hub */}
           <mesh>
             <cylinderGeometry args={[visualSize * 0.35, visualSize * 0.35, visualSize * 2.5, 16]} />
@@ -910,7 +931,7 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
         </group>
       ) : (
         <mesh 
-          ref={sphereRef as any}
+          ref={sphereRef}
           scale={body.subtype === "asteroid" ? [1.0 + rotationSeed * 0.4, 1.0 + (1.0 - rotationSeed) * 0.2, 1.0 + rotationSeed * 0.3] : [1, 1, 1]}
         >
           {body.subtype === "asteroid" ? (
@@ -976,7 +997,7 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
       {/* Invisible Hitbox for easier selection — Billboard ensures it's always a flat disk facing the camera */}
       <mesh 
         ref={hitboxRef}
-        onClick={(e) => { e.stopPropagation(); onSelect(); }}
+        onClick={(e) => { e.stopPropagation(); onSelect(body.id); }}
         onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
         onPointerOut={() => { document.body.style.cursor = "default"; }}
       >
@@ -1028,35 +1049,50 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
       {view !== "galaxy" && filters.layers.has("objectLabels") && (
         <Html position={[0, 0, 0]} center zIndexRange={[100, 0]}>
           <div ref={labelRef} className="px-1.5 py-0.5 flex items-center gap-1.5 bg-black/40 backdrop-blur-[2px] border border-white/5 rounded-sm pointer-events-none whitespace-nowrap">
-            {body.ownerId && filters.layers.has("empireColors") && (
-              <div 
-                className="w-1.5 h-1.5 rounded-full shrink-0 shadow-[0_0_6px_currentColor]" 
-                style={{ 
-                  backgroundColor: `hsl(${galaxy.empires.find((e: any) => e.id === body.ownerId)?.hue || 0} 70% 55%)`,
-                  color: `hsl(${galaxy.empires.find((e: any) => e.id === body.ownerId)?.hue || 0} 70% 55%)`
-                }} 
-              />
-            )}
-            <span className="font-mono-hud text-[6px] leading-none uppercase tracking-wider text-primary/70">
-              {body.name}
+            <span 
+              className="font-mono-hud text-[7px] leading-none uppercase"
+              style={{ 
+                color: body.ownerId 
+                  ? `hsl(${galaxy.empires.find(e => e.id === body.ownerId)?.hue || 0} 75% 65%)` 
+                  : "white"
+              }}
+            >
+              {body.type === "star" ? "★" : (BODY_META[body.type as keyof typeof BODY_META]?.icon || "○")} {body.name}
             </span>
           </div>
         </Html>
       )}
 
 
-      {/* Moon Orbits relative to planet */}
-      {children && (
-        <>
-          {filters.layers.has("orbitPaths") && children.map((c: any) => (
-            <mesh key={`orbit-line-${c.props.body.id}`} rotation={[Math.PI / 2, 0, 0]}>
-              <ringGeometry args={[c.props.body.orbit - 0.02, c.props.body.orbit + 0.02, 32]} />
-              <meshBasicMaterial color="white" transparent opacity={0.08} side={THREE.DoubleSide} />
-            </mesh>
-          ))}
-          {children}
-        </>
-      )}
+      {/* Moon Orbits & Nodes relative to planet */}
+      {body.type !== "moon" && galaxy.systemById[body.systemId].bodies
+        .filter((m) => m.parentId === body.id)
+        .map((m) => (
+          <group key={m.id}>
+            {filters.layers.has("orbitPaths") && (
+              <mesh rotation={[Math.PI / 2, 0, 0]}>
+                <ringGeometry args={[m.orbit - 0.02, m.orbit + 0.02, 32]} />
+                <meshBasicMaterial color="white" transparent opacity={0.08} side={THREE.DoubleSide} />
+              </mesh>
+            )}
+            <PlanetNode
+              body={m}
+              parentBody={body}
+              view={view}
+              controlsRef={controlsRef}
+              isFocused={focusedBodyId === m.id}
+              onSelect={onSelect}
+              onSelectBody={onSelectBody}
+              focusedBodyId={focusedBodyId}
+              starWorldPos={starWorldPos}
+              starType={starType}
+              filters={filters}
+              isMobilePanelExpanded={isMobilePanelExpanded}
+              quality={quality}
+              galaxy={galaxy}
+            />
+          </group>
+        ))}
     </group>
   );
 }
@@ -1250,7 +1286,9 @@ function DynamicOrbit({ radius, color, systemPos }: { radius: number; color: str
   useFrame((state) => {
     if (lineRef.current && state.camera) {
       const camDist = state.camera.position.distanceTo(systemPos);
-      lineRef.current.lineWidth = Math.max(0.6, Math.min(2.5, camDist / 120));
+      if (lineRef.current.material) {
+        lineRef.current.material.linewidth = Math.max(0.6, Math.min(2.5, camDist / 120));
+      }
     }
   });
 
@@ -1268,10 +1306,10 @@ function DynamicOrbit({ radius, color, systemPos }: { radius: number; color: str
 }
 
 /* ---------- Jump Gates ---------- */
-function getSystemGateRadius(system: any) {
+function getSystemGateRadius(system: StarSystem) {
   if (!system) return 25;
   const maxBodyOrbit = system.bodies && system.bodies.length > 0 
-    ? Math.max(...system.bodies.map((b: any) => b.orbit)) 
+    ? Math.max(...system.bodies.map((b) => b.orbit)) 
     : 0;
   const starRadius = STAR_BASE_SIZE[system.starType as keyof typeof STAR_BASE_SIZE] || 1;
   const isExotic = system.starType === "blackhole" || system.starType === "whitehole";
@@ -1279,11 +1317,11 @@ function getSystemGateRadius(system: any) {
   return Math.max(maxBodyOrbit, starVisualExtent, 15) + 30;
 }
 
-function JumpGateMarkers({ system, galaxy, onSelect }: { system: any; galaxy: any; onSelect: (id: string) => void }) {
+function JumpGateMarkers({ system, galaxy, onSelect }: { system: StarSystem; galaxy: Galaxy; onSelect: (id: string) => void }) {
   const outer = getSystemGateRadius(system);
   return (
     <group>
-      {system.gates.map((gate: any, i: number) => {
+      {system.gates.map((gate, i: number) => {
         const angle = (i / system.gates.length) * Math.PI * 2;
         const pos: [number, number, number] = [Math.cos(angle) * outer, 0, Math.sin(angle) * outer];
         const isLocked = !!gate.locked;
@@ -1325,17 +1363,17 @@ function JumpGateMarkers({ system, galaxy, onSelect }: { system: any; galaxy: an
   );
 }
 
-function getGateLocalPosition(system: any, targetSystemId: string) {
+function getGateLocalPosition(system: StarSystem, targetSystemId: string) {
   if (!system || !system.gates) return new THREE.Vector3(15, 0, 0);
   const outer = getSystemGateRadius(system);
 
-  const i = system.gates.findIndex((g: any) => g.targetSystemId === targetSystemId);
+  const i = system.gates.findIndex((g) => g.targetSystemId === targetSystemId);
   if (i < 0) return new THREE.Vector3(outer, 0, 0);
   const angle = (i / system.gates.length) * Math.PI * 2;
   return new THREE.Vector3(Math.cos(angle) * outer, 0, Math.sin(angle) * outer);
 }
 
-function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, view, controlsRef, trackingShip, onSelect }: { galaxy: Galaxy, playerSystemId: string, viewedSystemId: string | null, travel: any, view: string, controlsRef?: any, trackingShip?: boolean, onSelect?: () => void }) {
+function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, view, controlsRef, trackingShip, onSelect }: { galaxy: Galaxy, playerSystemId: string, viewedSystemId: string | null, travel: { targetId: string; startTime: number; endTime: number } | null, view: string, controlsRef?: React.RefObject<CameraControls | null>, trackingShip?: boolean, onSelect?: () => void }) {
   const groupRef = useRef<THREE.Group>(null);
   const shipMeshRef = useRef<THREE.Group>(null);
   const engineGlowRef = useRef<THREE.Group>(null);

@@ -38,10 +38,18 @@ const SECTOR_PREFIXES = [
 
 const SECTOR_SUFFIXES = ["Reach", "Expanse", "Marches", "Verge", "Drift", "Cluster", "Belt", "Frontier", "Sprawl", "Dominion"];
 
-const SYSTEM_ROOTS = [
-  "Tau", "Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta", "Theta", "Iota", "Kappa",
-  "Lambda", "Sigma", "Omega", "Xeno", "Pyra", "Cryo", "Helio", "Thal", "Vex", "Zar",
-  "Quor", "Nyx", "Mor", "Kor", "Tyr", "Var", "Xan", "Ryl", "Phen", "Sol",
+const SYSTEM_PROPER = [
+  "Aethel", "Valthor", "Kryon", "Zephyra", "Thalmos", "Oris", "Belenos", "Cynos", "Draken", "Elowen",
+  "Fenris", "Galar", "Hesperis", "Ioran", "Kaelum", "Luvia", "Meryn", "Noxis", "Olyndia", "Porthos",
+  "Quilla", "Rhovan", "Sylvar", "Tyrus", "Ulric", "Veyla", "Wynter", "Xora", "Ylva", "Zorion",
+  "Aethelgard", "Volsung", "Miriad", "Forgeia", "Glassen", "Emberis", "Hollown", "Tidaris", "Crownis", "Ashen"
+];
+
+const SYSTEM_CATALOGS = ["KOR", "XEN", "VAL", "DRA", "NEX", "PHI", "RHO", "SIG", "VEX", "ZAR"];
+
+const STATION_NAMES = [
+  "Citadel", "Anchor", "Nexus", "Freeport", "Watchtower", "Sanctuary", "Vanguard", "Sentinel",
+  "Terminal", "Outpost", "Bastion", "Garrison", "Spire", "Deep Space 9", "Babylon", "The Sprawl"
 ];
 
 const PLANET_ROOTS = [
@@ -52,10 +60,17 @@ const PLANET_ROOTS = [
 export const sectorName = (rng: Rng) =>
   `${pick(rng, SECTOR_PREFIXES)} ${pick(rng, SECTOR_SUFFIXES)}`;
 
-export const systemName = (rng: Rng) => {
-  const root = pick(rng, SYSTEM_ROOTS);
-  const num = randInt(rng, 1, 9999);
-  return `${root}-${num.toString().padStart(4, "0")}`;
+export const systemName = (rng: Rng, isImportant: boolean = false) => {
+  if (isImportant || rng() < 0.15) {
+    return pick(rng, SYSTEM_PROPER);
+  }
+  const catalog = pick(rng, SYSTEM_CATALOGS);
+  const num = randInt(rng, 1000, 99999);
+  return `${catalog} ${num}`;
+};
+
+export const stationName = (rng: Rng, parentName: string) => {
+  return `${parentName} ${pick(rng, STATION_NAMES)}`;
 };
 
 const SUBTYPE_ABBR: Record<string, string> = {

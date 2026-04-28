@@ -6,14 +6,14 @@ import {
   Body, BodyType, ContestState, EconomicStatus, Empire,
   Galaxy, Hyperlane, JumpGate, Sector, StarSystem, StarType, PlanetSubtype, ResourceDeposit,
 } from "./types";
-import { mulberry32, pick, randInt, weightedPick, sectorName, systemName, planetName, moonName, Rng } from "./rng";
+import { mulberry32, pick, randInt, weightedPick, sectorName, systemName, stationName, planetName, moonName, Rng } from "./rng";
 
 import { STAR_BASE_SIZE, STAR_LUMINOSITY, STAR_META, CONTEST_META, ECON_META, BODY_META } from "./meta";
 
 const STAR_WEIGHTS: [StarType, number][] = [
   ["M", 38], ["K", 18], ["G", 12], ["F", 8], ["A", 5],
   ["B", 2], ["O", 0.6], ["whitedwarf", 5], ["neutron", 2],
-  ["pulsar", 1.4], ["binary", 6], ["blackhole", 1],
+  ["pulsar", 1.4], ["binary", 6], ["trinary", 2], ["blackhole", 1],
   ["quasar", 0.1], ["magnetar", 0.2], ["protostar", 0.8], ["dyson_swarm", 0.05],
 ];
 
@@ -33,7 +33,14 @@ const EMPIRE_NOUNS = [
   "Directorate", "Concordat", "Syndicate", "Combine", "Corp", "Cartel",
   "Pact", "Covenant", "Dominion", "Kingdom", "Sovereignty", "Council", "Assembly",
   "Collective", "Swarm", "Consensus", "Authority", "Throne", "State", "Coalition",
-  "Accord", "Order", "Foundry", "Network", "Hierarchy", "Dominance"
+  "Nexus", "The Sprawl", "The Hub", "Terminal", "Garrison", "Bastion", "Spire", "Sanctorum", "Foundry"
+];
+
+const BODY_PROPER = [
+  "Aethel Prime", "Valon", "Miris", "Emberis", "Vitris", "Ignis", "Umbra", "Undis", "Coron", "Cinis",
+  "Ferrus", "Salis", "Velum", "Fragmen", "Echo", "Vagari", "Spira", "Duna", "Muscus", "Rima",
+  "Aureus", "Argent", "Cuprum", "Plumbum", "Stannum", "Hydrar", "Galena", "Pyrite", "Azurite", "Malac",
+  "Boreas", "Zephyr", "Notos", "Euros", "Aeolos", "Aether", "Hemera", "Nyx", "Erebos", "Tartarus"
 ];
 
 function buildEmpires(rng: Rng): Empire[] {
@@ -89,7 +96,7 @@ function generateSectors(rng: Rng, count: number): Sector[] {
   return sectors;
 }
 
-const getAtmosphere = (subtype: PlanetSubtype, zone: "hot" | "temperate" | "cold"): string | null => {
+const getAtmosphere = (subtype: PlanetSubtype, zone: "hot" | "temperate" | "cold" | "none"): string | null => {
   // Pure vacuum bodies
   if (["barren", "shattered", "broken", "asteroid", "moon", "rocky_moon", "asteroid"].includes(subtype)) return null;
   
@@ -139,8 +146,14 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
 
   const planetCount = ultraExotic ? 0 : compactExotic ? randInt(rng, 0, 3) : isDyson ? 0 : randInt(rng, 3, 12);
 
+  // Base starting distance scales with star size to ensure no planets overlap the star surface
+  let orbit = STAR_BASE_SIZE[starType] * 2.2 + randInt(rng, 10, 20);
+
   // Ultra-exotic: generate accretion disk debris and anomalous bodies instead
-  if (ultraExotic) {
+  if (starType === "trinary") {
+     // Trinary systems are complex, slightly wider spacing for stability in the generation model
+     orbit = STAR_BASE_SIZE["trinary"] * 2.8 + randInt(rng, 20, 40);
+  } else if (ultraExotic) {
     const debrisCount = randInt(rng, 3, 7);
     let debrisOrbit = 12;
     for (let d = 0; d < debrisCount; d++) {
@@ -212,9 +225,6 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
   const luminosity = STAR_LUMINOSITY[starType];
   const cappedLuminosity = Math.min(luminosity, 5.0); // cap at F-star luminosity for orbit scaling
 
-  // Base starting distance scales with star size to ensure no planets overlap the star surface
-  let orbit = STAR_BASE_SIZE[starType] * 2.2 + randInt(rng, 10, 20);
-  
   for (let i = 0; i < planetCount; i++) {
     // Spacing scales with luminosity but capped so ultra-bright stars don't produce invisible orbits
     const spacingMult = Math.max(0.6, Math.pow(cappedLuminosity, 0.25));
@@ -303,7 +313,7 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
     const planet: Body = {
       id,
       systemId,
-      name,
+      name: `${systemName} ${String.fromCharCode(98 + i)}`, // e.g. "Sol b", "Sol c"
       type,
       subtype,
       orbit,
@@ -359,7 +369,7 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
         id: `${id}-m${m}`,
         systemId,
         parentId: id,
-        name: moonName(name, m),
+        name: `${planet.name}${m + 1}`, // e.g. "Sol b1", "Sol b2"
         type: "moon",
         subtype: moonSubtype,
         orbit: moonOrbit,
@@ -427,7 +437,7 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
     bodies.push({
       id: `${systemId}-stn`,
       systemId,
-      name: `${systemId.split("-")[1]} Anchor`,
+      name: stationName(rng, systemId.split("-")[1]),
       type: "station",
       subtype: "station",
       orbit: orbit + 4,
@@ -564,21 +574,51 @@ function assignOwnership(rng: Rng, systems: StarSystem[], empires: Empire[]) {
         if (body.type === "terrestrial" || body.type === "gas_giant" || body.type === "station") {
           // If the system was already claimed, we have a high chance of creating a contested environment
           if (alreadyClaimed) {
-            if (rng() < 0.4) body.ownerId = emp.id; // Ninja some bodies
+            if (rng() < 0.4) {
+              body.ownerId = emp.id; // Ninja some bodies
+              body.name = pick(rng, BODY_PROPER);
+            }
           } else {
             // New territory
             if (mode > 0.4) {
               // SOLID CONTROL (90% ownership of bodies)
-              if (rng() < 0.9) body.ownerId = emp.id;
+              if (rng() < 0.9) {
+                body.ownerId = emp.id;
+                body.name = pick(rng, BODY_PROPER);
+              }
             } else {
               // SHARED CONTROL
-              if (rng() < 0.5) body.ownerId = emp.id;
+              if (rng() < 0.5) {
+                body.ownerId = emp.id;
+                body.name = pick(rng, BODY_PROPER);
+              }
               else if (rng() < 0.4) {
                 const other = empires[randInt(rng, 0, empires.length - 1)];
                 body.ownerId = other.id;
+                body.name = pick(rng, BODY_PROPER);
               }
             }
           }
+        }
+      }
+
+      // Rename system if dominated by one empire
+      const ownerCounts: Record<string, number> = {};
+      for (const b of sys.bodies) {
+        if (b.ownerId) ownerCounts[b.ownerId] = (ownerCounts[b.ownerId] || 0) + 1;
+      }
+      let topOwner = "";
+      let maxBodies = 0;
+      for (const [oid, count] of Object.entries(ownerCounts)) {
+        if (count > maxBodies) {
+          maxBodies = count;
+          topOwner = oid;
+        }
+      }
+      if (topOwner && maxBodies >= sys.bodies.length * 0.5) {
+        const ownerEmp = empires.find(e => e.id === topOwner);
+        if (ownerEmp) {
+          sys.ownerId = topOwner;
         }
       }
 

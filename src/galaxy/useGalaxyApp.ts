@@ -3,7 +3,7 @@
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { generateGalaxy } from "./generate";
-import type { Galaxy, StarSystem, Body, ContestState, EconomicStatus, StarType } from "./types";
+import type { Galaxy, StarSystem, Body, ContestState, EconomicStatus, StarType, PlanetSubtype } from "./types";
 import { STAR_BASE_SIZE } from "./meta";
 
 export type ViewMode = "galaxy" | "system" | "body" | "ship";
@@ -18,7 +18,7 @@ export interface FilterState {
 
 const ALL_CONTEST: ContestState[] = ["controlled", "contested", "anarchic", "frontier"];
 const ALL_ECON: EconomicStatus[] = ["boom", "stable", "recession", "blockaded", "untapped"];
-const ALL_STAR: StarType[] = ["O", "B", "A", "F", "G", "K", "M", "whitedwarf", "neutron", "pulsar", "binary", "blackhole", "whitehole", "quasar", "magnetar", "protostar", "dyson_swarm"];
+const ALL_STAR: StarType[] = ["O", "B", "A", "F", "G", "K", "M", "whitedwarf", "neutron", "pulsar", "binary", "trinary", "blackhole", "whitehole", "quasar", "magnetar", "protostar", "dyson_swarm"];
 const ALL_LAYERS: DisplayLayer[] = ["hyperlanes", "sectorBorders", "sectorLabels", "objectLabels", "habitableZones", "orbitPaths", "weatherSystems", "cityLights", "empireColors"];
 
 import avatar from "@/assets/avatar.png";
@@ -117,10 +117,9 @@ export function useGalaxyApp(initialSeed = 20260423) {
 
   // Update clock for countdowns
   useEffect(() => {
-    if (!travel) return;
     const t = setInterval(() => setCurrentTime(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [travel]);
+  }, []);
 
 
   const [filters, setFilters] = useState<FilterState>({
@@ -134,7 +133,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const body: Body | null = useMemo(() => {
     if (!system || !bodyId) return null;
     if (bodyId === "ship") {
-      return {
+      const shipBody: Body = {
         id: "ship",
         systemId: system.id,
         name: "Commander's Vessel",
@@ -145,9 +144,6 @@ export function useGalaxyApp(initialSeed = 20260423) {
         phase: 0,
         hue: 0,
         hasRings: false,
-        desc: "The Commander's flagship. Fully equipped for deep space exploration and combat.",
-        resources: [],
-        structures: [],
         population: 0,
         economy: "stable",
         habitabilityZone: "none",
@@ -155,24 +151,23 @@ export function useGalaxyApp(initialSeed = 20260423) {
         flora: "none",
         fauna: "none",
         hazards: [],
-        ownerId: "hegemony"
-      } as any as Body;
+        ownerId: "hegemony",
+        deposits: []
+      };
+      return shipBody;
     }
     if (bodyId === "star") {
-      return {
+      const starBody: Body = {
         id: "star",
         systemId: system.id,
         name: system.name,
         type: "star",
-        subtype: system.starType,
+        subtype: system.starType as PlanetSubtype,
         size: STAR_BASE_SIZE[system.starType] || 2,
         orbit: 0,
         phase: 0,
         hue: 0,
         hasRings: false,
-        desc: `The central star of the ${system.name} system. A ${system.starType}-class main sequence stellar object.`,
-        resources: [],
-        structures: [],
         population: 0,
         economy: system.economy,
         habitabilityZone: "hot",
@@ -183,7 +178,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
         ownerId: "hegemony",
         deposits: [],
         atmosphere: "Stellar Corona"
-      } as any as Body;
+      };
+      return starBody;
     }
     return system.bodies.find((b) => b.id === bodyId) ?? null;
   }, [system, bodyId]);

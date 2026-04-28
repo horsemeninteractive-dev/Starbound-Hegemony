@@ -4,8 +4,7 @@ import {
   Newspaper, Sparkles, Globe, Zap, BarChart, TrendingUp, Shield, 
   Anchor, Cpu, BookOpen, Rocket, Award, History, Factory
 } from "lucide-react";
-import { Toaster } from "sonner";
-import { useGalaxyApp } from "@/galaxy/useGalaxyApp";
+import { useGalaxyApp, type GalaxyApp } from "@/galaxy/useGalaxyApp";
 import { UnifiedMap } from "@/galaxy/components/UnifiedMap";
 import { GalaxyOverview, SystemOverview, BodyOverview, ShipOverview } from "@/galaxy/components/Overview";
 import { TopBar } from "@/galaxy/components/TopBar";
@@ -33,7 +32,7 @@ const Index = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isMobilePanelExpanded, setIsMobilePanelExpanded] = useState(false);
   const [graphicsQuality, setGraphicsQuality] = useState<"low" | "medium" | "high">(() => {
-    return (localStorage.getItem("gfx_quality") as any) || "high";
+    return (localStorage.getItem("gfx_quality") as "low" | "medium" | "high") || "high";
   });
 
   useEffect(() => {
@@ -42,7 +41,7 @@ const Index = () => {
 
   // Cinematic view transitions with loading state deferral
   // This ensures the "Processing" HUD paints before the heavy React render blocks the thread
-  const withLoading = (fn: (...args: any[]) => void) => (...args: any[]) => {
+  const withLoading = <T extends unknown[]>(fn: (...args: T) => void) => (...args: T) => {
     setTransitionKey(prev => prev + 1);
     requestAnimationFrame(() => {
       setTimeout(() => fn(...args), 60);
@@ -61,7 +60,7 @@ const Index = () => {
     } else {
       app.openBody(id);
     }
-  }), [app.openSystem, app.openShip, app.openBody]);
+  }), [app]);
 
   const handleOnboardingComplete = (name: string, avatar: string) => {
     app.setPlayerName(name);
@@ -69,7 +68,7 @@ const Index = () => {
     app.setOnboardingCompleted(true);
   };
 
-  const circles = useMemo(() => app.systemMatchesFilter, [app.systemMatchesFilter]);
+  const circles = useMemo(() => app.systemMatchesFilter, [app]);
 
   // Page transition
   const [pageKey, setPageKey] = useState(0);
@@ -114,6 +113,7 @@ const Index = () => {
           setInstantJump={app.setInstantJump}
           playerSystemName={app.galaxy.systemById[app.playerSystemId]?.name}
           travel={app.travel}
+          currentTime={app.currentTime}
           galaxy={app.galaxy}
           onRegenerate={app.regenerateGalaxy}
         />
@@ -154,12 +154,14 @@ const Index = () => {
                 </Suspense>
               </div>
               
-              <MiniMap 
-                galaxy={app.galaxy} 
-                currentSystem={app.system} 
-                playerSystemId={app.playerSystemId} 
-                view={app.view} 
-              />
+              {!isTransitioning && (
+                <MiniMap 
+                  galaxy={app.galaxy} 
+                  currentSystem={app.system} 
+                  playerSystemId={app.playerSystemId} 
+                  view={app.view} 
+                />
+              )}
 
               <DataProcessingIndicator isBusy={isTransitioning} />
 
@@ -652,8 +654,6 @@ const Index = () => {
       {!app.onboardingCompleted && (
         <CommanderOnboarding onComplete={handleOnboardingComplete} />
       )}
-      
-      <Toaster position="bottom-center" theme="dark" closeButton />
     </main>
   );
 };
@@ -732,10 +732,10 @@ function LoadingHud() {
   );
 }
 
-function MobileHUD({ app, onSelectBody, expanded, setExpanded }: { app: any; onSelectBody: any; expanded: boolean; setExpanded: any }) {
+function MobileHUD({ app, onSelectBody, expanded, setExpanded }: { app: GalaxyApp; onSelectBody: (id: string) => void; expanded: boolean; setExpanded: (v: boolean) => void }) {
   useEffect(() => {
     setExpanded(false);
-  }, [app.view, app.system?.id, app.body?.id]);
+  }, [app.view, app.system?.id, app.body?.id, setExpanded]);
 
   let title = "Galaxy";
   let subtitle = `${app.galaxy.systems.length} systems · ${app.galaxy.sectors.length} sectors`;
@@ -755,14 +755,14 @@ function MobileHUD({ app, onSelectBody, expanded, setExpanded }: { app: any; onS
 
   const canJump = app.view === "system" && app.system && !app.travel && 
                  app.playerSystemId !== app.system.id && 
-                 app.galaxy.systems.find((s: any) => s.id === app.playerSystemId)?.gates.includes(app.system.id);
+                 app.galaxy.systems.find((s) => s.id === app.playerSystemId)?.gates.some((g) => g.targetSystemId === app.system.id);
 
   return (
     <div className="sm:hidden fixed inset-x-2 bottom-9 z-30 pointer-events-auto">
       <div className="hud-panel hud-corner overflow-hidden flex flex-col shadow-2xl shadow-primary/10">
         <div className="flex items-center gap-2 pr-3 bg-primary/5">
           <button
-            onClick={() => setExpanded((e: boolean) => !e)}
+            onClick={() => setExpanded(!expanded)}
             className="flex-1 flex items-center gap-2 px-3 py-2 text-left hover:bg-primary/5 transition min-w-0"
             aria-label={expanded ? "Collapse panel" : "Expand panel"}
           >
@@ -834,7 +834,7 @@ function MobileHUD({ app, onSelectBody, expanded, setExpanded }: { app: any; onS
   );
 }
 
-function ProfileView({ app }: { app: any }) {
+function ProfileView({ app }: { app: GalaxyApp }) {
   const [activeTab, setActiveTab] = useState("Overview");
   
   const TABS = [
@@ -1143,8 +1143,8 @@ function ProfileView({ app }: { app: any }) {
   );
 }
 
-function StatCard({ label, value, unit, icon: Icon, color = "primary" }: any) {
-  const colorMap: any = {
+function StatCard({ label, value, unit, icon: Icon, color = "primary" }: { label: string; value: string | number; unit: string; icon: React.ElementType; color?: "primary" | "warning" | "success" | "destructive" }) {
+  const colorMap: Record<string, string> = {
     primary: "border-l-primary bg-primary/5 text-primary",
     warning: "border-l-warning bg-warning/5 text-warning",
     success: "border-l-success bg-success/5 text-success",
@@ -1167,7 +1167,7 @@ function StatCard({ label, value, unit, icon: Icon, color = "primary" }: any) {
   );
 }
 
-function LogEntry({ date, event, type }: any) {
+function LogEntry({ date, event, type }: { date: string; event: string; type: string }) {
   return (
     <div className="flex gap-2 sm:gap-4 items-start group">
       <div className="font-mono-hud text-[8px] sm:text-[10px] text-primary/30 pt-0.5 sm:pt-1 w-16 sm:w-20 shrink-0">{date}</div>

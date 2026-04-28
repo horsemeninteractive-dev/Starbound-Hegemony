@@ -2,7 +2,7 @@
 
 export type StarType =
   | "O" | "B" | "A" | "F" | "G" | "K" | "M"
-  | "neutron" | "blackhole" | "pulsar" | "binary" | "whitedwarf" | "whitehole"
+  | "neutron" | "blackhole" | "pulsar" | "binary" | "trinary" | "whitedwarf" | "whitehole"
   | "quasar" | "magnetar" | "protostar" | "dyson_swarm";
 
 export type BodyType = "terrestrial" | "gas_giant" | "moon" | "asteroid" | "station" | "jump_gate" | "ship" | "star";
@@ -57,7 +57,7 @@ export interface Body {
   parentId?: string;
   children?: Body[];
   temperature: number; // K
-  habitabilityZone: "hot" | "temperate" | "cold";
+  habitabilityZone: "hot" | "temperate" | "cold" | "none";
   flora: "none" | "sparse" | "abundant" | "exotic";
   fauna: "none" | "sparse" | "abundant" | "hostile";
   hazards: string[];
@@ -128,6 +128,7 @@ export interface StarSystem {
   starType: StarType;
   contest: ContestState;
   economy: EconomicStatus;
+  ownerId?: string | null;
   /** All orbiting bodies (planets, moons, asteroids, stations). */
   bodies: Body[];
   gates: JumpGate[];
