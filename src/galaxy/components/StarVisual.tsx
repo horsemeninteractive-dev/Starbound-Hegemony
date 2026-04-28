@@ -392,11 +392,11 @@ function NeutronStar({ scale, color, pulsar, detailed, quality }: { scale: numbe
         
         {/* Jet base flares */}
         <mesh position={[0, scale * 0.5, 0]}>
-          <sphereGeometry args={[scale * 0.6, 16, 16]} />
+          <sphereGeometry args={[scale * 0.8, 16, 16]} />
           <meshBasicMaterial color={color} transparent opacity={0.4} blending={THREE.AdditiveBlending} />
         </mesh>
         <mesh position={[0, -scale * 0.5, 0]}>
-          <sphereGeometry args={[scale * 0.6, 16, 16]} />
+          <sphereGeometry args={[scale * 0.8, 16, 16]} />
           <meshBasicMaterial color={color} transparent opacity={0.4} blending={THREE.AdditiveBlending} />
         </mesh>
       </group>
@@ -482,10 +482,11 @@ function WhiteHole({ scale, detailed, quality }: { scale: number; detailed: bool
     uInnerColor: { value: innerColor },
     uMidColor: { value: midColor },
     uOuterColor: { value: outerColor },
-    uInnerR: { value: scale * 1.1 },
-    uOuterR: { value: scale * 5.5 },
+    uInnerR: { value: scale * 1.2 },
+    uOuterR: { value: scale * 18.0 },
+    uDetailed: { value: detailed ? 1.0 : 0.0 },
     uQuality: { value: quality === "low" ? 0.0 : quality === "medium" ? 1.0 : 2.0 }
-  }), [scale, innerColor, midColor, outerColor, quality]);
+  }), [scale, innerColor, midColor, outerColor, detailed, quality]);
 
   useFrame((state, dt) => {
     const t = state.clock.getElapsedTime();
@@ -515,6 +516,8 @@ function WhiteHole({ scale, detailed, quality }: { scale: number; detailed: bool
       uniform vec3 uOuterColor;
       uniform float uInnerR;
       uniform float uOuterR;
+      uniform float uDetailed;
+      uniform float uQuality;
 
       float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float noise(vec2 p) {
@@ -526,41 +529,52 @@ function WhiteHole({ scale, detailed, quality }: { scale: number; detailed: bool
       void main() {
         float r = length(vPos.xy);
         float angle = atan(vPos.y, vPos.x);
+        
+        // Normalize radius for scale-invariant math
+        float distRatio = r / uOuterR;
+        float innerRatio = uInnerR / uOuterR;
 
-        // Fade at edges
-        float edgeFade = smoothstep(uInnerR, uInnerR * 1.4, r) * (1.0 - smoothstep(uOuterR * 0.75, uOuterR, r));
+        // Fade at edges (dynamic sharpness based on view mode)
+        float innerFade = mix(uInnerR * 1.5, uInnerR * 1.3, uDetailed);
+        float outerFade = mix(uOuterR * 0.75, uOuterR * 0.9, uDetailed);
+        float edgeFade = smoothstep(uInnerR, innerFade, r) * (1.0 - smoothstep(outerFade, uOuterR, r));
         if (edgeFade < 0.001) discard;
 
         // Temperature gradient: intense white inner -> cyan mid -> deep blue outer
-        float t = (r - uInnerR) / (uOuterR - uInnerR);
+        float t = (distRatio - innerRatio) / (1.0 - innerRatio);
         vec3 baseColor = mix(uInnerColor, mix(uMidColor, uOuterColor, smoothstep(0.3, 0.8, t)), smoothstep(0.0, 0.3, t));
 
-        // Relativistic Doppler beaming: approaching side is brighter (reverse direction for white hole)
-        float doppler = 1.0 + 0.65 * cos(angle - uTime * 0.5 * (1.0 / (r * 0.3)));
+        // Relativistic Doppler beaming (approaching side is brighter)
+        float doppler = 1.0 + 0.65 * cos(angle - uTime * 0.5 * (1.0 / max(distRatio * 4.0, 0.1)));
         doppler = clamp(doppler, 0.3, 2.5);
 
         // Swirling turbulent bands (OUTWARD flow: + uTime)
-        float swirl = angle * 3.0 + uTime * 4.0 / max(r * 0.4, 0.1);
-        float n1 = noise(vec2(r * 0.6 - uTime * 0.5, swirl));
-        float n2 = noise(vec2(r * 2.5 - uTime, swirl * 2.0));
+        // Using normalized distRatio ensures it looks the same in galaxy and system views
+        float swirl = angle * 3.0 + uTime * 4.0 / max(distRatio * 6.0, 0.1);
+        float n1 = noise(vec2(distRatio * 15.0 - uTime * 0.5, swirl));
+        float n2 = noise(vec2(distRatio * 40.0 - uTime, swirl * 2.0));
         float turbulence = mix(0.6, 1.4, n1 * 0.7 + n2 * 0.3);
 
-        // Bright filament streaks ejecting outwards
-        float streak = pow(max(0.0, sin(swirl * 8.0 - r * 4.0)), 6.0) * 0.5;
+        // Bright filament streaks ejecting outwards (Spiraling effect)
+        // k=8.0 for spiral density, distRatio * 12.0 for outward curvature
+        float streak = pow(max(0.0, sin(swirl * 8.0 - distRatio * 12.0)), 6.0) * 0.8;
 
         vec3 col = baseColor * turbulence * doppler + vec3(0.5, 0.8, 1.0) * streak;
 
         // Inner rim glow (white-hot photon sphere edge)
-        float innerGlow = smoothstep(uInnerR * 1.5, uInnerR * 1.0, r) * 3.0;
+        float innerGlow = smoothstep(innerRatio * 1.5, innerRatio * 1.0, distRatio) * 4.0;
         col += uInnerColor * innerGlow;
 
-        gl_FragColor = vec4(col, edgeFade * 0.95);
+        // Apply brightness boost only in detailed (system) view to avoid blow-out in galaxy view
+        // Further reduced galaxy brightness to 0.7 to preserve blue colors
+        float brightness = mix(0.7, 1.8, uDetailed);
+        gl_FragColor = vec4(col * brightness, edgeFade * 0.98);
       }
     `
   }), []);
 
   return (
-    <group>
+    <group key={detailed ? "system" : "galaxy"}>
       {/* Reverse Singularity (Intense White Core) */}
       <mesh>
         <sphereGeometry args={[scale * 0.8, quality === "low" ? 24 : 48, quality === "low" ? 24 : 48]} />
@@ -568,7 +582,7 @@ function WhiteHole({ scale, detailed, quality }: { scale: number; detailed: bool
       </mesh>
 
       {/* Photon Sphere */}
-      <mesh ref={photonRef} rotation={[Math.PI / 2, 0, 0]}>
+      <mesh ref={photonRef} rotation={[Math.PI / 2, 0, 0]} raycast={() => null}>
         <ringGeometry args={[scale * 0.82, scale * 1.08, quality === "low" ? 64 : 128]} />
         <shaderMaterial
           transparent depthWrite={false} blending={THREE.AdditiveBlending}
@@ -590,8 +604,14 @@ function WhiteHole({ scale, detailed, quality }: { scale: number; detailed: bool
       </mesh>
 
       {/* Main Ejection Disk (tilted for drama) */}
-      <mesh ref={diskRef} rotation={[Math.PI / 2.3, 0.2, 0]}>
-        <ringGeometry args={[scale * 1.1, scale * 5.5, quality === "low" ? 64 : 256]} />
+      <mesh 
+        ref={diskRef} 
+        rotation={[Math.PI / 2.3, 0.2, 0]}
+        renderOrder={5}
+        frustumCulled={false}
+        raycast={() => null}
+      >
+        <ringGeometry args={[scale * 1.2, scale * 18.0, 128]} />
         <shaderMaterial
           transparent side={THREE.DoubleSide} depthWrite={false}
           blending={THREE.AdditiveBlending}
@@ -602,8 +622,14 @@ function WhiteHole({ scale, detailed, quality }: { scale: number; detailed: bool
       </mesh>
 
       {/* Secondary thinner disk plane (orthogonal tilt for volume) */}
-      <mesh ref={diskRef2} rotation={[Math.PI / 2.8, 1.8, 0]}>
-        <ringGeometry args={[scale * 1.15, scale * 3.5, 128]} />
+      <mesh 
+        ref={diskRef2} 
+        rotation={[Math.PI / 2.8, 1.8, 0]}
+        renderOrder={4}
+        frustumCulled={false}
+        raycast={() => null}
+      >
+        <ringGeometry args={[scale * 1.3, scale * 12.0, 128]} />
         <shaderMaterial
           transparent side={THREE.DoubleSide} depthWrite={false}
           blending={THREE.AdditiveBlending}
@@ -615,17 +641,18 @@ function WhiteHole({ scale, detailed, quality }: { scale: number; detailed: bool
 
       {/* High-Energy Ejection Beams (expanding outwards) */}
       <group ref={jetsRef}>
-        <mesh position={[0, scale * 8, 0]}>
+        <mesh position={[0, scale * 8, 0]} raycast={() => null}>
           <cylinderGeometry args={[scale * 0.4, scale * 0.05, scale * 16, 16, 1, true]} />
           <meshBasicMaterial color="#a0e8ff" transparent opacity={0.4} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
         </mesh>
-        <mesh position={[0, -scale * 8, 0]} rotation={[Math.PI, 0, 0]}>
+        <mesh position={[0, -scale * 8, 0]} rotation={[Math.PI, 0, 0]} raycast={() => null}>
           <cylinderGeometry args={[scale * 0.4, scale * 0.05, scale * 16, 16, 1, true]} />
           <meshBasicMaterial color="#a0e8ff" transparent opacity={0.4} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
         </mesh>
       </group>
 
-      {detailed && <pointLight color="#88eeff" intensity={20} distance={200} decay={1.5} />}
+      {detailed && <pointLight color="#88eeff" intensity={15} distance={250} decay={1.5} />}
+      
       {/* Realistic Volumetric Aura - Skip for far stars on low */}
       {(detailed || quality !== "low") && <StarAura scale={scale * (detailed ? 1.5 : 0.6)} color={new THREE.Color("#ffffff")} />}
       
@@ -758,7 +785,7 @@ function BlackHole({ scale, detailed, quality }: { scale: number; detailed: bool
       </mesh>
 
       {/* Main Accretion Disk (tilted for drama) */}
-      <mesh ref={diskRef} rotation={[Math.PI / 2.3, 0.2, 0]}>
+      <mesh ref={diskRef} rotation={[Math.PI / 2.3, 0.2, 0]} raycast={() => null}>
         <ringGeometry args={[scale * 1.1, scale * 5.5, quality === "low" ? 64 : 256]} />
         <shaderMaterial
           transparent side={THREE.DoubleSide} depthWrite={false}
@@ -770,7 +797,7 @@ function BlackHole({ scale, detailed, quality }: { scale: number; detailed: bool
       </mesh>
 
       {/* Secondary thinner disk plane (orthogonal tilt for volume) */}
-      <mesh ref={diskRef2} rotation={[Math.PI / 2.8, 1.8, 0]}>
+      <mesh ref={diskRef2} rotation={[Math.PI / 2.8, 1.8, 0]} raycast={() => null}>
         <ringGeometry args={[scale * 1.15, scale * 3.5, 128]} />
         <shaderMaterial
           transparent side={THREE.DoubleSide} depthWrite={false}

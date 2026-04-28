@@ -139,4 +139,20 @@
   .font-display {
     font-family: 'Orbitron', sans-serif;
   }
+
+  @keyframes bounce-horizontal {
+    0%, 100% { transform: translateX(0); opacity: 0.8; }
+    50% { transform: translateX(3px); opacity: 1; }
+  }
+  .animate-bounce-horizontal {
+    animation: bounce-horizontal 0.8s ease-in-out infinite;
+  }
+
+  @keyframes chevron-blink {
+    0%, 100% { opacity: 0.2; transform: translateY(0); }
+    50% { opacity: 1; transform: translateY(-1px); }
+  }
+  .animate-chevron-blink {
+    animation: chevron-blink 1.2s infinite;
+  }
 }
