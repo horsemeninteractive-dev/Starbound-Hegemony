@@ -10,6 +10,7 @@ import { UnifiedMap } from "@/galaxy/components/UnifiedMap";
 import { GalaxyOverview, SystemOverview, BodyOverview, ShipOverview } from "@/galaxy/components/Overview";
 import { TopBar } from "@/galaxy/components/TopBar";
 import { FilterPanel } from "@/galaxy/components/FilterPanel";
+import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Legend } from "@/galaxy/components/Legend";
 import { SettingsModal } from "@/galaxy/components/SettingsModal";
 import { MiniMap } from "@/galaxy/components/MiniMap";
@@ -199,6 +200,10 @@ const Index = () => {
               )}
 
               <DataProcessingIndicator isBusy={isTransitioning} />
+
+              <div className="absolute top-0 right-0 bottom-0 left-0 pointer-events-none z-[100]">
+                 <Sonner />
+              </div>
 
               {/* HUD Overlay within Map (Bottom Controls) */}
               <div className="relative z-20 flex flex-col h-full pointer-events-none">

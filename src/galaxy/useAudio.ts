@@ -5,14 +5,11 @@ import { useEffect, useRef, useCallback } from "react";
  * Wired up to all interactive UI elements for a premium, tactile experience.
  */
 export function useAudio(enabled: boolean, musicVolume: number, sfxVolume: number) {
-  const ambientRefA = useRef<HTMLAudioElement | null>(null);
-  const ambientRefB = useRef<HTMLAudioElement | null>(null);
-  const activeBufferRef = useRef<"A" | "B">("A");
-  const crossfadeTimerRef = useRef<number | null>(null);
+  const ambientRef = useRef<HTMLAudioElement | null>(null);
   
   // Audio sources
   const SOURCES = {
-    ambient: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/ambient.mp3",
+    ambient: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/ambient.wav",
     click: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/click.wav",
     transition: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/transition.wav",
     expand: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/expand.wav",
@@ -44,83 +41,48 @@ export function useAudio(enabled: boolean, musicVolume: number, sfxVolume: numbe
     return audio;
   }, [enabled, sfxVolume]);
 
-  // Seamless looping logic using double-buffering and crossfading
   useEffect(() => {
     if (!enabled) {
-      ambientRefA.current?.pause();
-      ambientRefB.current?.pause();
-      if (crossfadeTimerRef.current) clearInterval(crossfadeTimerRef.current);
+      if (ambientRef.current) ambientRef.current.pause();
       return;
     }
 
-    const musicVol = musicVolume * 0.9;
-    
-    if (!ambientRefA.current) {
-      ambientRefA.current = new Audio(SOURCES.ambient);
-      ambientRefB.current = new Audio(SOURCES.ambient);
+    if (!ambientRef.current) {
+      ambientRef.current = new Audio(SOURCES.ambient);
+      ambientRef.current.loop = true;
     }
 
-    const a = ambientRefA.current!;
-    const b = ambientRefB.current!;
-
-    // We don't use .loop = true because we want a manual crossfade
-    a.loop = false;
-    b.loop = false;
-
-    const startSeamlessLoop = () => {
-      const active = activeBufferRef.current === "A" ? a : b;
-      const inactive = activeBufferRef.current === "A" ? b : a;
-
-      active.volume = musicVol;
-      active.play().catch(() => {
-        // Handle auto-play policy by waiting for interaction
-        const resume = () => {
-          active.play();
-          window.removeEventListener("mousedown", resume);
-        };
-        window.addEventListener("mousedown", resume);
-      });
-
-      // Monitor for loop point
-      if (crossfadeTimerRef.current) clearInterval(crossfadeTimerRef.current);
-      
-      crossfadeTimerRef.current = window.setInterval(() => {
-        const current = activeBufferRef.current === "A" ? a : b;
-        const next = activeBufferRef.current === "A" ? b : a;
-
-        // If we are within 1.5s of the end, start the crossfade
-        if (current.duration > 0 && current.currentTime > current.duration - 1.5) {
-          next.currentTime = 0;
-          next.volume = 0;
-          next.play().catch(() => {});
-          
-          // Crossfade over 1 second
-          const fadeSteps = 10;
-          const fadeInterval = 100;
-          let step = 0;
-          
-          const fader = setInterval(() => {
-            step++;
-            const progress = step / fadeSteps;
-            current.volume = Math.max(0, musicVol * (1 - progress));
-            next.volume = Math.min(musicVol, musicVol * progress);
-            
-            if (step >= fadeSteps) {
-              clearInterval(fader);
-              current.pause();
-              activeBufferRef.current = activeBufferRef.current === "A" ? "B" : "A";
-            }
-          }, fadeInterval);
-        }
-      }, 500);
+    ambientRef.current.volume = musicVolume * 0.7;
+    
+    const playAmbient = () => {
+      if (ambientRef.current && ambientRef.current.paused) {
+        ambientRef.current.play().catch(() => {});
+      }
     };
 
-    startSeamlessLoop();
+    playAmbient();
+
+    // Autoplay policy workaround: Retry playing after user interacts with the document
+    const handleInteraction = () => {
+      if (ambientRef.current && ambientRef.current.paused) {
+        ambientRef.current.play().then(() => {
+          window.removeEventListener("click", handleInteraction);
+          window.removeEventListener("keydown", handleInteraction);
+        }).catch(() => {});
+      } else if (ambientRef.current && !ambientRef.current.paused) {
+        // Already playing, clean up listeners
+        window.removeEventListener("click", handleInteraction);
+        window.removeEventListener("keydown", handleInteraction);
+      }
+    };
+
+    window.addEventListener("click", handleInteraction);
+    window.addEventListener("keydown", handleInteraction);
 
     return () => {
-      a.pause();
-      b.pause();
-      if (crossfadeTimerRef.current) clearInterval(crossfadeTimerRef.current);
+      ambientRef.current?.pause();
+      window.removeEventListener("click", handleInteraction);
+      window.removeEventListener("keydown", handleInteraction);
     };
   }, [enabled, musicVolume]);
 

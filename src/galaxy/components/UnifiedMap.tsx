@@ -208,14 +208,14 @@ function MapContent({
       else if (view === "body" || view === "ship") targetViewPercentage = 0.25;
     }
     
-    const targetViewOffset = targetViewPercentage * window.innerHeight;
+    const targetViewOffset = targetViewPercentage * _state.size.height;
     targetOffsetRef.current = THREE.MathUtils.lerp(targetOffsetRef.current, targetViewOffset, 0.1);
     
     if (Math.abs(targetOffsetRef.current) > 0.1) {
       camera.setViewOffset(
-        window.innerWidth, window.innerHeight,
+        _state.size.width, _state.size.height,
         0, targetOffsetRef.current,
-        window.innerWidth, window.innerHeight
+        _state.size.width, _state.size.height
       );
     } else {
       camera.clearViewOffset();
@@ -606,7 +606,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
               />
             )
           ))}
-          <JumpGateMarkers system={system} galaxy={galaxy} onSelect={onSelectBody} />
+          <JumpGateMarkers system={system} galaxy={galaxy} onSelect={onSelectBody} filters={filters} />
           
           {/* Stellar Temperature Zones Overlay - Smooth Gradient Shader */}
           {filters.layers.has("habitableZones") && (() => {
@@ -817,15 +817,22 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
   const localVec2 = useMemo(() => new THREE.Vector3(), []);
   const localVec3 = useMemo(() => new THREE.Vector3(), []);
   const localVec4 = useMemo(() => new THREE.Vector3(), []);
+  const moonVec = useMemo(() => new THREE.Vector3(), []); // scratch for moon occluder computation
+  const planetViewPosRef = useRef(new THREE.Vector3());
+  // Pre-allocated moon occluder buffer: xyz=view-pos, w=radius. Only used when this node is a planet.
+  const moonOccluderBuf = useRef([new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()]);
 
-  // Analytical tracking to eliminate jitter.
-  // IMPORTANT: `t` is captured ONCE and reused for both the mesh position and camera tracking.
-  // Calling performance.now() twice in the same frame produces different values, causing jitter.
+  // Analytical orbital tracking using Three.js clock time, NOT performance.now().
+  // performance.now() jitters badly under load since it reflects true wall-clock time.
+  // Heavy frames cause a big delta, planets visually lurch ahead. state.clock.elapsedTime is smoothed.
   useFrame((state) => {
     if (!meshRef.current) return;
     
     // Single timestamp for this entire frame — mesh and camera MUST use the same value.
-    const t = performance.now() / 1000;
+    // Using state.clock.elapsedTime instead of performance.now() is critical:
+    // performance.now() reflects wall-clock time, so heavy frames cause large jumps and visible jitter.
+    // Three.js's clock is delta-smoothed and frame-rate-aware.
+    const t = state.clock.elapsedTime;
 
     const speed = getOrbitalSpeed(body.orbit, starType, !!body.parentId);
     const currentAngle = (body.phase || 0) + (t * speed) % (Math.PI * 2);
@@ -842,7 +849,36 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
 
     // High-precision Light Direction
     meshRef.current.getWorldPosition(localVec);
-    lightDirRef.current.copy(localVec).normalize().multiplyScalar(-1);
+    lightDirRef.current.copy(starWorldPos).sub(localVec).normalize();
+
+    // Compute parent position in view space for shadow casting (moon -> planet)
+    if (parentBody && meshRef.current.parent) {
+      meshRef.current.parent.getWorldPosition(localVec4);
+      planetViewPosRef.current.copy(localVec4).applyMatrix4(state.camera.matrixWorldInverse);
+    } else {
+      planetViewPosRef.current.setScalar(0);
+    }
+
+    // Compute moon positions analytically for shadow casting (planet <- moon)
+    // localVec already holds this planet's world position at this point.
+    if (!parentBody) {
+      const moons = galaxy.systemById[body.systemId]?.bodies.filter((m) => m.parentId === body.id) || [];
+      for (let i = 0; i < 4; i++) {
+        if (i < moons.length) {
+          const moon = moons[i];
+          const moonSpeed = getOrbitalSpeed(moon.orbit, starType, true);
+          const moonAngle = (moon.phase || 0) + (t * moonSpeed) % (Math.PI * 2);
+          moonVec.set(
+            localVec.x + Math.cos(moonAngle) * moon.orbit,
+            localVec.y,
+            localVec.z + Math.sin(moonAngle) * moon.orbit
+          ).applyMatrix4(state.camera.matrixWorldInverse);
+          moonOccluderBuf.current[i].set(moonVec.x, moonVec.y, moonVec.z, moon.size * 1.05);
+        } else {
+          moonOccluderBuf.current[i].set(0, 0, 0, 0);
+        }
+      }
+    }
 
     // Camera Tracking: use the mesh's ACTUAL world position (already computed above via getWorldPosition).
     // This guarantees zero divergence between where the mesh is and where the camera looks.
@@ -948,6 +984,9 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
             subtype={body.subtype} 
             hue={body.hue} 
             lightDir={lightDirRef.current}
+            planetViewPos={parentBody ? planetViewPosRef.current : undefined}
+            parentSize={parentBody ? parentBody.size * 1.05 : 0}
+            moonOccluders={!parentBody ? moonOccluderBuf.current : undefined}
             color={new THREE.Color(`#${STAR_META[starType]?.hex || "ffffff"}`)}
             showWeather={filters.layers.has("weatherSystems") && !!body.atmosphere}
             showCityLights={filters.layers.has("cityLights")}
@@ -1325,7 +1364,101 @@ function getSystemGateRadius(system: StarSystem) {
   return Math.max(maxBodyOrbit, starVisualExtent, 15) + 30;
 }
 
-function JumpGateMarkers({ system, galaxy, onSelect }: { system: StarSystem; galaxy: Galaxy; onSelect: (id: string) => void }) {
+function JumpGateVisual({ isLocked }: { isLocked: boolean }) {
+  const lightsRef = useRef<THREE.Group>(null);
+
+  useFrame((state) => {
+    if (lightsRef.current) {
+      const t = state.clock.getElapsedTime();
+      const speed = isLocked ? 2.5 : 6.0;
+      const totalLights = 6;
+      
+      // Calculate simultaneous blink for locked gates once per frame
+      const blinkIntensity = isLocked ? Math.pow((Math.sin(t * speed) + 1) / 2, 8) : 0;
+      
+      lightsRef.current.children.forEach((lightGroup, i) => {
+        let opacity = 0.1;
+
+        if (isLocked) {
+          // All blink at the same time
+          opacity = 0.1 + blinkIntensity * 0.9;
+        } else {
+          // Chasing light sequence around the ring
+          const normalizedTime = (t * speed) % totalLights;
+          const positiveTime = (normalizedTime + totalLights) % totalLights;
+          const diff = Math.abs((i - positiveTime + totalLights) % totalLights);
+          const dist = Math.min(diff, totalLights - diff);
+          
+          // Sharp falloff for chasing effect
+          const intensity = Math.max(0, 1 - dist * 1.8);
+          opacity = 0.1 + intensity * 0.9;
+        }
+
+        lightGroup.children.forEach((mesh) => {
+          const m = mesh as THREE.Mesh;
+          if (m.material) {
+            (m.material as THREE.MeshBasicMaterial).opacity = opacity;
+          }
+        });
+      });
+    }
+  });
+
+  const baseColor = "#000000";
+  const glowColor = isLocked ? "#ff2222" : "#00ffff";
+
+  return (
+    <group>
+      {/* Central light to illuminate the inside of the ring */}
+      <pointLight position={[0, 0, 0]} color={glowColor} intensity={1.5} distance={15} />
+
+      {/* Reflective Black Base Torus */}
+      <mesh>
+        <torusGeometry args={[2.5, 0.35, 32, 64]} />
+        <meshStandardMaterial
+          color={baseColor}
+          metalness={0.9}
+          roughness={0.15}
+        />
+      </mesh>
+      
+      {/* Outer Glow Torus - Made much smaller and dimmer */}
+      <mesh>
+        <torusGeometry args={[2.5, 0.45, 16, 64]} />
+        <meshBasicMaterial
+          color={glowColor}
+          transparent
+          opacity={isLocked ? 0.05 : 0.12}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* Static Lights that blink */}
+      <group ref={lightsRef}>
+        {[...Array(6)].map((_, i) => {
+          const angle = (i / 6) * Math.PI * 2;
+          return (
+            <group key={i} position={[Math.cos(angle) * 2.5, Math.sin(angle) * 2.5, 0]}>
+              {/* Front Light */}
+              <mesh position={[0, 0, 0.36]}>
+                <sphereGeometry args={[0.06, 8, 8]} />
+                <meshBasicMaterial color={glowColor} transparent opacity={0.1} />
+              </mesh>
+              {/* Back Light */}
+              <mesh position={[0, 0, -0.36]}>
+                <sphereGeometry args={[0.06, 8, 8]} />
+                <meshBasicMaterial color={glowColor} transparent opacity={0.1} />
+              </mesh>
+            </group>
+          );
+        })}
+      </group>
+    </group>
+  );
+}
+
+function JumpGateMarkers({ system, galaxy, onSelect, filters }: { system: StarSystem; galaxy: Galaxy; onSelect: (id: string) => void; filters: any }) {
   const outer = getSystemGateRadius(system);
   return (
     <group>
@@ -1335,14 +1468,7 @@ function JumpGateMarkers({ system, galaxy, onSelect }: { system: StarSystem; gal
         const isLocked = !!gate.locked;
         return (
           <group key={gate.id} position={pos} rotation={[0, -angle + Math.PI / 2, 0]}>
-            <mesh>
-              <torusGeometry args={[2.5, 0.35, 16, 64]} />
-              <meshStandardMaterial
-                color={isLocked ? "#ff4444" : "#7be9ff"}
-                emissive={isLocked ? "#aa1111" : "#1eb5cc"}
-                emissiveIntensity={0.8}
-              />
-            </mesh>
+            <JumpGateVisual isLocked={isLocked} />
             {/* Invisible Hitbox for easier selection — Billboard ensures it's always a flat disk facing the camera */}
             <mesh
               onClick={(e) => {
@@ -1355,15 +1481,17 @@ function JumpGateMarkers({ system, galaxy, onSelect }: { system: StarSystem; gal
               <sphereGeometry args={[4.5, 16, 16]} />
               <meshBasicMaterial transparent opacity={0} depthWrite={false} />
             </mesh>
-            <Html position={[0, 3.5, 0]} center zIndexRange={[100, 0]}>
-              <div className={`font-mono-hud text-[7px] bg-background/90 px-1.5 py-0.5 border backdrop-blur-sm whitespace-nowrap uppercase tracking-widest ${
-                isLocked
-                  ? "text-red-400 border-red-500/40"
-                  : "text-primary border-primary/20"
-              }`}>
-                {isLocked ? "⛔ SEALED" : `GATE \u2192 ${galaxy?.systemById?.[gate.targetSystemId]?.name ?? "DEEP SPACE"}`}
-              </div>
-            </Html>
+            {filters.layers.has("objectLabels") && (
+              <Html position={[0, 3.5, 0]} center zIndexRange={[100, 0]}>
+                <div className={`font-mono-hud text-[7px] bg-background/90 px-1.5 py-0.5 border backdrop-blur-sm whitespace-nowrap uppercase tracking-widest ${
+                  isLocked
+                    ? "text-red-400 border-red-500/40"
+                    : "text-primary border-primary/20"
+                }`}>
+                  {isLocked ? "⛔ SEALED" : `GATE \u2192 ${galaxy?.systemById?.[gate.targetSystemId]?.name ?? "DEEP SPACE"}`}
+                </div>
+              </Html>
+            )}
           </group>
         );
       })}
@@ -1661,25 +1789,21 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     }
 
     // Dynamic Opacity for the CMDR HTML icon so it doesn't cover the 3D model
-    // Use world coordinates for the camera and local for the mesh
-    groupRef.current.position.set(globalPos.x, globalPos.y, globalPos.z);
+    groupRef.current.position.copy(globalPos);
     groupRef.current.updateWorldMatrix(true, false);
-    groupRef.current.getWorldPosition(localVec);
     
-    // Sync the label group to the world position (but without the rotation)
+    // Sync the label group and flash to the ship's physical position (but without its rotation and scale)
     if (labelGroupRef.current) {
-      labelGroupRef.current.position.copy(localVec);
-      // Ensure the label group is visible/hidden matching the ship's logic
+      labelGroupRef.current.position.copy(globalPos);
       labelGroupRef.current.visible = (view === 'galaxy' || viewedSystemId === playerSystemId);
     }
     
-    const distToCamera = state.camera.position.distanceTo(localVec);
+    const distToCamera = state.camera.position.distanceTo(globalPos);
     
     let htmlOpacity = 0;
     if (view === 'galaxy') {
       htmlOpacity = 1.0;
     } else if (scale > 0) {
-      // If we are in system/body view and close enough to see the 3D model, hide the HTML icon
       htmlOpacity = Math.max(0, Math.min(1, (distToCamera - 15) / 10));
     }
 
@@ -1693,35 +1817,28 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     if (trackingShip && controlsRef?.current) {
       const controls = controlsRef.current;
       controls.smoothTime = 0;
-      controls.restThreshold = 0.0001; // Increase precision for extreme zoom tracking
+      controls.restThreshold = 0.0001; 
 
       if (!hasInitialPosRef.current) {
-        // INITIAL SNAP: cinematic zoom to ship position
         const zoomDist = 6.0;
         controls.setLookAt(
-          localVec.x + zoomDist * 0.8, localVec.y + zoomDist * 0.6, localVec.z + zoomDist,
-          localVec.x, localVec.y, localVec.z,
+          globalPos.x + zoomDist * 0.8, globalPos.y + zoomDist * 0.6, globalPos.z + zoomDist,
+          globalPos.x, globalPos.y, globalPos.z,
           true
         );
         hasInitialPosRef.current = true;
       } else {
-        // High-precision tracking
-        controls.moveTo(localVec.x, localVec.y, localVec.z, false);
+        controls.moveTo(globalPos.x, globalPos.y, globalPos.z, false);
       }
     } else {
       hasInitialPosRef.current = false;
     }
 
-    // Apply physical transform with coordinate shifting for system view
-    // Use a tiny minimum scale to prevent projection matrix issues on some mobile browsers
     groupRef.current.scale.setScalar(Math.max(0.0001, scale));
 
-    // Apply engine glow color + intensity
     if (engineGlowRef.current) {
       engineGlowRef.current.children.forEach((child) => {
-        // Scaling the anchor group so it grows from the nozzle
         child.scale.setScalar(engineIntensity);
-        // Find the mesh inside the group to set the color
         const mesh = child.children[0] as THREE.Mesh;
         if (mesh && mesh.material) {
           (mesh.material as THREE.MeshBasicMaterial).color.set(engineColor);
@@ -1736,6 +1853,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     // Flash sphere
     if (flashRef.current) {
       const mat = flashRef.current.material as THREE.MeshBasicMaterial;
+      flashRef.current.position.copy(globalPos);
       flashRef.current.scale.setScalar(Math.max(0, flashScale));
       mat.opacity = Math.max(0, flashOpacity);
       flashRef.current.visible = flashOpacity > 0;
@@ -1744,216 +1862,216 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     // Apply HTML icon properties via ref
     if (labelRef.current) {
       labelRef.current.style.opacity = htmlOpacity.toString();
-      // Dynamically scale the icon based on distance in galaxy view:
-      // A gentler curve so it doesn't grow or shrink too aggressively.
       const s = view === 'galaxy' ? Math.max(0.9, Math.min(1.4, 1.0 + (distToCamera - 600) / 1500)) : 1.0;
       labelRef.current.style.transform = `scale(${s})`;
     }
   });
 
   return (
-    <group ref={groupRef}>
-      <group ref={shipMeshRef}>
-        {/* Main Hull (Cylindrical) — highly polished */}
-        <mesh position={[0, 0, 0.05]} rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[0.1, 0.1, 0.5, 32]} />
-          <meshStandardMaterial color="#c8d0dc" metalness={0.98} roughness={0.04} envMapIntensity={2.5} />
-        </mesh>
-        
-        {/* Forward Hull Section (Tapered) */}
-        <mesh position={[0, 0, 0.28]} rotation={[Math.PI / 2, 0, 0]}>
-          <coneGeometry args={[0.08, 0.18, 16]} />
-          <meshStandardMaterial color="#a0aab8" metalness={0.98} roughness={0.03} envMapIntensity={2.5} />
-        </mesh>
-        
-        <mesh position={[0, 0, 0.1]} rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[0.09, 0.1, 0.2, 16]} />
-          <meshStandardMaterial color="#9aa4b4" metalness={0.95} roughness={0.06} envMapIntensity={2.5} />
-        </mesh>
+    <group>
+      <group ref={groupRef}>
+        <group ref={shipMeshRef}>
+          {/* Main Hull (Cylindrical) — highly polished */}
+          <mesh position={[0, 0, 0.05]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.1, 0.1, 0.5, 32]} />
+            <meshStandardMaterial color="#c8d0dc" metalness={0.98} roughness={0.04} envMapIntensity={2.5} />
+          </mesh>
+          
+          {/* Forward Hull Section (Tapered) */}
+          <mesh position={[0, 0, 0.28]} rotation={[Math.PI / 2, 0, 0]}>
+            <coneGeometry args={[0.08, 0.18, 16]} />
+            <meshStandardMaterial color="#a0aab8" metalness={0.98} roughness={0.03} envMapIntensity={2.5} />
+          </mesh>
+          
+          <mesh position={[0, 0, 0.1]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[0.09, 0.1, 0.2, 16]} />
+            <meshStandardMaterial color="#9aa4b4" metalness={0.95} roughness={0.06} envMapIntensity={2.5} />
+          </mesh>
 
-        {/* Engineering Section (Rear) */}
-        <mesh position={[0, 0, -0.1]}>
-          <boxGeometry args={[0.18, 0.1, 0.2]} />
-          <meshStandardMaterial color="#7a8898" metalness={0.95} roughness={0.08} envMapIntensity={2.5} />
-        </mesh>
+          {/* Engineering Section (Rear) */}
+          <mesh position={[0, 0, -0.1]}>
+            <boxGeometry args={[0.18, 0.1, 0.2]} />
+            <meshStandardMaterial color="#7a8898" metalness={0.95} roughness={0.08} envMapIntensity={2.5} />
+          </mesh>
 
-        {/* Command Bridge (Detailed Top Deck) */}
-        <mesh position={[0, 0.08, 0.12]}>
-          <boxGeometry args={[0.07, 0.06, 0.15]} />
-          <meshStandardMaterial color="#222222" metalness={0.9} roughness={0.1} emissive="#00ccff" emissiveIntensity={0.4} />
-        </mesh>
-        {/* Bridge Viewport */}
-        <mesh position={[0, 0.09, 0.18]}>
-          <boxGeometry args={[0.06, 0.02, 0.02]} />
-          <meshStandardMaterial color="#ffffff" emissive="#00ffff" emissiveIntensity={2} />
-        </mesh>
+          {/* Command Bridge (Detailed Top Deck) */}
+          <mesh position={[0, 0.08, 0.12]}>
+            <boxGeometry args={[0.07, 0.06, 0.15]} />
+            <meshStandardMaterial color="#222222" metalness={0.9} roughness={0.1} emissive="#00ccff" emissiveIntensity={0.4} />
+          </mesh>
+          {/* Bridge Viewport */}
+          <mesh position={[0, 0.09, 0.18]}>
+            <boxGeometry args={[0.06, 0.02, 0.02]} />
+            <meshStandardMaterial color="#ffffff" emissive="#00ffff" emissiveIntensity={2} />
+          </mesh>
 
-        {/* Port Wing & Nacelle Assembly */}
-        <group position={[0.2, 0, -0.05]}>
-          {/* Wing Strut */}
-          <mesh rotation={[0, -0.3, 0]}>
-            <boxGeometry args={[0.15, 0.02, 0.1]} />
-            <meshStandardMaterial color="#9aa4b4" metalness={0.95} roughness={0.08} envMapIntensity={2} />
-          </mesh>
-          {/* Nacelle Housing */}
-          <mesh position={[0.08, 0, -0.08]} rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.035, 0.045, 0.28, 12]} />
-            <meshStandardMaterial color="#6a7888" metalness={0.98} roughness={0.04} envMapIntensity={2.5} />
-          </mesh>
-          {/* Warp Coil Glow */}
-          <mesh position={[0.08, 0.03, -0.08]}>
-            <boxGeometry args={[0.015, 0.01, 0.18]} />
-            <meshStandardMaterial color="#ffffff" emissive="#0088ff" emissiveIntensity={3} />
-          </mesh>
-        </group>
-
-        {/* Starboard Wing & Nacelle Assembly */}
-        <group position={[-0.2, 0, -0.05]}>
-          {/* Wing Strut */}
-          <mesh rotation={[0, 0.3, 0]}>
-            <boxGeometry args={[0.15, 0.02, 0.1]} />
-            <meshStandardMaterial color="#9aa4b4" metalness={0.95} roughness={0.08} envMapIntensity={2} />
-          </mesh>
-          {/* Nacelle Housing */}
-          <mesh position={[-0.08, 0, -0.08]} rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.035, 0.045, 0.28, 12]} />
-            <meshStandardMaterial color="#6a7888" metalness={0.98} roughness={0.04} envMapIntensity={2.5} />
-          </mesh>
-          {/* Warp Coil Glow */}
-          <mesh position={[-0.08, 0.03, -0.08]}>
-            <boxGeometry args={[0.015, 0.01, 0.18]} />
-            <meshStandardMaterial color="#ffffff" emissive="#0088ff" emissiveIntensity={3} />
-          </mesh>
-        </group>
-
-        {/* Decorative Surface Plating (Greebles) */}
-        <mesh position={[0, -0.06, 0.05]}>
-          <boxGeometry args={[0.08, 0.02, 0.1]} />
-          <meshStandardMaterial color="#404a55" />
-        </mesh>
-        <mesh position={[0.06, 0.04, -0.15]}>
-          <boxGeometry args={[0.04, 0.04, 0.04]} />
-          <meshStandardMaterial color="#404a55" />
-        </mesh>
-        <mesh position={[-0.06, 0.04, -0.15]}>
-          <boxGeometry args={[0.04, 0.04, 0.04]} />
-          <meshStandardMaterial color="#404a55" />
-        </mesh>
-
-        {/* Navigation Lights */}
-        <mesh position={[0.3, 0.02, -0.1]} name="navGreen">
-          <sphereGeometry args={[0.015, 8, 8]} />
-          <meshBasicMaterial color="#00ff00" />
-        </mesh>
-        <mesh position={[-0.3, 0.02, -0.1]} name="navRed">
-          <sphereGeometry args={[0.015, 8, 8]} />
-          <meshBasicMaterial color="#ff0000" />
-        </mesh>
-
-        {/* Hull Windows (Emissive) */}
-        <mesh position={[0.08, 0, 0.1]}>
-          <boxGeometry args={[0.045, 0.02, 0.05]} />
-          <meshBasicMaterial color="#ffffff" />
-        </mesh>
-        <mesh position={[-0.08, 0, 0.1]}>
-          <boxGeometry args={[0.045, 0.02, 0.05]} />
-          <meshBasicMaterial color="#ffffff" />
-        </mesh>
-
-        {/* 3D Hitbox for Ship */}
-        <mesh 
-          onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
-          onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
-          onPointerOut={() => { document.body.style.cursor = "default"; }}
-        >
-          <sphereGeometry args={[0.5, 16, 16]} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-        </mesh>
-        <mesh position={[0.08, 0, -0.05]}>
-          <boxGeometry args={[0.045, 0.02, 0.05]} />
-          <meshBasicMaterial color="#ffffff" />
-        </mesh>
-        {/* Hull Sequential Running Lights (Cyan) */}
-        <group ref={runningLightsRef}>
-          {/* Port side: Forward, Mid, Aft */}
-          <mesh position={[0.105, 0.01, 0.22]}>
-            <sphereGeometry args={[0.008, 8, 8]} />
-            <meshBasicMaterial color="#00ffff" />
-          </mesh>
-          <mesh position={[0.105, 0.01, 0.05]}>
-            <sphereGeometry args={[0.008, 8, 8]} />
-            <meshBasicMaterial color="#00ffff" />
-          </mesh>
-          <mesh position={[0.105, 0.01, -0.12]}>
-            <sphereGeometry args={[0.008, 8, 8]} />
-            <meshBasicMaterial color="#00ffff" />
-          </mesh>
-          {/* Starboard side: Forward, Mid, Aft */}
-          <mesh position={[-0.105, 0.01, 0.22]}>
-            <sphereGeometry args={[0.008, 8, 8]} />
-            <meshBasicMaterial color="#00ffff" />
-          </mesh>
-          <mesh position={[-0.105, 0.01, 0.05]}>
-            <sphereGeometry args={[0.008, 8, 8]} />
-            <meshBasicMaterial color="#00ffff" />
-          </mesh>
-          <mesh position={[-0.105, 0.01, -0.12]}>
-            <sphereGeometry args={[0.008, 8, 8]} />
-            <meshBasicMaterial color="#00ffff" />
-          </mesh>
-        </group>
-
-        {/* Spotlight (Forward Facing) */}
-        <spotLight 
-          position={[0, 0, 0.4]} 
-          angle={0.4} 
-          penumbra={0.5} 
-          intensity={0.5} 
-          distance={10} 
-          color="#ffffff" 
-          target-position={[0, 0, 5]} 
-        />
-
-        {/* Engine Plumes — Anchored to nozzles to grow backwards (-Z) */}
-        <group ref={engineGlowRef}>
-          {/* Main Engine */}
-          <group position={[0, 0, -0.2]}>
-            <mesh position={[0, 0, -0.175]} rotation={[-Math.PI / 2, 0, 0]}>
-              <coneGeometry args={[0.10, 0.35, 16, 1, true]} />
-              <meshBasicMaterial color="#00ffff" transparent opacity={0.6} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
+          {/* Port Wing & Nacelle Assembly */}
+          <group position={[0.2, 0, -0.05]}>
+            {/* Wing Strut */}
+            <mesh rotation={[0, -0.3, 0]}>
+              <boxGeometry args={[0.15, 0.02, 0.1]} />
+              <meshStandardMaterial color="#9aa4b4" metalness={0.95} roughness={0.08} envMapIntensity={2} />
+            </mesh>
+            {/* Nacelle Housing */}
+            <mesh position={[0.08, 0, -0.08]} rotation={[Math.PI / 2, 0, 0]}>
+              <cylinderGeometry args={[0.035, 0.045, 0.28, 12]} />
+              <meshStandardMaterial color="#6a7888" metalness={0.98} roughness={0.04} envMapIntensity={2.5} />
+            </mesh>
+            {/* Warp Coil Glow */}
+            <mesh position={[0.08, 0.03, -0.08]}>
+              <boxGeometry args={[0.015, 0.01, 0.18]} />
+              <meshStandardMaterial color="#ffffff" emissive="#0088ff" emissiveIntensity={3} />
             </mesh>
           </group>
-          {/* Port Nacelle Engine */}
-          <group position={[0.28, 0, -0.27]}>
-            <mesh position={[0, 0, -0.08]} rotation={[-Math.PI / 2, 0, 0]}>
-              <coneGeometry args={[0.035, 0.16, 12, 1, true]} />
-              <meshBasicMaterial color="#00ffff" transparent opacity={0.55} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
-            </mesh>
-          </group>
-          {/* Starboard Nacelle Engine */}
-          <group position={[-0.28, 0, -0.27]}>
-            <mesh position={[0, 0, -0.08]} rotation={[-Math.PI / 2, 0, 0]}>
-              <coneGeometry args={[0.035, 0.16, 12, 1, true]} />
-              <meshBasicMaterial color="#00ffff" transparent opacity={0.55} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
-            </mesh>
-          </group>
-        </group>
-        <pointLight ref={engineLightRef} position={[0, 0, -0.4]} color="#00ffff" distance={15} />
 
-        {/* Invisible Hitbox for Selection */}
-        {onSelect && (
-          <Billboard>
-            <mesh 
-              ref={hitboxRef}
-              onClick={(e) => { e.stopPropagation(); onSelect(); }}
-              onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
-              onPointerOut={() => { document.body.style.cursor = "default"; }}
-            >
-              <planeGeometry args={[2.5, 2.5]} />
-              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          {/* Starboard Wing & Nacelle Assembly */}
+          <group position={[-0.2, 0, -0.05]}>
+            {/* Wing Strut */}
+            <mesh rotation={[0, 0.3, 0]}>
+              <boxGeometry args={[0.15, 0.02, 0.1]} />
+              <meshStandardMaterial color="#9aa4b4" metalness={0.95} roughness={0.08} envMapIntensity={2} />
             </mesh>
-          </Billboard>
-        )}
+            {/* Nacelle Housing */}
+            <mesh position={[-0.08, 0, -0.08]} rotation={[Math.PI / 2, 0, 0]}>
+              <cylinderGeometry args={[0.035, 0.045, 0.28, 12]} />
+              <meshStandardMaterial color="#6a7888" metalness={0.98} roughness={0.04} envMapIntensity={2.5} />
+            </mesh>
+            {/* Warp Coil Glow */}
+            <mesh position={[-0.08, 0.03, -0.08]}>
+              <boxGeometry args={[0.015, 0.01, 0.18]} />
+              <meshStandardMaterial color="#ffffff" emissive="#0088ff" emissiveIntensity={3} />
+            </mesh>
+          </group>
+
+          {/* Decorative Surface Plating (Greebles) */}
+          <mesh position={[0, -0.06, 0.05]}>
+            <boxGeometry args={[0.08, 0.02, 0.1]} />
+            <meshStandardMaterial color="#404a55" />
+          </mesh>
+          <mesh position={[0.06, 0.04, -0.15]}>
+            <boxGeometry args={[0.04, 0.04, 0.04]} />
+            <meshStandardMaterial color="#404a55" />
+          </mesh>
+          <mesh position={[-0.06, 0.04, -0.15]}>
+            <boxGeometry args={[0.04, 0.04, 0.04]} />
+            <meshStandardMaterial color="#404a55" />
+          </mesh>
+
+          {/* Navigation Lights */}
+          <mesh position={[0.3, 0.02, -0.1]} name="navGreen">
+            <sphereGeometry args={[0.015, 8, 8]} />
+            <meshBasicMaterial color="#00ff00" />
+          </mesh>
+          <mesh position={[-0.3, 0.02, -0.1]} name="navRed">
+            <sphereGeometry args={[0.015, 8, 8]} />
+            <meshBasicMaterial color="#ff0000" />
+          </mesh>
+
+          {/* Hull Windows (Emissive) */}
+          <mesh position={[0.08, 0, 0.1]}>
+            <boxGeometry args={[0.045, 0.02, 0.05]} />
+            <meshBasicMaterial color="#ffffff" />
+          </mesh>
+          <mesh position={[-0.08, 0, 0.1]}>
+            <boxGeometry args={[0.045, 0.02, 0.05]} />
+            <meshBasicMaterial color="#ffffff" />
+          </mesh>
+
+          {/* 3D Hitbox for Ship */}
+          <mesh 
+            onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
+            onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
+            onPointerOut={() => { document.body.style.cursor = "default"; }}
+          >
+            <sphereGeometry args={[0.5, 16, 16]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          </mesh>
+          <mesh position={[0.08, 0, -0.05]}>
+            <boxGeometry args={[0.045, 0.02, 0.05]} />
+            <meshBasicMaterial color="#ffffff" />
+          </mesh>
+          {/* Hull Sequential Running Lights (Cyan) */}
+          <group ref={runningLightsRef}>
+            {/* Port side: Forward, Mid, Aft */}
+            <mesh position={[0.105, 0.01, 0.22]}>
+              <sphereGeometry args={[0.008, 8, 8]} />
+              <meshBasicMaterial color="#00ffff" />
+            </mesh>
+            <mesh position={[0.105, 0.01, 0.05]}>
+              <sphereGeometry args={[0.008, 8, 8]} />
+              <meshBasicMaterial color="#00ffff" />
+            </mesh>
+            <mesh position={[0.105, 0.01, -0.12]}>
+              <sphereGeometry args={[0.008, 8, 8]} />
+              <meshBasicMaterial color="#00ffff" />
+            </mesh>
+            {/* Starboard side: Forward, Mid, Aft */}
+            <mesh position={[-0.105, 0.01, 0.22]}>
+              <sphereGeometry args={[0.008, 8, 8]} />
+              <meshBasicMaterial color="#00ffff" />
+            </mesh>
+            <mesh position={[-0.105, 0.01, 0.05]}>
+              <sphereGeometry args={[0.008, 8, 8]} />
+              <meshBasicMaterial color="#00ffff" />
+            </mesh>
+            <mesh position={[-0.105, 0.01, -0.12]}>
+              <sphereGeometry args={[0.008, 8, 8]} />
+              <meshBasicMaterial color="#00ffff" />
+            </mesh>
+          </group>
+
+          {/* Spotlight (Forward Facing) */}
+          <spotLight 
+            position={[0, 0, 0.4]} 
+            angle={0.4} 
+            penumbra={0.5} 
+            intensity={0.5} 
+            distance={10} 
+            color="#ffffff" 
+            target-position={[0, 0, 5]} 
+          />
+
+          {/* Engine Plumes — Anchored to nozzles to grow backwards (-Z) */}
+          <group ref={engineGlowRef}>
+            {/* Main Engine */}
+            <group position={[0, 0, -0.2]}>
+              <mesh position={[0, 0, -0.175]} rotation={[-Math.PI / 2, 0, 0]}>
+                <coneGeometry args={[0.10, 0.35, 16, 1, true]} />
+                <meshBasicMaterial color="#00ffff" transparent opacity={0.6} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
+              </mesh>
+            </group>
+            {/* Port Nacelle Engine */}
+            <group position={[0.28, 0, -0.27]}>
+              <mesh position={[0, 0, -0.08]} rotation={[-Math.PI / 2, 0, 0]}>
+                <coneGeometry args={[0.035, 0.16, 12, 1, true]} />
+                <meshBasicMaterial color="#00ffff" transparent opacity={0.55} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
+              </mesh>
+            </group>
+            {/* Starboard Nacelle Engine */}
+            <group position={[-0.28, 0, -0.27]}>
+              <mesh position={[0, 0, -0.08]} rotation={[-Math.PI / 2, 0, 0]}>
+                <coneGeometry args={[0.035, 0.16, 12, 1, true]} />
+                <meshBasicMaterial color="#00ffff" transparent opacity={0.55} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
+              </mesh>
+            </group>
+          </group>
+          <pointLight ref={engineLightRef} position={[0, 0, -0.4]} color="#00ffff" distance={15} />
+
+          {/* Invisible Hitbox for Selection */}
+          {onSelect && (
+            <Billboard>
+              <mesh 
+                ref={hitboxRef}
+                onClick={(e) => { e.stopPropagation(); onSelect(); }}
+                onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
+                onPointerOut={() => { document.body.style.cursor = "default"; }}
+              >
+                <planeGeometry args={[2.5, 2.5]} />
+                <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+              </mesh>
+            </Billboard>
+          )}
+        </group>
       </group>
 
       {/* Jump Flash — lives outside the hull group so it doesn't rotate/scale with ship */}
@@ -1964,7 +2082,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
 
       {/* The HTML icon represents the Commander. We use a separate world-space group to avoid parent rotation issues. */}
       <group ref={labelGroupRef}>
-        <Html center zIndexRange={[100, 0]} position={[0, 1.2, 0]}>
+        <Html center zIndexRange={[100, 0]} position={[0, view === 'galaxy' ? 0 : 1.2, 0]}>
           <div ref={labelRef} className="cmdr-label pointer-events-none transition-opacity duration-300">
             <div className="relative flex flex-col items-center text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-pulse">
               <Rocket size={14} className="-rotate-45" />
