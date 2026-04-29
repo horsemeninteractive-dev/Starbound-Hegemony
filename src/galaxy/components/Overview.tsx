@@ -22,7 +22,7 @@ export function GalaxyOverview({ galaxy, hideHeader }: { galaxy: Galaxy; hideHea
 }
 
 /* ======================= SYSTEM OVERVIEW ======================= */
-export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, travel, initiateJump, getJumpCost, currentTime, isExplored, hideHeader }: {
+export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, travel, initiateJump, getJumpCost, currentTime, isExplored, hideHeader, onPlayClick }: {
   system: StarSystem;
   galaxy: Galaxy;
   onSelectBody: (id: string) => void;
@@ -33,6 +33,7 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, t
   currentTime: number;
   isExplored: boolean;
   hideHeader?: boolean;
+  onPlayClick?: () => void;
 }) {
   const explored = isExplored || system.id === "sys-center";
   const meta = STAR_META[system.starType];
@@ -81,7 +82,10 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, t
       
       {!isCurrent && !travel && isAdjacent && (
         <button 
-          onClick={() => initiateJump(system.id)}
+          onClick={() => {
+            onPlayClick?.();
+            initiateJump(system.id);
+          }}
           className="w-full mt-4 bg-primary hover:bg-primary/80 text-background font-bold py-2 px-4 rounded text-xs tracking-widest transition-colors flex items-center justify-between gap-2"
         >
           <span className="flex items-center gap-2">
@@ -141,7 +145,10 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, t
             {/* 1. Ships (Top of the list) */}
             {isCurrent && (
               <button
-                onClick={() => onSelectBody("ship")}
+                onClick={() => {
+                  onPlayClick?.();
+                  onSelectBody("ship");
+                }}
                 className="flex items-center justify-between gap-2 px-2 py-1 text-[10px] uppercase tracking-wider border border-primary/30 bg-primary/10 hover:bg-primary/20 text-left transition mb-1 shadow-[0_0_10px_rgba(16,185,129,0.1)]"
               >
                 <span className="text-primary">{BODY_META.ship.icon}</span>
@@ -157,7 +164,7 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, t
               .sort((a, b) => a.orbit - b.orbit) // Orbital order
               .slice(0, 30) // Increased cap
               .map((b) => (
-                <BodyListEntry key={b.id} body={b} onSelect={onSelectBody} depth={0} />
+                <BodyListEntry key={b.id} body={b} onSelect={onSelectBody} depth={0} onPlayClick={onPlayClick} />
               ))}
           </div>
         </>
@@ -166,12 +173,15 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, t
   );
 }
 
-function BodyListEntry({ body, onSelect, depth }: { body: Body; onSelect: (id: string) => void; depth: number }) {
+function BodyListEntry({ body, onSelect, depth, onPlayClick }: { body: Body; onSelect: (id: string) => void; depth: number; onPlayClick?: () => void }) {
   const meta = BODY_META[body.type as keyof typeof BODY_META];
   return (
     <>
       <button
-        onClick={() => onSelect(body.id)}
+        onClick={() => {
+          onPlayClick?.();
+          onSelect(body.id);
+        }}
         className="flex items-center justify-between gap-2 px-2 py-1 text-[10px] uppercase tracking-wider border border-border hover:border-primary/60 hover:bg-primary/5 text-left transition"
         style={{ marginLeft: `${depth * 10}px` }}
       >
@@ -183,7 +193,7 @@ function BodyListEntry({ body, onSelect, depth }: { body: Body; onSelect: (id: s
         <span className="text-muted-foreground shrink-0">{meta?.label || body.type}</span>
       </button>
       {body.children?.map(child => (
-        <BodyListEntry key={child.id} body={child} onSelect={onSelect} depth={depth + 1} />
+        <BodyListEntry key={child.id} body={child} onSelect={onSelect} depth={depth + 1} onPlayClick={onPlayClick} />
       ))}
     </>
   );
@@ -217,7 +227,7 @@ function formatLabel(raw: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function BodyOverview({ body, galaxy, hideHeader }: { body: Body; galaxy: Galaxy; hideHeader?: boolean }) {
+export function BodyOverview({ body, galaxy, hideHeader, isExplored = true, onPlayClick }: { body: Body; galaxy: Galaxy; hideHeader?: boolean; isExplored?: boolean; onPlayClick?: () => void }) {
   const owner = body.ownerId ? galaxy.empires.find((e) => e.id === body.ownerId) : null;
   
   const zoneColors = { hot: "text-error", temperate: "text-success", cold: "text-info" };
@@ -245,81 +255,95 @@ export function BodyOverview({ body, galaxy, hideHeader }: { body: Body; galaxy:
       />
 
       {isPlanet && (
-        <Row k="Satellites" v={body.children?.length ? `${body.children.length} Moons` : "None"} />
+        <Row k="Satellites" v={body.children?.length ? (isExplored ? `${body.children.length} Moons` : "???") : "None"} />
       )}
 
       <Divider />
-      
-      <Row k="Temperature" v={`${body.temperature} K`} />
-      <Row k="Environment" v={formatLabel(body.habitabilityZone)} accent={zoneColors[body.habitabilityZone]} />
-      <Row k="Atmosphere" v={body.atmosphere ?? "None"} />
-      
-      <Divider />
-      
-      <Row k="Population" v={body.population > 0 ? `${body.population.toFixed(1)} M` : "Uninhabited"} />
-      <Row k="Economy" v={ECON_META[body.economy].label} accent={ECON_META[body.economy].color} />
-      <Row
-        k="Sovereign"
-        v={owner?.name ?? "Unclaimed"}
-        dotColor={owner ? `hsl(${owner.hue} 70% 55%)` : undefined}
-      />
-      
-      {body.type === "terrestrial" && (
-        <>
-          <Divider />
-          <SubTitle>Biosphere</SubTitle>
-          <Row k="Flora"  v={formatLabel(body.flora)}  accent={bioColors[body.flora]} />
-          <Row k="Fauna"  v={formatLabel(body.fauna)}  accent={bioColors[body.fauna]} />
-        </>
-      )}
 
-      {body.hazards.length > 0 && (
-        <>
-          <Divider />
-          <SubTitle>Active Hazards</SubTitle>
-          <div className="flex flex-wrap gap-1">
-            {body.hazards.map((h) => (
-              <span key={h} className="px-1.5 py-0.5 text-[9px] uppercase tracking-wider bg-error/10 border border-error/30 text-error">
-                {h}
-              </span>
-            ))}
+      {!isExplored ? (
+        <div className="p-3 border border-dashed border-primary/20 rounded bg-primary/5 mb-2">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-2 h-2 bg-warning rounded-full animate-pulse" />
+            <span className="text-[9px] font-mono-hud uppercase text-warning tracking-widest font-bold">Data Corrupted</span>
           </div>
-        </>
-      )}
-
-      {!isStar && body.deposits.length > 0 && (
+          <p className="text-[10px] text-primary/60 leading-relaxed font-mono-hud italic">
+            Long-range sensor data insufficient for detailed planetary analysis. Explore the system to reveal body characteristics.
+          </p>
+        </div>
+      ) : (
         <>
+          <Row k="Temperature" v={`${body.temperature} K`} />
+          <Row k="Environment" v={formatLabel(body.habitabilityZone)} accent={zoneColors[body.habitabilityZone]} />
+          <Row k="Atmosphere" v={body.atmosphere ?? "None"} />
+          
           <Divider />
-          <SubTitle>Resources</SubTitle>
-          <div className="flex flex-wrap gap-1.5">
-            {body.deposits.map((d) => {
-              const richnessColor = {
-                trace: "text-muted-foreground/80",
-                moderate: "text-info/90",
-                significant: "text-primary/90",
-                rich: "text-success/90",
-                abundant: "text-warning/90"
-              }[d.richness];
-              const richnessSymbols = {
-                trace: "★",
-                moderate: "★★",
-                significant: "★★★",
-                rich: "★★★★",
-                abundant: "★★★★★"
-              }[d.richness];
+          
+          <Row k="Population" v={body.population > 0 ? `${body.population.toFixed(1)} M` : "Uninhabited"} />
+          <Row k="Economy" v={ECON_META[body.economy].label} accent={ECON_META[body.economy].color} />
+          <Row
+            k="Sovereign"
+            v={owner?.name ?? "Unclaimed"}
+            dotColor={owner ? `hsl(${owner.hue} 70% 55%)` : undefined}
+          />
+          
+          {body.type === "terrestrial" && (
+            <>
+              <Divider />
+              <SubTitle>Biosphere</SubTitle>
+              <Row k="Flora"  v={formatLabel(body.flora)}  accent={bioColors[body.flora]} />
+              <Row k="Fauna"  v={formatLabel(body.fauna)}  accent={bioColors[body.fauna]} />
+            </>
+          )}
 
-              return (
-                <div key={d.resource} className="px-2 py-1 flex flex-col border border-primary/20 bg-primary/5 rounded-sm min-w-[70px]">
-                  <span className="text-[9px] uppercase tracking-wider text-primary/80 font-bold leading-tight">
-                    {d.resource}
+          {body.hazards.length > 0 && (
+            <>
+              <Divider />
+              <SubTitle>Active Hazards</SubTitle>
+              <div className="flex flex-wrap gap-1">
+                {body.hazards.map((h) => (
+                  <span key={h} className="px-1.5 py-0.5 text-[9px] uppercase tracking-wider bg-error/10 border border-error/30 text-error">
+                    {h}
                   </span>
-                  <span className={`text-[9px] font-mono-hud font-bold tracking-tighter ${richnessColor}`}>
-                    {richnessSymbols}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {!isStar && body.deposits.length > 0 && (
+            <>
+              <Divider />
+              <SubTitle>Resources</SubTitle>
+              <div className="flex flex-wrap gap-1.5">
+                {body.deposits.map((d) => {
+                  const richnessColor = {
+                    trace: "text-muted-foreground/80",
+                    moderate: "text-info/90",
+                    significant: "text-primary/90",
+                    rich: "text-success/90",
+                    abundant: "text-warning/90"
+                  }[d.richness];
+                  const richnessSymbols = {
+                    trace: "★",
+                    moderate: "★★",
+                    significant: "★★★",
+                    rich: "★★★★",
+                    abundant: "★★★★★"
+                  }[d.richness];
+
+                  return (
+                    <div key={d.resource} className="px-2 py-1 flex flex-col border border-primary/20 bg-primary/5 rounded-sm min-w-[70px]">
+                      <span className="text-[9px] uppercase tracking-wider text-primary/80 font-bold leading-tight">
+                        {d.resource}
+                      </span>
+                      <span className={`text-[9px] font-mono-hud font-bold tracking-tighter ${richnessColor}`}>
+                        {richnessSymbols}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </>
       )}
     </Panel>
@@ -327,12 +351,13 @@ export function BodyOverview({ body, galaxy, hideHeader }: { body: Body; galaxy:
 }
 
 /* ======================= SHIP OVERVIEW ======================= */
-export function ShipOverview({ system, travel, currentTime, onDeselect, hideHeader }: {
+export function ShipOverview({ system, travel, currentTime, onDeselect, hideHeader, onPlayClick }: {
   system: StarSystem | null;
   travel: { targetId: string; startTime: number; endTime: number } | null;
   currentTime: number;
   onDeselect?: () => void;
   hideHeader?: boolean;
+  onPlayClick?: () => void;
 }) {
   const isInTransit = !!travel;
   const transitPct = travel
@@ -371,7 +396,10 @@ export function ShipOverview({ system, travel, currentTime, onDeselect, hideHead
         <>
           <Divider />
           <button
-            onClick={onDeselect}
+            onClick={() => {
+              onPlayClick?.();
+              onDeselect();
+            }}
             className="w-full mt-1 px-3 py-1.5 text-[9px] uppercase tracking-widest font-bold text-muted-foreground border border-border hover:border-primary/40 hover:text-primary transition"
           >
             Dismiss

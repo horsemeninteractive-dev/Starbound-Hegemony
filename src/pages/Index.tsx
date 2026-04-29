@@ -1,6 +1,7 @@
 import { Suspense, useMemo, useState, useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { 
-  ChevronUp, ChevronDown, User as UserIcon, Users as UsersIcon, Coins, 
+  ChevronUp, ChevronDown, ChevronLeft, User as UserIcon, Users as UsersIcon, Coins, 
   Newspaper, Sparkles, Globe, Zap, BarChart, TrendingUp, Shield, 
   Anchor, Cpu, BookOpen, Rocket, Award, History, Factory
 } from "lucide-react";
@@ -13,21 +14,27 @@ import { Legend } from "@/galaxy/components/Legend";
 import { SettingsModal } from "@/galaxy/components/SettingsModal";
 import { MiniMap } from "@/galaxy/components/MiniMap";
 import { CommanderOnboarding } from "@/galaxy/components/CommanderOnboarding";
+import { useAudio } from "@/galaxy/useAudio";
 import logo from "@/assets/logo.png";
 
 const Index = () => {
   const app = useGalaxyApp(20260423);
+  const { playClick, playTransition, playExpand, playCollapse, playAlert, playSuccess, playType, playNotification } = useAudio(app.audioEnabled, app.musicVolume, app.sfxVolume);
 
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [transitionKey, setTransitionKey] = useState(0);
+  
+  // Track user interaction for audio unlocking
+  const [hasInteracted, setHasInteracted] = useState(!app.onboardingCompleted);
   
   // Track view changes to trigger the "Processing" indicator
   useEffect(() => {
     if (transitionKey === 0) return;
     setIsTransitioning(true);
+    playNotification();
     const timer = setTimeout(() => setIsTransitioning(false), 1200);
     return () => clearTimeout(timer);
-  }, [transitionKey]);
+  }, [transitionKey, playNotification]);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isMobilePanelExpanded, setIsMobilePanelExpanded] = useState(false);
@@ -48,19 +55,42 @@ const Index = () => {
     });
   };
 
-  const handleOpenSystem = useMemo(() => withLoading(app.openSystem), [app.openSystem]);
-  const handleBackToGalaxy = useMemo(() => withLoading(app.backToGalaxy), [app.backToGalaxy]);
-  const handleBackToSystem = useMemo(() => withLoading(app.backToSystem), [app.backToSystem]);
+  const handleOpenSystem = useMemo(() => withLoading((id: string) => {
+    playTransition();
+    app.openSystem(id);
+  }), [app.openSystem, playTransition]);
+
+  const handleBackToGalaxy = useMemo(() => withLoading(() => {
+    playTransition();
+    app.backToGalaxy();
+  }), [app.backToGalaxy, playTransition]);
+
+  const handleBackToSystem = useMemo(() => withLoading(() => {
+    playTransition();
+    app.backToSystem();
+  }), [app.backToSystem, playTransition]);
 
   const handleSystemBodyClick = useMemo(() => withLoading((id: string) => {
+    playClick();
     if (id.startsWith("gate:")) {
       app.openSystem(id.slice(5));
     } else if (id === "ship") {
       app.openShip();
     } else {
-      app.openBody(id);
+      // Restriction: Only open body details if system is explored or if it's the player's current system
+      const system = app.galaxy.systems.find(s => s.bodies.some(b => b.id === id));
+      const isSystemExplored = system ? (!app.fogOfWar || app.exploredSystemIds.has(system.id)) : true;
+
+      if (isSystemExplored) {
+        app.openBody(id);
+      } else {
+        playAlert();
+        toast.error("Telemetry Corrupted", {
+          description: "System coordinates unverified. Neural link unable to resolve surface telemetry."
+        });
+      }
     }
-  }), [app]);
+  }), [app, playClick]);
 
   const handleOnboardingComplete = (name: string, avatar: string) => {
     app.setPlayerName(name);
@@ -116,6 +146,8 @@ const Index = () => {
           currentTime={app.currentTime}
           galaxy={app.galaxy}
           onRegenerate={app.regenerateGalaxy}
+          onSetAp={app.setAp}
+          onPlayClick={playClick}
         />
       </div>
 
@@ -159,7 +191,10 @@ const Index = () => {
                   galaxy={app.galaxy} 
                   currentSystem={app.system} 
                   playerSystemId={app.playerSystemId} 
-                  view={app.view} 
+                  view={app.view}
+                  knownSystemIds={app.knownSystemIds}
+                  fogOfWar={app.fogOfWar}
+                  onToggle={(exp) => exp ? playExpand() : playCollapse()}
                 />
               )}
 
@@ -171,9 +206,21 @@ const Index = () => {
 
                 {/* Bottom Controls cluster — desktop only (mobile gets its own bar below) */}
                 <div className="hidden sm:flex p-2 items-end justify-between w-full">
-                  <Legend view={app.view} />
+                  <Legend 
+                    view={app.view} 
+                    onPlayClick={playClick} 
+                    onPlayExpand={playExpand} 
+                    onPlayCollapse={playCollapse} 
+                  />
                   {(app.view === "galaxy" || app.view === "system" || app.view === "body" || app.view === "ship") && (
-                    <FilterPanel filters={app.filters} onToggle={app.toggleFilter} view={app.view === "ship" ? "system" : app.view} />
+                    <FilterPanel 
+                      filters={app.filters} 
+                      onToggle={app.toggleFilter} 
+                      view={app.view === "ship" ? "system" : app.view} 
+                      onPlayClick={playClick}
+                      onPlayExpand={playExpand}
+                      onPlayCollapse={playCollapse}
+                    />
                   )}
                 </div>
               </div>
@@ -193,22 +240,31 @@ const Index = () => {
                     getJumpCost={app.getJumpCost}
                     currentTime={app.currentTime}
                     isExplored={!app.fogOfWar || app.exploredSystemIds.has(app.system.id)}
+                    onPlayClick={playClick}
                   />
                 )}
-                {app.view === "body" && app.body && <BodyOverview body={app.body} galaxy={app.galaxy} />}
+                {app.view === "body" && app.body && app.system && (
+                    <BodyOverview 
+                      body={app.body} 
+                      galaxy={app.galaxy} 
+                      isExplored={!app.fogOfWar || app.exploredSystemIds.has(app.system.id)}
+                      onPlayClick={playClick}
+                    />
+                )}
                 {app.view === "ship" && (
                   <ShipOverview
                     system={app.system}
                     travel={app.travel}
                     currentTime={app.currentTime}
                     onDeselect={handleBackToSystem}
+                    onPlayClick={playClick}
                   />
                 )}
               </div>
             </aside>
           </>
           ) : app.page === "profile" ? (
-            <ProfileView app={app} />
+            <ProfileView app={app} onPlayClick={playClick} />
           ) : (
             <div className="flex-1 bg-background/40 backdrop-blur-sm p-4 sm:p-12 overflow-y-auto custom-scrollbar animate-in slide-in-from-bottom-2 duration-500">
                <div className="max-w-5xl mx-auto space-y-12 pb-24">
@@ -638,6 +694,13 @@ const Index = () => {
         onClose={() => setIsSettingsOpen(false)} 
         quality={graphicsQuality}
         setQuality={setGraphicsQuality}
+        audioEnabled={app.audioEnabled}
+        setAudioEnabled={app.setAudioEnabled}
+        musicVolume={app.musicVolume}
+        setMusicVolume={app.setMusicVolume}
+        sfxVolume={app.sfxVolume}
+        setSfxVolume={app.setSfxVolume}
+        onPlayClick={playClick}
       />
 
       {/* Mobile Tactical Panel Overlay */}
@@ -645,6 +708,11 @@ const Index = () => {
         <MobileHUD 
           app={app} 
           onSelectBody={handleSystemBodyClick} 
+          onBackToGalaxy={handleBackToGalaxy}
+          onBackToSystem={handleBackToSystem}
+          onPlayClick={playClick}
+          onPlayExpand={playExpand}
+          onPlayCollapse={playCollapse}
           expanded={isMobilePanelExpanded} 
           setExpanded={setIsMobilePanelExpanded} 
         />
@@ -652,11 +720,57 @@ const Index = () => {
 
       {/* Onboarding Screen - Overlay everything */}
       {!app.onboardingCompleted && (
-        <CommanderOnboarding onComplete={handleOnboardingComplete} />
+        <CommanderOnboarding 
+          onComplete={handleOnboardingComplete} 
+          playClick={playClick}
+          playSuccess={playSuccess}
+          playType={playType}
+        />
+      )}
+
+      {/* Welcome Screen for returning users to unlock Audio Context */}
+      {app.onboardingCompleted && !hasInteracted && (
+        <WelcomeScreen 
+          playerName={app.playerName} 
+          onEnter={() => {
+            setHasInteracted(true);
+            playSuccess();
+          }} 
+        />
       )}
     </main>
   );
 };
+
+function WelcomeScreen({ playerName, onEnter }: { playerName: string; onEnter: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background/80 backdrop-blur-md animate-in fade-in duration-500">
+      <div className="relative p-1">
+        <div className="absolute inset-0 bg-gradient-to-r from-primary/0 via-primary/20 to-primary/0 animate-scan pointer-events-none" />
+        <button 
+          onClick={onEnter}
+          className="hud-panel p-8 md:p-12 border border-primary/40 bg-black/60 hover:bg-primary/10 transition-colors flex flex-col items-center gap-6 group cursor-pointer w-[300px] md:w-[400px]"
+        >
+          <div className="w-16 h-16 rounded-full border border-primary flex items-center justify-center bg-primary/10 group-hover:bg-primary/20 transition-colors">
+            <Zap className="text-primary w-8 h-8 group-hover:scale-110 transition-transform" />
+          </div>
+          <div className="text-center space-y-2">
+            <h2 className="font-display text-2xl md:text-3xl text-primary text-glow uppercase tracking-[0.2em] pointer-events-none">
+              Uplink Ready
+            </h2>
+            <p className="font-mono-hud text-[10px] md:text-xs tracking-widest text-primary/60 uppercase pointer-events-none">
+              Welcome back, Commander {playerName}
+            </p>
+          </div>
+          
+          <div className="mt-4 w-full px-8 py-3 border border-primary/30 bg-primary/5 group-hover:bg-primary/20 transition-colors font-display tracking-[0.3em] uppercase text-sm text-primary text-glow animate-pulse text-center">
+            Initialize
+          </div>
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function DataProcessingIndicator({ isBusy }: { isBusy: boolean }) {
   if (!isBusy) return null;
@@ -732,7 +846,27 @@ function LoadingHud() {
   );
 }
 
-function MobileHUD({ app, onSelectBody, expanded, setExpanded }: { app: GalaxyApp; onSelectBody: (id: string) => void; expanded: boolean; setExpanded: (v: boolean) => void }) {
+function MobileHUD({ 
+  app, 
+  onSelectBody, 
+  onBackToGalaxy,
+  onBackToSystem,
+  onPlayClick,
+  onPlayExpand,
+  onPlayCollapse,
+  expanded, 
+  setExpanded 
+}: { 
+  app: GalaxyApp; 
+  onSelectBody: (id: string) => void; 
+  onBackToGalaxy: () => void;
+  onBackToSystem: () => void;
+  onPlayClick: () => void;
+  onPlayExpand: () => void;
+  onPlayCollapse: () => void;
+  expanded: boolean; 
+  setExpanded: (v: boolean) => void 
+}) {
   useEffect(() => {
     setExpanded(false);
   }, [app.view, app.system?.id, app.body?.id, setExpanded]);
@@ -762,7 +896,12 @@ function MobileHUD({ app, onSelectBody, expanded, setExpanded }: { app: GalaxyAp
       <div className="hud-panel hud-corner overflow-hidden flex flex-col shadow-2xl shadow-primary/10">
         <div className="flex items-center gap-2 pr-3 bg-primary/5">
           <button
-            onClick={() => setExpanded(!expanded)}
+            onClick={() => {
+              const next = !expanded;
+              setExpanded(next);
+              if (next) onPlayExpand();
+              else onPlayCollapse();
+            }}
             className="flex-1 flex items-center gap-2 px-3 py-2 text-left hover:bg-primary/5 transition min-w-0"
             aria-label={expanded ? "Collapse panel" : "Expand panel"}
           >
@@ -781,7 +920,10 @@ function MobileHUD({ app, onSelectBody, expanded, setExpanded }: { app: GalaxyAp
           
           {canJump && (
             <button
-              onClick={() => app.initiateJump(app.system.id)}
+              onClick={() => {
+                app.initiateJump(app.system.id);
+                onPlayClick();
+              }}
               className="shrink-0 flex items-center gap-2 bg-primary text-background px-3 py-1.5 rounded font-mono-hud font-bold text-[10px] tracking-widest hover:scale-105 active:scale-95 transition-all"
             >
               <Zap size={14} fill="currentColor" />
@@ -805,10 +947,11 @@ function MobileHUD({ app, onSelectBody, expanded, setExpanded }: { app: GalaxyAp
                 currentTime={app.currentTime}
                 isExplored={!app.fogOfWar || app.exploredSystemIds.has(app.system.id)}
                 hideHeader={true}
+                onPlayClick={onPlayClick}
               />
             )}
             {app.view === "body" && app.body && (
-              <BodyOverview body={app.body} galaxy={app.galaxy} hideHeader={true} />
+              <BodyOverview body={app.body} galaxy={app.galaxy} hideHeader={true} onPlayClick={onPlayClick} />
             )}
             {app.view === "ship" && (
               <ShipOverview
@@ -817,6 +960,7 @@ function MobileHUD({ app, onSelectBody, expanded, setExpanded }: { app: GalaxyAp
                 currentTime={app.currentTime}
                 onDeselect={() => setExpanded(false)}
                 hideHeader={true}
+                onPlayClick={onPlayClick}
               />
             )}
           </div>
@@ -825,16 +969,43 @@ function MobileHUD({ app, onSelectBody, expanded, setExpanded }: { app: GalaxyAp
 
       {/* Mobile Legend & Filters */}
       <div className="flex items-center justify-between mt-2 pointer-events-auto w-full">
-        <Legend view={app.view} />
+        <div className="flex items-center gap-2">
+          {app.view !== "galaxy" && (
+            <button
+              onClick={() => {
+                const action = app.view === "system" ? onBackToGalaxy : onBackToSystem;
+                action();
+                onPlayClick();
+              }}
+              className="hud-panel hud-corner flex items-center justify-center w-10 h-8 text-primary hover:text-glow transition"
+              aria-label="Back"
+            >
+              <ChevronLeft size={18} />
+            </button>
+          )}
+          <Legend 
+             view={app.view} 
+             onPlayClick={onPlayClick} 
+             onPlayExpand={onPlayExpand} 
+             onPlayCollapse={onPlayCollapse} 
+          />
+        </div>
         {(app.view === "galaxy" || app.view === "system" || app.view === "body" || app.view === "ship") && (
-          <FilterPanel filters={app.filters} onToggle={app.toggleFilter} view={app.view === "ship" ? "system" : app.view} />
+          <FilterPanel 
+            filters={app.filters} 
+            onToggle={app.toggleFilter} 
+            view={app.view === "ship" ? "system" : app.view} 
+            onPlayClick={onPlayClick}
+            onPlayExpand={onPlayExpand}
+            onPlayCollapse={onPlayCollapse}
+          />
         )}
       </div>
     </div>
   );
 }
 
-function ProfileView({ app }: { app: GalaxyApp }) {
+function ProfileView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: () => void }) {
   const [activeTab, setActiveTab] = useState("Overview");
   
   const TABS = [
@@ -870,7 +1041,10 @@ function ProfileView({ app }: { app: GalaxyApp }) {
               return (
                 <button
                   key={tab.label}
-                  onClick={() => setActiveTab(tab.label)}
+                  onClick={() => {
+                    setActiveTab(tab.label);
+                    onPlayClick();
+                  }}
                   className={`flex items-center gap-1.5 sm:gap-3 px-2 sm:px-4 py-1.5 sm:py-3 rounded transition-all whitespace-nowrap ${
                     activeTab === tab.label 
                       ? "bg-primary/20 text-primary border border-primary/40 shadow-[inset_0_0_10px_hsl(var(--primary)/0.1)]" 

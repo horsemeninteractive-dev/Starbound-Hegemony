@@ -7,6 +7,9 @@ interface Props {
   filters: FilterState;
   onToggle: <K extends keyof FilterState>(kind: K, value: FilterState[K] extends Set<infer V> ? V : never) => void;
   view: "galaxy" | "system" | "body" | "ship";
+  onPlayClick?: () => void;
+  onPlayExpand?: () => void;
+  onPlayCollapse?: () => void;
 }
 
 const CONTEST_ORDER: ContestState[] = ["controlled", "contested", "anarchic", "frontier"];
@@ -24,13 +27,18 @@ const LAYER_ORDER: { key: DisplayLayer; label: string; views?: string[] }[] = [
   { key: "cityLights",    label: "City Lights",     views: ["body"] },
 ];
 
-export function FilterPanel({ filters, onToggle, view }: Props) {
+export function FilterPanel({ filters, onToggle, view, onPlayClick, onPlayExpand, onPlayCollapse }: Props) {
   const [open, setOpen] = useState(false);
   const layers = LAYER_ORDER.filter(l => !l.views || l.views.includes(view));
   return (
     <aside className="relative pointer-events-auto">
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          const next = !open;
+          setOpen(next);
+          if (next) onPlayExpand?.();
+          else onPlayCollapse?.();
+        }}
         className="hud-panel hud-corner px-3 py-2 font-mono-hud text-[10px] uppercase tracking-widest text-primary hover:text-glow transition"
       >
         {open ? "× Filters" : "⚙ Filters"}
@@ -42,7 +50,10 @@ export function FilterPanel({ filters, onToggle, view }: Props) {
               <Chip
                 key={l.key}
                 active={filters.layers.has(l.key)}
-                onClick={() => onToggle("layers", l.key)}
+                onClick={() => {
+                  onToggle("layers", l.key);
+                  if (onPlayClick) onPlayClick();
+                }}
                 label={l.label}
               />
             ))}
@@ -52,7 +63,10 @@ export function FilterPanel({ filters, onToggle, view }: Props) {
               <Chip
                 key={k}
                 active={filters.contest.has(k)}
-                onClick={() => onToggle("contest", k)}
+                onClick={() => {
+                  onToggle("contest", k);
+                  if (onPlayClick) onPlayClick();
+                }}
                 label={CONTEST_META[k].label}
                 dot={CONTEST_META[k].dot}
               />
@@ -63,7 +77,10 @@ export function FilterPanel({ filters, onToggle, view }: Props) {
               <Chip
                 key={k}
                 active={filters.economy.has(k)}
-                onClick={() => onToggle("economy", k)}
+                onClick={() => {
+                  onToggle("economy", k);
+                  if (onPlayClick) onPlayClick();
+                }}
                 label={ECON_META[k].label}
                 colorClass={ECON_META[k].color}
               />
@@ -74,7 +91,10 @@ export function FilterPanel({ filters, onToggle, view }: Props) {
               <Chip
                 key={k}
                 active={filters.starType.has(k)}
-                onClick={() => onToggle("starType", k)}
+                onClick={() => {
+                  onToggle("starType", k);
+                  if (onPlayClick) onPlayClick();
+                }}
                 label={STAR_META[k].label}
                 colorClass={STAR_META[k].color}
               />

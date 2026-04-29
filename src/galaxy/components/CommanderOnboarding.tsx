@@ -7,6 +7,9 @@ import { User, Rocket } from "lucide-react";
 
 interface Props {
   onComplete: (name: string, avatar: string) => void;
+  playClick: () => void;
+  playSuccess: () => void;
+  playType: () => void;
 }
 
 const AVATARS = [
@@ -15,13 +18,14 @@ const AVATARS = [
   { id: "veteran", path: avatar_alt2, label: "VETERAN" },
 ];
 
-export function CommanderOnboarding({ onComplete }: Props) {
+export function CommanderOnboarding({ onComplete, playClick, playSuccess, playType }: Props) {
   const [name, setName] = useState("");
   const [avatar, setAvatar] = useState(AVATARS[0].path);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim()) {
+      playSuccess();
       onComplete(name.trim(), avatar);
     }
   };
@@ -62,7 +66,10 @@ export function CommanderOnboarding({ onComplete }: Props) {
               autoFocus
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                playType();
+              }}
               placeholder="ENTER NAME..."
               className="w-full bg-primary/5 border-b-2 border-primary/20 focus:border-primary px-4 py-3 font-display text-xl uppercase tracking-widest text-primary outline-none transition-all placeholder:text-primary/20"
               required
@@ -80,7 +87,10 @@ export function CommanderOnboarding({ onComplete }: Props) {
                 <button
                   key={av.id}
                   type="button"
-                  onClick={() => setAvatar(av.path)}
+                  onClick={() => {
+                    setAvatar(av.path);
+                    playClick();
+                  }}
                   className={`relative group flex flex-col items-center gap-2 p-2 sm:p-4 border transition-all duration-300 ${
                     avatar === av.path 
                       ? "border-primary bg-primary/10 shadow-[0_0_20px_hsl(var(--primary)/0.2)]" 

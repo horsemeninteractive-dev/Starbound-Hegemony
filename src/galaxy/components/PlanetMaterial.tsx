@@ -17,9 +17,10 @@ interface Props {
   quality?: "low" | "medium" | "high";
   terrainSeed?: number;
   geographyType?: "pangaea" | "continental" | "islands";
+  grayscale?: boolean;
 }
 
-export function PlanetMaterial({ color, type, size, subtype, hue, landColor, seaColor, lightDir, showWeather, showCityLights, isWeather, quality = "high", terrainSeed, geographyType }: Props) {
+export function PlanetMaterial({ color, type, size, subtype, hue, landColor, seaColor, lightDir, showWeather, showCityLights, isWeather, quality = "high", terrainSeed, geographyType, grayscale }: Props) {
   const uniforms = useMemo(() => {
     return {
       uColor: { value: new THREE.Color("#ffffff") },
@@ -33,7 +34,8 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
       uIsWeather: { value: 0.0 },
       uQuality: { value: 2.0 },
       uTerrainSeed: { value: 0.0 },
-      uGeographyType: { value: 0.0 } // 0: continental, 1: pangaea, 2: islands
+      uGeographyType: { value: 0.0 }, // 0: continental, 1: pangaea, 2: islands
+      uGrayscale: { value: 0.0 }
     };
   }, []); // Stable reference
 
@@ -53,7 +55,8 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
     uniforms.uQuality.value = quality === "low" ? 0.0 : quality === "medium" ? 1.0 : 2.0;
     uniforms.uTerrainSeed.value = terrainSeed || 0.0;
     uniforms.uGeographyType.value = geographyType === "pangaea" ? 1.0 : geographyType === "islands" ? 2.0 : 0.0;
-  }, [color, hue, landColor, seaColor, showWeather, showCityLights, isWeather, quality, terrainSeed, geographyType, uniforms]);
+    uniforms.uGrayscale.value = grayscale ? 1.0 : 0.0;
+  }, [color, hue, landColor, seaColor, showWeather, showCityLights, isWeather, quality, terrainSeed, geographyType, grayscale, uniforms]);
 
   const subtypeVal = useMemo(() => {
     const map: Record<string, number> = {
@@ -136,6 +139,7 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
         uniform float uQuality;
         uniform float uTerrainSeed;
         uniform float uGeographyType;
+        uniform float uGrayscale;
 
         // --- NOISE FUNCTIONS ---
         vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -668,7 +672,12 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
             else if (st == 1) cloudCol = vec3(0.85, 0.75, 0.6); // Sandstorms
             
             float shadow = smoothstep(0.3, -0.1, nDotL) * 0.4;
-            gl_FragColor = vec4(cloudCol * (diff + 0.15), cloudDensity * (1.0 - shadow));
+            vec3 finalCloud = cloudCol * (diff + 0.15);
+            if (uGrayscale > 0.5) {
+               float g = dot(finalCloud, vec3(0.299, 0.587, 0.114)) * 1.5;
+               finalCloud = vec3(g);
+            }
+            gl_FragColor = vec4(finalCloud, cloudDensity * (1.0 - shadow));
             return;
           }
 
@@ -676,6 +685,11 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
           
           // Night side ambient
           finalRGB += surfaceColor * 0.02;
+
+          if (uGrayscale > 0.5) {
+            float g = dot(finalRGB, vec3(0.299, 0.587, 0.114)) * 1.5; // Brighten slightly for visibility
+            finalRGB = vec3(g);
+          }
 
           gl_FragColor = vec4(finalRGB, 1.0);
         }

@@ -592,6 +592,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
                 isMobilePanelExpanded={isMobilePanelExpanded}
                 quality={quality}
                 galaxy={galaxy}
+                isSystemExplored={explored}
               />
             ))}
           {/* Orbits — hidden for the focused planet in body view (camera is inside that orbit, causing a horizon-line artifact) */}
@@ -778,7 +779,7 @@ function TerritoryMarker({ body, visualSize, galaxy }: { body: Body; visualSize:
   );
 }
 
-function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, onSelectBody, focusedBodyId, starWorldPos, starType, filters, isMobilePanelExpanded, quality, galaxy }: {
+function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, onSelectBody, focusedBodyId, starWorldPos, starType, filters, isMobilePanelExpanded, quality, galaxy, isSystemExplored = true }: {
   body: Body;
   parentBody: Body | null;
   view: ViewMode;
@@ -793,6 +794,7 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
   isMobilePanelExpanded?: boolean;
   quality: "low" | "medium" | "high";
   galaxy: Galaxy;
+  isSystemExplored?: boolean;
 }) {
   const { camera } = useThree();
   const meshRef = useRef<THREE.Group>(null);
@@ -952,6 +954,7 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
             quality={quality}
             terrainSeed={body.terrainSeed}
             geographyType={body.geographyType}
+            grayscale={!isSystemExplored}
           />
         </mesh>
       )}
@@ -1007,6 +1010,8 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
+      {/* Fog of War is now handled via the grayscale prop on PlanetMaterial */}
+
       {/* Premium Atmospheric Effects - Only show if body has an atmosphere */}
       {body.atmosphere && (
         <>
@@ -1043,18 +1048,18 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
           radius={visualSize}
           innerRadius={visualSize * 1.35}
           outerRadius={visualSize * 2.25}
-          color={ringColor}
+          color={!isSystemExplored ? new THREE.Color().setHSL((body.ringHue ?? 30) / 360, 0, 0.4) : ringColor}
         />
       )}
 
       {/* Body Label */}
       {view !== "galaxy" && filters.layers.has("objectLabels") && (
         <Html position={[0, 0, 0]} center zIndexRange={[100, 0]}>
-          <div ref={labelRef} className="px-1.5 py-0.5 flex items-center gap-1.5 bg-black/40 backdrop-blur-[2px] border border-white/5 rounded-sm pointer-events-none whitespace-nowrap">
+          <div ref={labelRef} className={`px-1.5 py-0.5 flex items-center gap-1.5 bg-black/40 backdrop-blur-[2px] border border-white/5 rounded-sm pointer-events-none whitespace-nowrap ${!isSystemExplored ? 'opacity-50 grayscale' : ''}`}>
             <span 
               className="font-mono-hud text-[7px] leading-none uppercase"
               style={{ 
-                color: body.ownerId 
+                color: (isSystemExplored && body.ownerId)
                   ? `hsl(${galaxy.empires.find(e => e.id === body.ownerId)?.hue || 0} 75% 65%)` 
                   : "white"
               }}
@@ -1092,6 +1097,7 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
               isMobilePanelExpanded={isMobilePanelExpanded}
               quality={quality}
               galaxy={galaxy}
+              isSystemExplored={isSystemExplored}
             />
           </group>
         ))}
@@ -1383,6 +1389,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
   const flashRef = useRef<THREE.Mesh>(null);
   const labelRef = useRef<HTMLDivElement>(null);
   const hitboxRef = useRef<THREE.Mesh>(null);
+  const labelGroupRef = useRef<THREE.Group>(null);
   
   const [arrivalState, setArrivalState] = useState<{fromId: string, time: number} | null>(null);
   const prevSystemRef = useRef(playerSystemId);
@@ -1429,15 +1436,23 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     let flashScale = 0;
     let flashOpacity = 0;
 
-    // Helper: calculate physical orbital position for idle states
-    const getIdlePos = (sysPos: number[], time: number, starType: string) => {
-      const t = time * 0.00008; // Slower, more majestic orbit
+    // Helper: calculate orbital position for idle states (dynamic over time)
+    const getIdlePos = (sysPos: number[], starType: string, time: number) => {
+      // Use position as a seed so each system has a unique orbital phase offset
+      const seed = Math.abs(Math.sin(sysPos[0] * 12.9898 + sysPos[2] * 78.233)) * 43758.5453;
+      const baseAngle = (seed % 1) * Math.PI * 2;
+      
+      // Dynamic orbit based on time. 1 orbit per 60 seconds.
+      const orbitalPeriod = 60000;
+      const timeAngle = ((time % orbitalPeriod) / orbitalPeriod) * Math.PI * 2;
+      const angle = baseAngle + timeAngle;
+      
       const starRadius = STAR_BASE_SIZE[starType as keyof typeof STAR_BASE_SIZE] || 2.4;
-      const orbitRadius = starRadius * 1.6; // Closer to star surface for better cinematic feel
+      const orbitRadius = starRadius * 1.6;
       return new THREE.Vector3(
-        sysPos[0] + Math.cos(t) * orbitRadius,
+        sysPos[0] + Math.cos(angle) * orbitRadius,
         sysPos[1],
-        sysPos[2] + Math.sin(t) * orbitRadius
+        sysPos[2] + Math.sin(angle) * orbitRadius
       );
     };
 
@@ -1449,7 +1464,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
       const targetSys = galaxy.systemById[travel.targetId];
 
       // Calculate transit duration
-      const startPos = getIdlePos(sourceSys.pos, travel.startTime, sourceSys.starType);
+      const startPos = getIdlePos(sourceSys.pos, sourceSys.starType, travel.startTime);
       const gateOffset = getGateLocalPosition(sourceSys, travel.targetId);
       const gatePos = new THREE.Vector3(...sourceSys.pos).add(gateOffset);
       const localDist = startPos.distanceTo(gatePos);
@@ -1479,20 +1494,23 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           
           if (view === 'galaxy') {
             const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
-            globalPos.set(sourceSys.pos[0] - starRadius * 3.0, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 3.0);
+            // Keep it very tight to the star in galaxy view
+            globalPos.set(sourceSys.pos[0] - starRadius * 0.4, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 0.4);
           } else {
             globalPos.lerpVectors(startPos, gatePos, t);
           }
           
           engineColor = '#00ffff';
           engineIntensity = (0.8 + t * 2.5) * (1.0 + Math.random() * 0.15);
+          
+          // Visibility: Hidden if viewing target system while still in transit to gate
           if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
         } else if (elapsed < transitTime + chargeTime) {
           // 2: Charge at gate
           const p = (elapsed - transitTime) / chargeTime;
           if (view === 'galaxy') {
             const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
-            globalPos.set(sourceSys.pos[0] + starRadius * 3.0, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 3.0);
+            globalPos.set(sourceSys.pos[0] + starRadius * 0.4, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 0.4);
           } else {
             globalPos.copy(gatePos);
           }
@@ -1504,7 +1522,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           const p = (elapsed - (transitTime + chargeTime)) / jumpTime;
           if (view === 'galaxy') {
             const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
-            globalPos.set(sourceSys.pos[0] + starRadius * 3.0, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 3.0);
+            globalPos.set(sourceSys.pos[0] + starRadius * 0.4, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 0.4);
           } else {
             globalPos.copy(gatePos);
           }
@@ -1513,17 +1531,27 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           flashOpacity = 1.0 - p;
           engineColor = '#ffffff';
           engineIntensity = 5.0 * (1.0 + Math.random() * 0.2);
+          
+          // Visibility: Hidden if viewing target system while still jumping from source
           if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
         }
       } else if (elapsed < total) {
         // ─── HYPERSPACE (Global physical transit) ───
         const t = (elapsed - departureTotal) / Math.max(1, total - departureTotal);
-        const sourceCenter = new THREE.Vector3(...sourceSys.pos);
-        const targetCenter = new THREE.Vector3(...targetSys.pos);
         
-        globalPos.lerpVectors(sourceCenter, targetCenter, t);
+        if (view === 'galaxy') {
+          const sourceCenter = new THREE.Vector3(...sourceSys.pos);
+          const targetCenter = new THREE.Vector3(...targetSys.pos);
+          globalPos.lerpVectors(sourceCenter, targetCenter, t);
+        } else {
+          const sourceGate = new THREE.Vector3(...sourceSys.pos).add(getGateLocalPosition(sourceSys, travel.targetId));
+          const targetGate = new THREE.Vector3(...targetSys.pos).add(getGateLocalPosition(targetSys, sourceSys.id));
+          globalPos.lerpVectors(sourceGate, targetGate, t);
+        }
         engineColor = '#ffffff';
         engineIntensity = 3.0 + Math.random() * 1.0;
+        
+        // Visibility: In hyperspace, ship is hidden in all system views
         scale = view === 'galaxy' ? 4.0 : 0; 
       } else {
         scale = 0;
@@ -1534,12 +1562,21 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
       const targetSys = sourceSys; 
       const gateOffset = getGateLocalPosition(targetSys, arrivalState.fromId);
       const gatePos = new THREE.Vector3(...targetSys.pos).add(gateOffset);
-      const targetIdlePos = getIdlePos(targetSys.pos, now, targetSys.starType);
-      
-      const localDist = gatePos.distanceTo(targetIdlePos);
-      const transitTime = (localDist / SUB_LIGHT_VELOCITY) * 1200; // Slower arrival for effect
       const matTime = 800;
-      const arrivalTotal = transitTime + matTime;
+      
+      // Iteratively find the exact arrival time so the parking spot is stable and perfectly matches the orbit
+      let expectedArrivalEndTime = arrivalState.time + 10000;
+      let targetIdlePos = new THREE.Vector3();
+      let transitTime = 0;
+      let arrivalTotal = 0;
+      
+      for (let i = 0; i < 3; i++) {
+        targetIdlePos = getIdlePos(targetSys.pos, targetSys.starType, expectedArrivalEndTime);
+        const localDist = gatePos.distanceTo(targetIdlePos);
+        transitTime = (localDist / SUB_LIGHT_VELOCITY) * 1200; // Slower arrival for effect
+        arrivalTotal = transitTime + matTime;
+        expectedArrivalEndTime = arrivalState.time + arrivalTotal;
+      }
 
       if (elapsed < arrivalTotal) {
         if (elapsed < matTime) {
@@ -1563,12 +1600,14 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           if (view === 'galaxy') {
             const starRadius = STAR_BASE_SIZE[targetSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
             // Move to top-right (+X, -Z)
-            globalPos.set(targetSys.pos[0] + starRadius * 3.0, targetSys.pos[1], targetSys.pos[2] - starRadius * 3.0);
+            globalPos.set(targetSys.pos[0] + starRadius * 0.4, targetSys.pos[1], targetSys.pos[2] - starRadius * 0.4);
           } else {
             globalPos.lerpVectors(gatePos, targetIdlePos, eased);
           }
           engineColor = '#00ffff';
           engineIntensity = (2.0 - p * 1.5) * (1.0 + Math.random() * 0.15);
+          
+          // Visibility: Hidden if viewing source system while ship is arriving in target
           if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
         }
       } else {
@@ -1576,13 +1615,16 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           arrivalDoneRef.current = true;
           setArrivalState(null);
         }
-        globalPos.copy(getIdlePos(targetSys.pos, now, targetSys.starType));
+        globalPos.copy(getIdlePos(targetSys.pos, targetSys.starType, now));
       }
     } else {
       // ─── IDLE ORBIT ───
-      globalPos.copy(getIdlePos(sourceSys.pos, now, sourceSys.starType));
+      globalPos.copy(getIdlePos(sourceSys.pos, sourceSys.starType, now));
       engineColor = '#00ffff';
       engineIntensity = 0.3 + Math.sin(now * 0.005) * 0.1;
+      
+      // Visibility: Hidden if viewing a different system than where the player is
+      if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
     }
 
     // Orient ship toward velocity
@@ -1624,6 +1666,13 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     groupRef.current.updateWorldMatrix(true, false);
     groupRef.current.getWorldPosition(localVec);
     
+    // Sync the label group to the world position (but without the rotation)
+    if (labelGroupRef.current) {
+      labelGroupRef.current.position.copy(localVec);
+      // Ensure the label group is visible/hidden matching the ship's logic
+      labelGroupRef.current.visible = (view === 'galaxy' || viewedSystemId === playerSystemId);
+    }
+    
     const distToCamera = state.camera.position.distanceTo(localVec);
     
     let htmlOpacity = 0;
@@ -1664,7 +1713,8 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     }
 
     // Apply physical transform with coordinate shifting for system view
-    groupRef.current.scale.setScalar(scale);
+    // Use a tiny minimum scale to prevent projection matrix issues on some mobile browsers
+    groupRef.current.scale.setScalar(Math.max(0.0001, scale));
 
     // Apply engine glow color + intensity
     if (engineGlowRef.current) {
@@ -1694,8 +1744,9 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     // Apply HTML icon properties via ref
     if (labelRef.current) {
       labelRef.current.style.opacity = htmlOpacity.toString();
-      // Dynamically scale the icon based on distance in galaxy view
-      const s = view === 'galaxy' ? Math.max(0.4, Math.min(1.5, 500 / distToCamera)) : 1.0;
+      // Dynamically scale the icon based on distance in galaxy view:
+      // A gentler curve so it doesn't grow or shrink too aggressively.
+      const s = view === 'galaxy' ? Math.max(0.9, Math.min(1.4, 1.0 + (distToCamera - 600) / 1500)) : 1.0;
       labelRef.current.style.transform = `scale(${s})`;
     }
   });
@@ -1911,26 +1962,24 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
         <meshBasicMaterial color="#88ffcc" transparent opacity={0} blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
 
-      {/* The HTML icon represents the Commander. We conditionally render it to avoid Drei ghosting bugs. */}
-      {(view === 'galaxy' || viewedSystemId === playerSystemId) && (
-        <group position={[0, 1.2, 0]}>
-          <Html center zIndexRange={[100, 0]}>
-            <div ref={labelRef} className="cmdr-label text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-pulse flex flex-col items-center pointer-events-none transition-opacity duration-300">
-              <div className="relative flex flex-col items-center">
-                <Rocket size={14} className="-rotate-45" />
-                {(travel || arrivalState) && (
-                  <div className="absolute left-[100%] top-0 ml-0.5 flex flex-col-reverse items-center">
-                    <ChevronUp size={7} className="text-emerald-400 animate-chevron-blink" style={{ animationDelay: '0s' }} />
-                    <ChevronUp size={7} className="text-emerald-400 animate-chevron-blink -my-2.5" style={{ animationDelay: '0.2s' }} />
-                    <ChevronUp size={7} className="text-emerald-400 animate-chevron-blink" style={{ animationDelay: '0.4s' }} />
-                  </div>
-                )}
-              </div>
-              <div className="text-[6px] font-mono-hud mt-1 uppercase">CMDR</div>
+      {/* The HTML icon represents the Commander. We use a separate world-space group to avoid parent rotation issues. */}
+      <group ref={labelGroupRef}>
+        <Html center zIndexRange={[100, 0]} position={[0, 1.2, 0]}>
+          <div ref={labelRef} className="cmdr-label pointer-events-none transition-opacity duration-300">
+            <div className="relative flex flex-col items-center text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-pulse">
+              <Rocket size={14} className="-rotate-45" />
+              {(travel || arrivalState) && (
+                <div className="absolute left-[100%] top-0 ml-0.5 flex flex-col-reverse items-center">
+                  <ChevronUp size={7} className="text-emerald-400 animate-chevron-blink" style={{ animationDelay: '0s' }} />
+                  <ChevronUp size={7} className="text-emerald-400 animate-chevron-blink -my-2.5" style={{ animationDelay: '0.2s' }} />
+                  <ChevronUp size={7} className="text-emerald-400 animate-chevron-blink" style={{ animationDelay: '0.4s' }} />
+                </div>
+              )}
             </div>
-          </Html>
-        </group>
-      )}
+            <div className="text-[6px] font-mono-hud mt-1 uppercase">CMDR</div>
+          </div>
+        </Html>
+      </group>
     </group>
   );
 }

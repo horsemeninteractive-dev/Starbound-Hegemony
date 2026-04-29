@@ -62,6 +62,10 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [hoverSystemId, setHoverSystemId] = useState<string | null>(null);
 
   const [onboardingCompleted, setOnboardingCompleted] = useState(() => localStorage.getItem("onboardingCompleted") === "true");
+  
+  const [audioEnabled, setAudioEnabled] = useState(() => localStorage.getItem("audioEnabled") !== "false");
+  const [musicVolume, setMusicVolume] = useState(() => Number(localStorage.getItem("musicVolume") ?? 0.4));
+  const [sfxVolume, setSfxVolume] = useState(() => Number(localStorage.getItem("sfxVolume") ?? 0.6));
 
   const setFogOfWar = (v: boolean) => {
     setFogOfWarState(v);
@@ -106,12 +110,34 @@ export function useGalaxyApp(initialSeed = 20260423) {
   useEffect(() => { localStorage.setItem("playerXP", String(playerXP)); }, [playerXP]);
   useEffect(() => { localStorage.setItem("playerAvatar", playerAvatar); }, [playerAvatar]);
   useEffect(() => { localStorage.setItem("onboardingCompleted", String(onboardingCompleted)); }, [onboardingCompleted]);
+  useEffect(() => { localStorage.setItem("audioEnabled", String(audioEnabled)); }, [audioEnabled]);
+  useEffect(() => { localStorage.setItem("musicVolume", String(musicVolume)); }, [musicVolume]);
+  useEffect(() => { localStorage.setItem("sfxVolume", String(sfxVolume)); }, [sfxVolume]);
 
-  // AP regeneration tick: 10 AP/hour (~0.167 AP per minute)
+  // AP regeneration: 20 AP every hour, exactly on the hour boundary
   useEffect(() => {
-    const t = setInterval(() => {
-      setAp(prev => Math.floor(Math.min(240, prev + 10/60)));
-    }, 60_000);
+    const regenAp = () => {
+      const now = Date.now();
+      let lastRegenStr = localStorage.getItem("lastApRegen");
+      if (!lastRegenStr) {
+        // Initialize and SAVE the baseline so we don't reset on every refresh
+        const initialRegen = new Date(now).setMinutes(0, 0, 0);
+        localStorage.setItem("lastApRegen", String(initialRegen));
+        lastRegenStr = String(initialRegen);
+      }
+      
+      const lastRegen = Number(lastRegenStr);
+      const hoursPassed = Math.floor((now - lastRegen) / 3600000);
+
+      if (hoursPassed > 0) {
+        setAp(prev => Math.min(240, prev + (hoursPassed * 20)));
+        const newRegenTime = lastRegen + (hoursPassed * 3600000);
+        localStorage.setItem("lastApRegen", String(newRegenTime));
+      }
+    };
+
+    regenAp(); // Sync on mount
+    const t = setInterval(regenAp, 1000); // Check every second for precise hour-tick response
     return () => clearInterval(t);
   }, []);
 
@@ -228,7 +254,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
     const cost = getJumpCost(targetId);
     if (ap < cost) {
       toast.error(`Insufficient AP! Jump requires ${cost} AP (Current: ${Math.floor(ap)})`, {
-        description: "AP regenerates at 10/hour while the ship is docked or idle."
+      description: "AP regenerates at 20/hour (distributed on the hour)."
       });
       return;
     }
@@ -350,6 +376,12 @@ export function useGalaxyApp(initialSeed = 20260423) {
     setAp,
     sc,
     setSc,
+    audioEnabled,
+    setAudioEnabled,
+    musicVolume,
+    setMusicVolume,
+    sfxVolume,
+    setSfxVolume,
   };
 }
 

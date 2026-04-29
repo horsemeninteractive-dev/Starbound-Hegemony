@@ -7,26 +7,45 @@ interface Props {
   currentSystem: StarSystem | null;
   playerSystemId?: string;
   view: "galaxy" | "system" | "body" | "ship";
+  knownSystemIds?: Set<string>;
+  fogOfWar?: boolean;
+  onToggle?: (expanded: boolean) => void;
 }
 
-export function MiniMap({ galaxy, currentSystem, playerSystemId, view }: Props) {
-  const [isExpanded, setIsExpanded] = useState(true);
+export function MiniMap({ galaxy, currentSystem, playerSystemId, view, knownSystemIds, fogOfWar, onToggle }: Props) {
+  const [isExpanded, setIsExpanded] = useState(
+    () => localStorage.getItem("minimapExpanded") === "true"
+  );
+
+  const toggle = () => {
+    setIsExpanded(prev => {
+      const next = !prev;
+      localStorage.setItem("minimapExpanded", String(next));
+      if (onToggle) onToggle(next);
+      return next;
+    });
+  };
 
   const size = 160;
   const padding = 10;
   const innerSize = size - padding * 2;
   
-  // Galaxy bounds for normalization
-  // We know the galaxy is roughly -4500 to 4500
   const bounds = 4800;
 
   const points = useMemo(() => {
-    return galaxy.systems.map(s => {
-      const x = (s.pos[0] / bounds) * (innerSize / 2) + (size / 2);
-      const y = (s.pos[2] / bounds) * (innerSize / 2) + (size / 2);
-      return { id: s.id, x, y };
-    });
-  }, [galaxy.systems, innerSize, size]);
+    return galaxy.systems
+      .filter(s => {
+        if (!fogOfWar || !knownSystemIds) return true;
+        return knownSystemIds.has(s.id) || s.id === "sys-center";
+      })
+      .map(s => {
+        const x = (s.pos[0] / bounds) * (innerSize / 2) + (size / 2);
+        const y = (s.pos[2] / bounds) * (innerSize / 2) + (size / 2);
+        // Dim color for known-but-not-visited systems
+        const isExplored = !fogOfWar || !knownSystemIds || knownSystemIds.has(s.id);
+        return { id: s.id, x, y, isExplored };
+      });
+  }, [galaxy.systems, innerSize, size, knownSystemIds, fogOfWar]);
 
   const playerPos = useMemo(() => {
     const pSys = galaxy.systems.find(s => s.id === playerSystemId);
@@ -47,13 +66,12 @@ export function MiniMap({ galaxy, currentSystem, playerSystemId, view }: Props) 
 
   if (view === "galaxy") return null;
 
-
   return (
     <div className="absolute top-4 left-4 z-40 pointer-events-auto animate-in fade-in zoom-in duration-500">
       <div className="hud-panel hud-corner bg-black/40 backdrop-blur-md border border-primary/20 flex flex-col">
         {/* Header / Toggle */}
         <button 
-          onClick={() => setIsExpanded(!isExpanded)}
+          onClick={toggle}
           className="flex items-center justify-between gap-3 px-2.5 py-1.5 border-b border-primary/10 hover:bg-primary/5 transition group"
         >
           <div className="flex items-center gap-2">
@@ -70,14 +88,14 @@ export function MiniMap({ galaxy, currentSystem, playerSystemId, view }: Props) 
               <div className="absolute inset-0 rounded-full bg-primary/5 border border-primary/10 shadow-[inset_0_0_20px_rgba(16,185,129,0.05)]" />
               
               <svg width={size} height={size} className="relative z-10">
-                {/* System Dots */}
+                {/* System Dots — fog-of-war filtered */}
                 {points.map(p => (
                   <circle 
                     key={p.id} 
                     cx={p.x} 
                     cy={p.y} 
                     r={0.6} 
-                    className="fill-primary/20" 
+                    className={p.isExplored ? "fill-primary/30" : "fill-primary/10"} 
                   />
                 ))}
 
@@ -99,7 +117,7 @@ export function MiniMap({ galaxy, currentSystem, playerSystemId, view }: Props) 
                   </>
                 )}
 
-                {/* Player Position Indicator (if different) */}
+                {/* Player Position Indicator (if different from viewed system) */}
                 {playerPos && playerSystemId !== currentSystem?.id && (
                   <circle 
                     cx={playerPos.x} 
@@ -128,5 +146,4 @@ export function MiniMap({ galaxy, currentSystem, playerSystemId, view }: Props) 
       </div>
     </div>
   );
-
 }

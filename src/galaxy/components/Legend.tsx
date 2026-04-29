@@ -4,9 +4,12 @@ import { STAR_META, BODY_META } from "@/galaxy/meta";
 
 interface Props {
   view: "galaxy" | "system" | "body" | "ship";
+  onPlayClick?: () => void;
+  onPlayExpand?: () => void;
+  onPlayCollapse?: () => void;
 }
 
-export function Legend({ view }: Props) {
+export function Legend({ view, onPlayClick, onPlayExpand, onPlayCollapse }: Props) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -84,7 +87,12 @@ export function Legend({ view }: Props) {
       )}
       
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          const next = !open;
+          setOpen(next);
+          if (next) onPlayExpand?.();
+          else onPlayCollapse?.();
+        }}
         className="hud-panel hud-corner flex items-center gap-2 px-3 py-1.5 font-mono-hud text-[10px] uppercase tracking-widest text-primary hover:text-glow transition"
       >
         <Info size={14} />

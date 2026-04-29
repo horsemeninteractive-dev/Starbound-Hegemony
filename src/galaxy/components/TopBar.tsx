@@ -32,9 +32,11 @@ interface Props {
   currentTime: number;
   galaxy: Galaxy;
   onRegenerate: () => void;
+  onSetAp: (val: number) => void;
+  onPlayClick?: () => void;
 }
 
-import { Eye, EyeOff, Zap, Globe, Compass, Radio, RefreshCcw } from "lucide-react";
+import { Eye, EyeOff, Zap, Globe, Compass, Radio, RefreshCcw, BatteryFull } from "lucide-react";
 
 const GAME_MENU = [
   { icon: Globe, label: "Galaxy Map", desc: "Celestial navigation", route: "map" },
@@ -52,7 +54,7 @@ export function TopBar({
   onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills,
   ap, sc, playerName, playerLevel, playerXP, xpToNextLevel, playerAvatar,
   fogOfWar, setFogOfWar, instantJump, setInstantJump,
-  playerSystemName, travel, currentTime, galaxy, onRegenerate
+  playerSystemName, travel, currentTime, galaxy, onRegenerate, onSetAp, onPlayClick
 }: Props) {
   // Game menu state - Radix Sheet handles escape/outside-click automatically
   const [menuOpen, setMenuOpen] = useState(false);
@@ -79,9 +81,12 @@ export function TopBar({
         {typeof document !== "undefined" && createPortal(
           <button
             id="floating-logo"
-            onClick={() => setMenuOpen((o) => !o)}
+            onClick={() => {
+              onPlayClick?.();
+              setMenuOpen((o) => !o);
+            }}
             aria-label="Open game menu"
-            className="fixed z-[80] left-1 top-0.5 sm:left-4 sm:top-2 p-1 rounded hover:bg-primary/10 transition"
+            className="fixed z-[80] left-1 top-0.5 sm:left-4 sm:top-2 p-1 rounded hover:bg-primary/10 transition outline-none focus:outline-none"
           >
             <img
               src={logo}
@@ -95,7 +100,10 @@ export function TopBar({
         {/* Player Profile HUD */}
         <div 
           className="flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-1 bg-primary/5 border border-primary/20 rounded-lg group hover:bg-primary/10 transition-colors cursor-pointer" 
-          onClick={onOpenProfile}
+          onClick={() => {
+            onPlayClick?.();
+            onOpenProfile();
+          }}
         >
           {/* Avatar with level badge */}
           <div className="relative shrink-0">
@@ -193,7 +201,10 @@ export function TopBar({
         {/* Debug Controls */}
         <div className="flex items-center gap-0.5 sm:gap-1 border-l border-primary/20 pl-1 sm:pl-2">
           <button
-            onClick={onRegenerate}
+            onClick={() => {
+              onRegenerate();
+              onPlayClick?.();
+            }}
             className="p-1 sm:p-1.5 rounded bg-primary/10 border border-primary/20 text-primary/60 hover:text-primary hover:bg-primary/20 transition-all group"
             title="Regenerate Galaxy"
           >
@@ -201,18 +212,34 @@ export function TopBar({
           </button>
 
           <button
-            onClick={() => setFogOfWar(!fogOfWar)}
+            onClick={() => {
+              setFogOfWar(!fogOfWar);
+              onPlayClick?.();
+            }}
             className={`p-1 sm:p-1.5 rounded transition ${fogOfWar ? "text-muted-foreground hover:text-primary" : "text-primary bg-primary/10"}`}
             title="Toggle Fog of War"
           >
             {fogOfWar ? <EyeOff size={12} className="sm:w-3.5 sm:h-3.5" /> : <Eye size={12} className="sm:w-3.5 sm:h-3.5" />}
           </button>
           <button
-            onClick={() => setInstantJump(!instantJump)}
+            onClick={() => {
+              setInstantJump(!instantJump);
+              onPlayClick?.();
+            }}
             className={`p-1 sm:p-1.5 rounded transition ${instantJump ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-primary"}`}
             title="Toggle Instant FTL"
           >
             <Zap size={12} fill={instantJump ? "currentColor" : "none"} className="sm:w-3.5 sm:h-3.5" />
+          </button>
+          <button
+            onClick={() => {
+              onSetAp(240);
+              onPlayClick?.();
+            }}
+            className="p-1 sm:p-1.5 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition"
+            title="Refill Action Points (DEBUG)"
+          >
+            <BatteryFull size={12} className="sm:w-3.5 sm:h-3.5" />
           </button>
         </div>
       </div>
@@ -251,6 +278,7 @@ export function TopBar({
                 key={item.label}
                 onClick={() => {
                   setMenuOpen(false);
+                  onPlayClick?.();
                   if (item.route === "settings") onOpenSettings?.();
                   if (item.route === "profile") onOpenProfile?.();
                   if (item.route === "map") onOpenMap?.();
