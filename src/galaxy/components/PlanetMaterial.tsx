@@ -11,6 +11,8 @@ interface Props {
   landColor?: string;
   seaColor?: string;
   lightDir?: THREE.Vector3;
+  starWorldPos?: THREE.Vector3;
+  starViewPos?: THREE.Vector3;
   planetViewPos?: THREE.Vector3;
   parentSize?: number;
   moonOccluders?: THREE.Vector4[]; // up to 4 moons: xyz=view-space pos, w=radius (w<=0 = inactive)
@@ -23,7 +25,7 @@ interface Props {
   grayscale?: boolean;
 }
 
-export function PlanetMaterial({ color, type, size, subtype, hue, landColor, seaColor, lightDir, planetViewPos, parentSize, moonOccluders, showWeather, showCityLights, isWeather, quality = "high", terrainSeed, geographyType, grayscale }: Props) {
+export function PlanetMaterial({ color, type, size, subtype, hue, landColor, seaColor, lightDir, starWorldPos, starViewPos, planetViewPos, parentSize, moonOccluders, showWeather, showCityLights, isWeather, quality = "high", terrainSeed, geographyType, grayscale }: Props) {
   const uniforms = useMemo(() => {
     return {
       uColor: { value: new THREE.Color("#ffffff") },
@@ -32,6 +34,8 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
       uLandColor: { value: new THREE.Color() },
       uSeaColor: { value: new THREE.Color() },
       uLightDir: { value: new THREE.Vector3(1, 1, 1).normalize() },
+      uStarWorldPos: { value: new THREE.Vector3() },
+      uStarViewPos: { value: new THREE.Vector3() },
       uPlanetViewPos: { value: new THREE.Vector3() },
       uParentSize: { value: 0.0 },
       uMoonOccluders: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
@@ -101,6 +105,12 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
     if (lightDir) {
         uniforms.uLightDir.value.copy(lightDir);
     }
+    if (starWorldPos) {
+        uniforms.uStarWorldPos.value.copy(starWorldPos);
+    }
+    if (starViewPos) {
+        uniforms.uStarViewPos.value.copy(starViewPos);
+    }
     if (planetViewPos) {
         uniforms.uPlanetViewPos.value.copy(planetViewPos);
     }
@@ -122,34 +132,40 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
       depthWrite={!isWeather}
       vertexShader={`
         varying vec2 vUv;
-        varying vec3 vNormal;
+        varying vec3 vNormal; // View-space normal (for specular/fresnel)
+        varying vec3 vWorldNormal; // World-space normal (for lighting)
         varying vec3 vLocalPosition;
         varying vec3 vViewPosition;
-        varying vec3 vLightDirView;
+        varying vec3 vWorldPosition;
 
-        uniform vec3 uLightDir;
-        
         void main() {
           vUv = uv;
           vLocalPosition = position;
+          
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          vWorldPosition = worldPos.xyz;
+          vWorldNormal = normalize((modelMatrix * vec4(normal, 0.0)).xyz);
+          
           vNormal = normalize(normalMatrix * normal);
           vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
           vViewPosition = mvPosition.xyz;
-          vLightDirView = (viewMatrix * vec4(uLightDir, 0.0)).xyz;
+          
           gl_Position = projectionMatrix * mvPosition;
         }
       `}
       fragmentShader={`
         varying vec2 vUv;
         varying vec3 vNormal;
+        varying vec3 vWorldNormal;
         varying vec3 vLocalPosition;
         varying vec3 vViewPosition;
-        varying vec3 vLightDirView;
+        varying vec3 vWorldPosition;
         
         uniform vec3 uColor;
         uniform vec3 uLandColor;
         uniform vec3 uSeaColor;
-        uniform vec3 uLightDir;
+        uniform vec3 uStarWorldPos;
+        uniform vec3 uStarViewPos;
         uniform vec3 uPlanetViewPos;
         uniform float uParentSize;
         uniform vec4 uMoonOccluders[4];
@@ -242,47 +258,62 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
         }
 
         void main() {
-          vec3 lightDir = length(vLightDirView) > 0.0 ? normalize(vLightDirView) : vec3(0, 1, 0);
-          vec3 viewDir = length(vViewPosition) > 0.0 ? normalize(-vViewPosition) : vec3(0, 0, 1);
+          // Compute per-pixel light direction in World Space (for stable primary lighting)
+          vec3 lightDirWorld = normalize(uStarWorldPos - vWorldPosition);
+          vec3 viewDir = normalize(-vViewPosition);
+          
+          // Compute per-pixel light direction in View Space (for occlusion/specular/atmosphere)
+          vec3 lightDirView = normalize(uStarViewPos - vViewPosition);
+          
+          // Basic lighting factor (using world-space normal for stability)
+          float nDotL = dot(vWorldNormal, lightDirWorld);
           
           // Occlusion shadows — high quality only (planet<->moon eclipse casting)
           float shadowMult = 1.0;
           if (uQuality > 1.5) {
-            // Shadow from parent planet
             if (uParentSize > 0.0) {
               vec3 occluderDir = uPlanetViewPos - vViewPosition;
-              float t = dot(occluderDir, lightDir);
-              if (t > 0.0) {
-                float d2 = dot(occluderDir, occluderDir) - t * t;
-                float r2 = uParentSize * uParentSize;
-                if (d2 < r2) {
-                  float shadowSoftness = 0.15 * uParentSize;
-                  shadowMult = smoothstep(uParentSize - shadowSoftness, uParentSize, sqrt(d2));
+              float distToOccluder = length(occluderDir);
+              float distToStar = length(uStarWorldPos - vWorldPosition);
+              
+              if (distToOccluder < distToStar) {
+                float t = dot(occluderDir, lightDirView);
+                if (t > 0.0) {
+                  float d2 = dot(occluderDir, occluderDir) - t * t;
+                  float r2 = uParentSize * uParentSize;
+                  if (d2 < r2) {
+                    float shadowSoftness = 0.15 * uParentSize;
+                    shadowMult = smoothstep(uParentSize - shadowSoftness, uParentSize, sqrt(d2));
+                  }
                 }
               }
             }
-            // Shadow from child moons
             for (int i = 0; i < 4; i++) {
               float moonSize = uMoonOccluders[i].w;
               if (moonSize > 0.0) {
                 vec3 moonDir = uMoonOccluders[i].xyz - vViewPosition;
-                float tm = dot(moonDir, lightDir);
-                if (tm > 0.0) {
-                  float dm2 = dot(moonDir, moonDir) - tm * tm;
-                  float rm2 = moonSize * moonSize;
-                  if (dm2 < rm2) {
-                    float softness = 0.15 * moonSize;
-                    shadowMult = min(shadowMult, smoothstep(moonSize - softness, moonSize, sqrt(dm2)));
+                float distToMoon = length(moonDir);
+                float distToStar = length(uStarWorldPos - vWorldPosition);
+                
+                if (distToMoon < distToStar) {
+                  float tm = dot(moonDir, lightDirView);
+                  if (tm > 0.0) {
+                    float dm2 = dot(moonDir, moonDir) - tm * tm;
+                    float rm2 = moonSize * moonSize;
+                    if (dm2 < rm2) {
+                      float softness = 0.15 * moonSize;
+                      shadowMult = min(shadowMult, smoothstep(moonSize - softness, moonSize, sqrt(dm2)));
+                    }
                   }
                 }
               }
             }
           }
+
+          nDotL = dot(vNormal, lightDirView) * shadowMult;
+          float diffuseTerm = max(0.0, nDotL);
           
-          float nDotL = dot(vNormal, lightDir) * shadowMult;
-          
-          // Terrain height — use normalized position to ensure consistent detail regardless of mesh scale.
-          // Scale 5.5 on a unit sphere gives continent-sized features (~6-8 per sphere).
+          // --- TERRAIN GENERATION (FBM NOISE) ---
           vec3 p = normalize(vLocalPosition) * 5.5 + uTerrainSeed * 0.12;
 
           // Domain warping (high quality only): warp the sample point by a secondary noise field.
@@ -668,12 +699,12 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
 
           // Lighting calculations: use base normal for terminator, perturbed for detail
           vec3 normal = perturbNormal(vNormal, normalize(vLocalPosition), 0.05, 5.0);
-          float baseDiff = max(dot(vNormal, lightDir), 0.0);
-          float detailDiff = max(dot(normal, lightDir), 0.0);
-          float diff = (mix(baseDiff, detailDiff, 0.2) + 0.05) * shadowMult; // 0.05 ambient
+          float baseDiff = max(nDotL, 0.0);
+          float detailDiff = max(dot(normal, lightDirView), 0.0) * shadowMult;
+          float diff = (mix(baseDiff, detailDiff, 0.2) + 0.05); // 0.05 ambient
           
           // Specular (Oceans/Ice)
-          vec3 reflectDir = reflect(-lightDir, normal);
+          vec3 reflectDir = reflect(-lightDirView, normal);
           float spec = pow(max(dot(viewDir, reflectDir), 0.0), roughness < 0.3 ? 64.0 : 8.0);
           vec3 specular = vec3(spec * (1.0 - roughness) * 0.5) * shadowMult;
           

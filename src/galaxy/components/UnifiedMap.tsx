@@ -1,6 +1,6 @@
 import { useMemo, useRef, useEffect, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { CameraControls, Html, PerspectiveCamera, Line, Billboard } from "@react-three/drei";
+import { CameraControls, Html, PerspectiveCamera, Line, Billboard, PositionalAudio } from "@react-three/drei";
 import { Rocket, ChevronUp } from "lucide-react";
 import * as THREE from "three";
 import type { Galaxy, StarSystem, Body, Sector, ContestState, StarType } from "@/galaxy/types";
@@ -11,18 +11,69 @@ import { PlanetMaterial } from "./PlanetMaterial";
 import { PlanetaryRing } from "./PlanetaryRing";
 import { STAR_LUMINOSITY, STAR_META, STAR_BASE_SIZE, getOrbitalSpeed, BODY_META } from "@/galaxy/meta";
 
+// --- AUDIO SYNTHESIS UTILITIES ---
+const createJumpBuffer = (ctx: AudioContext) => {
+  const duration = 1.0;
+  const buffer = ctx.createBuffer(1, ctx.sampleRate * duration, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < buffer.length; i++) {
+    const t = i / ctx.sampleRate;
+    const freq = 400 * Math.exp(-t * 5.0) + 100 * Math.sin(t * 10.0);
+    data[i] = Math.sin(2 * Math.PI * freq * t) * Math.exp(-t * 3.0) * (1.0 - t / duration);
+    // Add some noise
+    data[i] += (Math.random() * 2 - 1) * 0.05 * Math.exp(-t * 10.0);
+  }
+  return buffer;
+};
+
+const createMatBuffer = (ctx: AudioContext) => {
+  const duration = 0.8;
+  const buffer = ctx.createBuffer(1, ctx.sampleRate * duration, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < buffer.length; i++) {
+    const t = i / ctx.sampleRate;
+    const p = t / duration;
+    const freq = 50 + 600 * Math.pow(p, 2.0);
+    data[i] = Math.sin(2 * Math.PI * freq * t) * Math.sin(p * Math.PI) * 0.6;
+    data[i] += (Math.random() * 2 - 1) * 0.1 * (1.0 - p);
+  }
+  return buffer;
+};
+
+const createEngineBuffer = (ctx: AudioContext) => {
+  const duration = 2.0;
+  const buffer = ctx.createBuffer(1, ctx.sampleRate * duration, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < buffer.length; i++) {
+    const t = i / ctx.sampleRate;
+    // Layered hum
+    data[i] = (
+      Math.sin(2 * Math.PI * 55 * t) * 0.5 + 
+      Math.sin(2 * Math.PI * 110 * t) * 0.2 +
+      (Math.random() * 2 - 1) * 0.05 // low rumble noise
+    );
+  }
+  return buffer;
+};
+
 // Shared temporary vectors for internal calculations within a single function call.
 // DO NOT use these across async boundaries or between different components' useFrame calls.
 const tempVec = new THREE.Vector3();
 const tempVec2 = new THREE.Vector3();
 
-function CloudLayer({ body, visualSize, quality }: { body: Body; visualSize: number; quality: string }) {
+function CloudLayer({ body, visualSize, quality, starWorldPos, starViewPos }: { body: Body; visualSize: number; quality: string; starWorldPos: THREE.Vector3; starViewPos: THREE.Vector3 }) {
   const cloudRef = useRef<THREE.Mesh>(null);
   const speed = useMemo(() => 0.05 + Math.random() * 0.1, []);
+  const cloudLightDirRef = useRef(new THREE.Vector3(1, 0.5, 1).normalize());
+  const cloudWorldPosVec = useMemo(() => new THREE.Vector3(), []);
+  const starViewPosRef = useRef(new THREE.Vector3());
 
   useFrame((state) => {
     if (cloudRef.current) {
       cloudRef.current.rotation.y = state.clock.getElapsedTime() * speed;
+      // Keep cloud light direction in sync with the star — same as PlanetNode
+      cloudRef.current.getWorldPosition(cloudWorldPosVec);
+      cloudLightDirRef.current.copy(starWorldPos).sub(cloudWorldPosVec).normalize();
     }
   });
 
@@ -33,6 +84,9 @@ function CloudLayer({ body, visualSize, quality }: { body: Body; visualSize: num
         subtype={body.subtype} 
         hue={body.hue} 
         isWeather 
+        lightDir={cloudLightDirRef.current}
+        starWorldPos={starWorldPos}
+        starViewPos={starViewPosRef.current}
         quality={quality as "low" | "medium" | "high"}
         terrainSeed={body.terrainSeed}
         geographyType={body.geographyType}
@@ -296,7 +350,9 @@ function MapContent({
         smoothTime={0.4}
         dollySpeed={1.0}
       />
-        <PerspectiveCamera makeDefault position={[0, 400, 500]} far={20000} near={0.1} />
+        <PerspectiveCamera makeDefault position={[0, 400, 500]} far={20000} near={0.1}>
+          <audioListener />
+        </PerspectiveCamera>
         <SpaceBackground starType={system?.starType} view={view} quality={graphicsQuality} />
         <ambientLight intensity={0.05} />
 
@@ -453,6 +509,9 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
   
   // Pre-calculate system vector to avoid instantiation in useFrame
   const sysPos = useMemo(() => new THREE.Vector3(...system.pos), [system.pos]);
+  const effectiveStarPos = useMemo(() => {
+    return (view === "galaxy") ? sysPos : new THREE.Vector3(0, 0, 0);
+  }, [view, sysPos]);
   
   // Throttled distance check for performance
   const frameCount = useRef(Math.floor(Math.random() * 10)); 
@@ -563,12 +622,11 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
         </mesh>
       </group>
       
-
-
+      {/* Local System Objects (Planets, Moons, Stations, etc.) */}
       {showDetails && (
         <>
           <pointLight 
-            color={`#${STAR_META[system.starType]?.hex || "ffffff"}`} 
+            color={`#${STAR_META[system.starType as keyof typeof STAR_META]?.hex || "ffffff"}`} 
             intensity={15} 
             distance={3000} 
             decay={1.5} 
@@ -587,7 +645,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
                 onSelect={onSelectBody} 
                 onSelectBody={onSelectBody}
                 focusedBodyId={focusedBodyId}
-                starWorldPos={new THREE.Vector3(...system.pos)}
+                starWorldPos={effectiveStarPos}
                 starType={system.starType}
                 isMobilePanelExpanded={isMobilePanelExpanded}
                 quality={quality}
@@ -819,6 +877,7 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
   const localVec4 = useMemo(() => new THREE.Vector3(), []);
   const moonVec = useMemo(() => new THREE.Vector3(), []); // scratch for moon occluder computation
   const planetViewPosRef = useRef(new THREE.Vector3());
+  const starViewPosRef = useRef(new THREE.Vector3());
   // Pre-allocated moon occluder buffer: xyz=view-pos, w=radius. Only used when this node is a planet.
   const moonOccluderBuf = useRef([new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()]);
 
@@ -850,6 +909,9 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
     // High-precision Light Direction
     meshRef.current.getWorldPosition(localVec);
     lightDirRef.current.copy(starWorldPos).sub(localVec).normalize();
+    
+    // Star View Position for shader point lighting
+    starViewPosRef.current.copy(starWorldPos).applyMatrix4(state.camera.matrixWorldInverse);
 
     // Compute parent position in view space for shadow casting (moon -> planet)
     if (parentBody && meshRef.current.parent) {
@@ -984,6 +1046,8 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
             subtype={body.subtype} 
             hue={body.hue} 
             lightDir={lightDirRef.current}
+            starWorldPos={starWorldPos}
+            starViewPos={starViewPosRef.current}
             planetViewPos={parentBody ? planetViewPosRef.current : undefined}
             parentSize={parentBody ? parentBody.size * 1.05 : 0}
             moonOccluders={!parentBody ? moonOccluderBuf.current : undefined}
@@ -1035,7 +1099,7 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
 
       {/* Moving Weather System (Clouds) - Separate transparent layer */}
       {filters.layers.has("weatherSystems") && !!body.atmosphere && (
-        <CloudLayer body={body} visualSize={visualSize} quality={quality || "high"} />
+        <CloudLayer body={body} visualSize={visualSize} quality={quality || "high"} starWorldPos={starWorldPos} starViewPos={starViewPosRef.current} />
       )}
 
       {/* Invisible Hitbox for easier selection — Billboard ensures it's always a flat disk facing the camera */}
@@ -1510,6 +1574,9 @@ function getGateLocalPosition(system: StarSystem, targetSystemId: string) {
 }
 
 function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, view, controlsRef, trackingShip, onSelect }: { galaxy: Galaxy, playerSystemId: string, viewedSystemId: string | null, travel: { targetId: string; startTime: number; endTime: number } | null, view: string, controlsRef?: React.RefObject<CameraControls | null>, trackingShip?: boolean, onSelect?: () => void }) {
+  const { camera } = useThree();
+  const listener = useMemo(() => camera.children.find(c => c.type === 'AudioListener') as THREE.AudioListener, [camera]);
+  
   const groupRef = useRef<THREE.Group>(null);
   const shipMeshRef = useRef<THREE.Group>(null);
   const engineGlowRef = useRef<THREE.Group>(null);
@@ -1524,6 +1591,38 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
   const prevPosRef = useRef(new THREE.Vector3());
   const arrivalDoneRef = useRef(false);
   const runningLightsRef = useRef<THREE.Group>(null);
+  
+  const jumpSoundRef = useRef<THREE.PositionalAudio>(null);
+  const matSoundRef = useRef<THREE.PositionalAudio>(null);
+  const engineSoundRef = useRef<THREE.PositionalAudio>(null);
+  const hasJumpedRef = useRef(false);
+  const hasMattedRef = useRef(false);
+
+  // Initialize synthesized buffers
+  useEffect(() => {
+    const listener = jumpSoundRef.current?.parent?.getObjectByProperty('type', 'AudioListener') as THREE.AudioListener;
+    if (!listener) return;
+    const ctx = listener.context;
+    
+    if (jumpSoundRef.current) {
+      jumpSoundRef.current.setBuffer(createJumpBuffer(ctx));
+      jumpSoundRef.current.setRefDistance(1);
+      jumpSoundRef.current.setRolloffFactor(2);
+    }
+    if (matSoundRef.current) {
+      matSoundRef.current.setBuffer(createMatBuffer(ctx));
+      matSoundRef.current.setRefDistance(1);
+      matSoundRef.current.setRolloffFactor(2);
+    }
+    if (engineSoundRef.current) {
+      engineSoundRef.current.setBuffer(createEngineBuffer(ctx));
+      engineSoundRef.current.setRefDistance(0.5);
+      engineSoundRef.current.setRolloffFactor(2.5);
+      engineSoundRef.current.setLoop(true);
+      engineSoundRef.current.setVolume(0);
+      engineSoundRef.current.play();
+    }
+  }, []);
   
   // Camera Tracking Refs
   const lastWorldPosRef = useRef<THREE.Vector3>(new THREE.Vector3());
@@ -1654,6 +1753,14 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           } else {
             globalPos.copy(gatePos);
           }
+
+          // Trigger Jump Sound
+          if (!hasJumpedRef.current && jumpSoundRef.current) {
+            if (jumpSoundRef.current.isPlaying) jumpSoundRef.current.stop();
+            jumpSoundRef.current.play();
+            hasJumpedRef.current = true;
+          }
+
           scale = Math.max(0, 1.0 - p * 3);
           flashScale = p * 12;
           flashOpacity = 1.0 - p;
@@ -1664,6 +1771,8 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
         }
       } else if (elapsed < total) {
+        // Reset jump flag for next jump
+        hasJumpedRef.current = false;
         // ─── HYPERSPACE (Global physical transit) ───
         const t = (elapsed - departureTotal) / Math.max(1, total - departureTotal);
         
@@ -1716,12 +1825,22 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           } else {
             globalPos.copy(gatePos);
           }
+
+          // Trigger Materialize Sound
+          if (!hasMattedRef.current && matSoundRef.current) {
+            if (matSoundRef.current.isPlaying) matSoundRef.current.stop();
+            matSoundRef.current.play();
+            hasMattedRef.current = true;
+          }
+
           scale = p;
           flashScale = (1.0 - p) * 10;
           flashOpacity = 1.0 - p;
           engineColor = '#00ff44';
           engineIntensity = 4.0 * (1.0 + Math.random() * 0.2);
         } else {
+          // Reset materialize flag for next arrival
+          hasMattedRef.current = false;
           // 2: Transit from gate to star
           const p = (elapsed - matTime) / transitTime;
           const eased = 1 - Math.pow(1 - p, 2.0);
@@ -1813,22 +1932,37 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
       hitboxRef.current.scale.setScalar(scaleFactor);
     }
 
+    // Dynamic Engine Sound Scaling
+    if (engineSoundRef.current) {
+      // Scale volume and pitch by engineIntensity
+      const vol = Math.max(0.1, Math.min(0.8, engineIntensity * 0.2));
+      engineSoundRef.current.setVolume(vol);
+      // @ts-ignore - PositionalAudio has setPlaybackRate
+      if (engineSoundRef.current.source) {
+        engineSoundRef.current.setPlaybackRate(0.8 + engineIntensity * 0.4);
+      }
+    }
+
     // Camera Tracking
     if (trackingShip && controlsRef?.current) {
       const controls = controlsRef.current;
       controls.smoothTime = 0;
       controls.restThreshold = 0.0001; 
 
+      const targetX = globalPos.x - sX;
+      const targetY = globalPos.y - sY;
+      const targetZ = globalPos.z - sZ;
+
       if (!hasInitialPosRef.current) {
         const zoomDist = 6.0;
         controls.setLookAt(
-          globalPos.x + zoomDist * 0.8, globalPos.y + zoomDist * 0.6, globalPos.z + zoomDist,
-          globalPos.x, globalPos.y, globalPos.z,
+          targetX + zoomDist * 0.8, targetY + zoomDist * 0.6, targetZ + zoomDist,
+          targetX, targetY, targetZ,
           true
         );
         hasInitialPosRef.current = true;
       } else {
-        controls.moveTo(globalPos.x, globalPos.y, globalPos.z, false);
+        controls.moveTo(targetX, targetY, targetZ, false);
       }
     } else {
       hasInitialPosRef.current = false;
@@ -1870,6 +2004,15 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
   return (
     <group>
       <group ref={groupRef}>
+        {/* Positional Audio Elements (Synthesized) */}
+        {listener && (
+          <>
+            <positionalAudio ref={jumpSoundRef} args={[listener]} />
+            <positionalAudio ref={matSoundRef} args={[listener]} />
+            <positionalAudio ref={engineSoundRef} args={[listener]} />
+          </>
+        )}
+        
         <group ref={shipMeshRef}>
           {/* Main Hull (Cylindrical) — highly polished */}
           <mesh position={[0, 0, 0.05]} rotation={[Math.PI / 2, 0, 0]}>
