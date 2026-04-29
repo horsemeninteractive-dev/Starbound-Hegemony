@@ -84,7 +84,7 @@ export function ShipCustomizer({ config, onChange, playClick }: Props) {
       </div>
 
       {/* Customization Controls - Non-shrinking to guarantee visibility */}
-      <div className="flex-none lg:w-[380px] flex flex-col bg-black/40 border-t lg:border-t-0 lg:border-l border-primary/20">
+      <div className="flex-none lg:w-[380px] flex flex-col bg-black/40 border-t lg:border-t-0 lg:border-l border-primary/20 min-h-0">
         {/* Tabs */}
         <div className="flex border-b border-primary/20 shrink-0 bg-black/40">
           {tabs.map((tab) => (

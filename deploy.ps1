@@ -43,7 +43,7 @@ gcloud artifacts repositories create "cloud-run-source-deploy" --repository-form
 
 # We force the 'latest' tag so the cleanup logic knows what to spare
 $imageTag = "$RepoPath" + ":latest"
-gcloud run deploy $svc --source . --project $prj --region $region --set-env-vars=$envString --allow-unauthenticated --min-instances 0 --image="$imageTag"
+gcloud run deploy $svc --source . --project $prj --region $region --set-env-vars=$envString --allow-unauthenticated --min-instances 0
 
 # 3. Clean (The Surgical Strike)
 Write-Host "`n[2/2] Hunting untagged ghosts..." -ForegroundColor Yellow

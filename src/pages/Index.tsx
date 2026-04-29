@@ -6,6 +6,7 @@ import {
   Newspaper, Sparkles, Globe, Zap, BarChart, TrendingUp, Shield, 
   Anchor, Cpu, BookOpen, Rocket, Award, History, Factory
 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { useGalaxyApp, type GalaxyApp } from "@/galaxy/useGalaxyApp";
 import { UnifiedMap } from "@/galaxy/components/UnifiedMap";
 import { GalaxyOverview, SystemOverview, BodyOverview, ShipOverview } from "@/galaxy/components/Overview";
@@ -17,6 +18,7 @@ import { SettingsModal } from "@/galaxy/components/SettingsModal";
 import { MiniMap } from "@/galaxy/components/MiniMap";
 import { CommanderOnboarding } from "@/galaxy/components/CommanderOnboarding";
 import { ShipCustomizer } from "@/galaxy/components/ShipCustomizer";
+import { AuthScreen } from "@/galaxy/components/AuthScreen";
 import { useAudio } from "@/galaxy/useAudio";
 import logo from "@/assets/logo.png";
 
@@ -29,6 +31,7 @@ const Index = () => {
   
   // Track user interaction for audio unlocking
   const [hasInteracted, setHasInteracted] = useState(!app.onboardingCompleted);
+  const [guestMode, setGuestMode] = useState(false);
   
   // Track view changes to trigger the "Processing" indicator
   useEffect(() => {
@@ -126,12 +129,20 @@ const Index = () => {
     }, 200);
   };
 
+  const isGameReady = (app.user || guestMode) && app.onboardingCompleted;
+
   return (
-    <main className="flex flex-col h-screen w-screen overflow-hidden bg-background">
-      {scanning && (
-        <div className="fixed inset-0 z-[200] pointer-events-none" style={{ background: "linear-gradient(90deg,transparent 0%,hsl(var(--primary)/0.18) 50%,transparent 100%)", animation: "scan-wipe 0.4s ease-in-out both", transformOrigin: "left center" }} />
-      )}
-      {/* Top persistent navigation bar spanning whole width */}
+    <main className="relative flex flex-col h-screen w-screen overflow-hidden bg-background">
+      {/* Game Content Wrapper - Hides the map and UI until Auth & Onboarding is complete */}
+      <div 
+        className={`flex flex-col h-full w-full absolute inset-0 transition-opacity duration-1000 ${
+          isGameReady ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
+      >
+        {scanning && (
+          <div className="fixed inset-0 z-[200] pointer-events-none" style={{ background: "linear-gradient(90deg,transparent 0%,hsl(var(--primary)/0.18) 50%,transparent 100%)", animation: "scan-wipe 0.4s ease-in-out both", transformOrigin: "left center" }} />
+        )}
+        {/* Top persistent navigation bar spanning whole width */}
       <div className="relative z-50">
         <TopBar
           onOpenSettings={() => setIsSettingsOpen(true)}
@@ -160,6 +171,7 @@ const Index = () => {
           onRegenerate={app.regenerateGalaxy}
           onSetAp={app.setAp}
           onPlayClick={playClick}
+          isGameReady={isGameReady}
         />
       </div>
 
@@ -774,31 +786,71 @@ const Index = () => {
           setExpanded={setIsMobilePanelExpanded} 
         />
       )}
+      </div>
 
-      {/* Onboarding Screen - Overlay everything */}
-      {!app.onboardingCompleted && (
-        <CommanderOnboarding 
-          onComplete={handleOnboardingComplete} 
-          playClick={playClick}
-          playSuccess={playSuccess}
-          playType={playType}
-        />
-      )}
+      {/* Screen Overlays */}
+      <AnimatePresence>
+        {/* Onboarding Screen - Overlay everything */}
+        {!app.onboardingCompleted && (guestMode || app.user) && (
+          <motion.div 
+            key="onboarding"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 1 }}
+            className="fixed inset-0 z-[200]"
+          >
+            <CommanderOnboarding 
+              onComplete={handleOnboardingComplete} 
+              playClick={playClick}
+              playSuccess={playSuccess}
+              playType={playType}
+            />
+          </motion.div>
+        )}
 
-      {/* Welcome Screen for returning users to unlock Audio Context */}
-      {app.onboardingCompleted && !hasInteracted && (
-        <WelcomeScreen 
-          playerName={app.playerName} 
-          onEnter={() => {
-            setHasInteracted(true);
-            playSuccess();
-            // Resume Web Audio Context for Three.js Positional Audio
-            if (THREE.AudioContext.getContext().state === 'suspended') {
-              THREE.AudioContext.getContext().resume();
-            }
-          }} 
-        />
-      )}
+        {/* Authentication Screen - Priority 1 */}
+        {!app.user && !guestMode && !app.sessionLoading && (
+          <motion.div 
+            key="auth"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 1 }}
+            className="fixed inset-0 z-[300]"
+          >
+            <AuthScreen 
+              onSuccess={() => setGuestMode(true)} 
+              playClick={playClick}
+              playSuccess={playSuccess}
+            />
+          </motion.div>
+        )}
+
+        {/* Welcome Screen for returning users to unlock Audio Context */}
+        {app.onboardingCompleted && !hasInteracted && (
+          <motion.div 
+            key="welcome"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.5 }}
+            className="fixed inset-0 z-[200]"
+          >
+            <WelcomeScreen 
+              playerName={app.playerName} 
+              onEnter={() => {
+                setHasInteracted(true);
+                playSuccess();
+                // Resume Web Audio Context for Three.js Positional Audio
+                if (THREE.AudioContext.getContext().state === 'suspended') {
+                  THREE.AudioContext.getContext().resume();
+                }
+              }} 
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 };

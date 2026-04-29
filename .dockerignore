@@ -2,7 +2,6 @@ node_modules
 dist
 .git
 .vscode
-.env
 starbound-hegemony.zip
 README.md
 *.ps1

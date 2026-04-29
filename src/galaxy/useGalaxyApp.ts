@@ -26,7 +26,13 @@ import avatar from "@/assets/avatar.png";
 import avatar_alt1 from "@/assets/avatar_alt1.png";
 import avatar_alt2 from "@/assets/avatar_alt2.png";
 
+import { supabase } from "@/lib/supabase";
+import type { User } from "@supabase/supabase-js";
+
 export function useGalaxyApp(initialSeed = 20260423) {
+  const [user, setUser] = useState<User | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
+
   const [seed, setSeed] = useState(() => {
     const saved = localStorage.getItem("galaxy_seed");
     return saved ? Number(saved) : initialSeed;
@@ -76,6 +82,109 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [musicVolume, setMusicVolume] = useState(() => Number(localStorage.getItem("musicVolume") ?? 0.4));
   const [sfxVolume, setSfxVolume] = useState(() => Number(localStorage.getItem("sfxVolume") ?? 0.6));
 
+  // --- SUPABASE SYNC LOGIC ---
+
+  // 1. Initial Session & Auth Listener
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setSessionLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // 2. Load User Data from Supabase
+  useEffect(() => {
+    if (!user) return;
+
+    const loadData = async () => {
+      // Load Profile
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .single();
+
+      if (profile) {
+        setPlayerName(profile.commander_name || "Majora");
+        setPlayerAvatar(profile.avatar_url || avatar);
+        setPlayerLevel(profile.level);
+        setPlayerXP(profile.xp);
+        setSc(profile.credits);
+        setOnboardingCompleted(profile.onboarding_completed);
+      }
+
+      // Load active Vessel
+      const { data: vessel } = await supabase
+        .from('vessels')
+        .select('*')
+        .eq('is_active', true)
+        .single();
+
+      if (vessel) {
+        setShipConfig({
+          primaryColor: vessel.primary_color,
+          accentColor: vessel.accent_color,
+          hullId: vessel.hull_id,
+          wingsId: vessel.wings_id,
+          enginesId: vessel.engines_id,
+          bridgeId: vessel.bridge_id,
+        });
+      }
+
+      // Load Exploration
+      const { data: exploration } = await supabase
+        .from('exploration_logs')
+        .select('system_id');
+      
+      if (exploration && exploration.length > 0) {
+        setExploredSystemIds(new Set(exploration.map(e => e.system_id)));
+      }
+    };
+
+    loadData();
+  }, [user]);
+
+  // 3. Save Data to Supabase (Debounced/Automatic via useEffects)
+  useEffect(() => {
+    if (!user) return;
+    const updateProfile = async () => {
+      await supabase.from('profiles').upsert({
+        id: user.id,
+        commander_name: playerName,
+        avatar_url: playerAvatar,
+        level: playerLevel,
+        xp: playerXP,
+        credits: sc,
+        onboarding_completed: onboardingCompleted,
+        updated_at: new Date().toISOString()
+      });
+    };
+    updateProfile();
+  }, [user, playerName, playerAvatar, playerLevel, playerXP, sc, onboardingCompleted]);
+
+  useEffect(() => {
+    if (!user) return;
+    const updateVessel = async () => {
+      await supabase.from('vessels').upsert({
+        user_id: user.id,
+        primary_color: shipConfig.primaryColor,
+        accent_color: shipConfig.accentColor,
+        hull_id: shipConfig.hullId,
+        wings_id: shipConfig.wingsId,
+        engines_id: shipConfig.enginesId,
+        bridge_id: shipConfig.bridgeId,
+        is_active: true
+      }, { onConflict: 'user_id' }); 
+    };
+    updateVessel();
+  }, [user, shipConfig]);
+
+  // --- LOCALSTORAGE PERSISTENCE (Fallback/Sync) ---
   const setFogOfWar = (v: boolean) => {
     setFogOfWarState(v);
     localStorage.setItem("fogOfWar", String(v));
@@ -105,11 +214,11 @@ export function useGalaxyApp(initialSeed = 20260423) {
   }, [view]);
   useEffect(() => { 
     if (systemId) localStorage.setItem("systemId", systemId);
-    else localStorage.removeItem("systemId");
+    else localStorage.setItem("systemId", "");
   }, [systemId]);
   useEffect(() => { 
     if (bodyId) localStorage.setItem("bodyId", bodyId);
-    else localStorage.removeItem("bodyId");
+    else localStorage.setItem("bodyId", "");
   }, [bodyId]);
   useEffect(() => { 
     if (travel) localStorage.setItem("travel", JSON.stringify(travel));
@@ -394,6 +503,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
     setMusicVolume,
     sfxVolume,
     setSfxVolume,
+    user,
+    sessionLoading,
   };
 }
 

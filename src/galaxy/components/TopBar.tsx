@@ -2,7 +2,15 @@ import logo from "@/assets/logo.png";
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Sheet, SheetContent, SheetOverlay, SheetClose, SheetTitle } from "@/components/ui/sheet";
-import { Newspaper, Factory, Rocket, Users, User, Sparkles, Settings, X, Coins, Zap as ZapIcon } from "lucide-react";
+import { Newspaper, Factory, Rocket, Users, User, Sparkles, Settings, X, Coins, Zap as ZapIcon, Bug } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 
 import type { Galaxy } from "@/galaxy/types";
@@ -34,6 +42,7 @@ interface Props {
   onRegenerate: () => void;
   onSetAp: (val: number) => void;
   onPlayClick?: () => void;
+  isGameReady?: boolean;
 }
 
 import { Eye, EyeOff, Zap, Globe, Compass, Radio, RefreshCcw, BatteryFull } from "lucide-react";
@@ -54,7 +63,7 @@ export function TopBar({
   onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills,
   ap, sc, playerName, playerLevel, playerXP, xpToNextLevel, playerAvatar,
   fogOfWar, setFogOfWar, instantJump, setInstantJump,
-  playerSystemName, travel, currentTime, galaxy, onRegenerate, onSetAp, onPlayClick
+  playerSystemName, travel, currentTime, galaxy, onRegenerate, onSetAp, onPlayClick, isGameReady = true
 }: Props) {
   // Game menu state - Radix Sheet handles escape/outside-click automatically
   const [menuOpen, setMenuOpen] = useState(false);
@@ -86,7 +95,7 @@ export function TopBar({
               setMenuOpen((o) => !o);
             }}
             aria-label="Open game menu"
-            className="fixed z-[80] left-1 top-0.5 sm:left-4 sm:top-2 p-1 rounded hover:bg-primary/10 transition outline-none focus:outline-none"
+            className={`fixed z-[80] left-1 top-0.5 sm:left-4 sm:top-2 p-1 rounded hover:bg-primary/10 transition-all duration-1000 outline-none focus:outline-none ${isGameReady ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
           >
             <img
               src={logo}
@@ -186,7 +195,6 @@ export function TopBar({
             </div>
           </div>
 
-          {/* Standard Credits */}
           <div className="flex items-center gap-1 sm:gap-2 px-1 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-warning bg-warning/5 sm:min-w-0">
             <Coins size={12} className="text-warning sm:w-3.5 sm:h-3.5" />
             <div className="flex flex-col leading-none">
@@ -198,49 +206,56 @@ export function TopBar({
           </div>
         </div>
 
-        {/* Debug Controls */}
+        {/* Condensed Debug Controls */}
         <div className="flex items-center gap-0.5 sm:gap-1 border-l border-primary/20 pl-1 sm:pl-2">
-          <button
-            onClick={() => {
-              onRegenerate();
-              onPlayClick?.();
-            }}
-            className="p-1 sm:p-1.5 rounded bg-primary/10 border border-primary/20 text-primary/60 hover:text-primary hover:bg-primary/20 transition-all group"
-            title="Regenerate Galaxy"
-          >
-            <RefreshCcw size={10} className="group-hover:rotate-180 transition-transform duration-500 sm:w-3 sm:h-3" />
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="p-1 sm:p-1.5 rounded bg-primary/5 border border-primary/20 text-primary/40 hover:text-primary hover:bg-primary/10 transition-all group"
+                title="Debug Menu"
+              >
+                <Bug size={14} className="group-hover:rotate-12 transition-transform sm:w-4 sm:h-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56 bg-background/95 backdrop-blur-xl border-primary/20 text-primary font-mono-hud uppercase text-[10px] tracking-widest">
+              <DropdownMenuLabel className="text-primary/40 text-[9px]">Neural Debug Interface</DropdownMenuLabel>
+              <DropdownMenuSeparator className="bg-primary/10" />
+              
+              <DropdownMenuItem 
+                onClick={() => { onRegenerate(); onPlayClick?.(); }}
+                className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5"
+              >
+                <RefreshCcw size={14} />
+                <span>Regenerate Galaxy</span>
+              </DropdownMenuItem>
 
-          <button
-            onClick={() => {
-              setFogOfWar(!fogOfWar);
-              onPlayClick?.();
-            }}
-            className={`p-1 sm:p-1.5 rounded transition ${fogOfWar ? "text-muted-foreground hover:text-primary" : "text-primary bg-primary/10"}`}
-            title="Toggle Fog of War"
-          >
-            {fogOfWar ? <EyeOff size={12} className="sm:w-3.5 sm:h-3.5" /> : <Eye size={12} className="sm:w-3.5 sm:h-3.5" />}
-          </button>
-          <button
-            onClick={() => {
-              setInstantJump(!instantJump);
-              onPlayClick?.();
-            }}
-            className={`p-1 sm:p-1.5 rounded transition ${instantJump ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-primary"}`}
-            title="Toggle Instant FTL"
-          >
-            <Zap size={12} fill={instantJump ? "currentColor" : "none"} className="sm:w-3.5 sm:h-3.5" />
-          </button>
-          <button
-            onClick={() => {
-              onSetAp(240);
-              onPlayClick?.();
-            }}
-            className="p-1 sm:p-1.5 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition"
-            title="Refill Action Points (DEBUG)"
-          >
-            <BatteryFull size={12} className="sm:w-3.5 sm:h-3.5" />
-          </button>
+              <DropdownMenuItem 
+                onClick={() => { setFogOfWar(!fogOfWar); onPlayClick?.(); }}
+                className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5"
+              >
+                {fogOfWar ? <EyeOff size={14} /> : <Eye size={14} />}
+                <span>{fogOfWar ? "Disable Fog of War" : "Enable Fog of War"}</span>
+              </DropdownMenuItem>
+
+              <DropdownMenuItem 
+                onClick={() => { setInstantJump(!instantJump); onPlayClick?.(); }}
+                className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5"
+              >
+                <Zap size={14} fill={instantJump ? "currentColor" : "none"} />
+                <span>{instantJump ? "Disable Instant FTL" : "Enable Instant FTL"}</span>
+              </DropdownMenuItem>
+
+              <DropdownMenuSeparator className="bg-primary/10" />
+
+              <DropdownMenuItem 
+                onClick={() => { onSetAp(240); onPlayClick?.(); }}
+                className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5 text-warning"
+              >
+                <BatteryFull size={14} />
+                <span>Refill Action Points</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
