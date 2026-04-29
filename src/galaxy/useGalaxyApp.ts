@@ -33,7 +33,11 @@ export function useGalaxyApp(initialSeed = 20260423) {
 
   const galaxy: Galaxy = useMemo(() => generateGalaxy(seed), [seed]);
 
-  const [view, setView] = useState<ViewMode>(() => (localStorage.getItem("view") as ViewMode) ?? "galaxy");
+  const [view, setView] = useState<ViewMode>(() => {
+    const saved = localStorage.getItem("view") as ViewMode;
+    if (saved === "galaxy" || saved === "system") return saved;
+    return "galaxy";
+  });
   const [playerSystemId, setPlayerSystemId] = useState<string>(
     () => localStorage.getItem("playerSystemId") ?? "sys-center"
   );
@@ -89,7 +93,11 @@ export function useGalaxyApp(initialSeed = 20260423) {
   // Persist state to localStorage
   useEffect(() => { localStorage.setItem("playerSystemId", playerSystemId); }, [playerSystemId]);
   useEffect(() => { localStorage.setItem("exploredIds", JSON.stringify([...exploredSystemIds])); }, [exploredSystemIds]);
-  useEffect(() => { localStorage.setItem("view", view); }, [view]);
+  useEffect(() => { 
+    if (view === "galaxy" || view === "system") {
+      localStorage.setItem("view", view); 
+    }
+  }, [view]);
   useEffect(() => { 
     if (systemId) localStorage.setItem("systemId", systemId);
     else localStorage.removeItem("systemId");
@@ -114,13 +122,15 @@ export function useGalaxyApp(initialSeed = 20260423) {
   useEffect(() => { localStorage.setItem("musicVolume", String(musicVolume)); }, [musicVolume]);
   useEffect(() => { localStorage.setItem("sfxVolume", String(sfxVolume)); }, [sfxVolume]);
 
-  // AP regeneration: 20 AP every hour, exactly on the hour boundary
+  // Unified Global Timer: AP regeneration and Clock Update
   useEffect(() => {
-    const regenAp = () => {
+    const tick = () => {
       const now = Date.now();
+      setCurrentTime(now);
+
+      // 1. AP Regen (20 AP/hour on the hour boundary)
       let lastRegenStr = localStorage.getItem("lastApRegen");
       if (!lastRegenStr) {
-        // Initialize and SAVE the baseline so we don't reset on every refresh
         const initialRegen = new Date(now).setMinutes(0, 0, 0);
         localStorage.setItem("lastApRegen", String(initialRegen));
         lastRegenStr = String(initialRegen);
@@ -136,14 +146,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
       }
     };
 
-    regenAp(); // Sync on mount
-    const t = setInterval(regenAp, 1000); // Check every second for precise hour-tick response
-    return () => clearInterval(t);
-  }, []);
-
-  // Update clock for countdowns
-  useEffect(() => {
-    const t = setInterval(() => setCurrentTime(Date.now()), 1000);
+    tick(); // Initial sync
+    const t = setInterval(tick, 1000);
     return () => clearInterval(t);
   }, []);
 

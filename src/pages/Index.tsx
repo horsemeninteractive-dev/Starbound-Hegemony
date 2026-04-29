@@ -1,4 +1,4 @@
-import { Suspense, useMemo, useState, useEffect, useRef } from "react";
+import { Suspense, useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import { 
   ChevronUp, ChevronDown, ChevronLeft, User as UserIcon, Users as UsersIcon, Coins, 
@@ -49,41 +49,49 @@ const Index = () => {
 
   // Cinematic view transitions with loading state deferral
   // This ensures the "Processing" HUD paints before the heavy React render blocks the thread
-  const withLoading = <T extends unknown[]>(fn: (...args: T) => void) => (...args: T) => {
+  // Cinematic view transitions with loading state deferral
+  // This ensures the "Processing" HUD paints before the heavy React render blocks the thread
+  const withLoading = useCallback(<T extends unknown[]>(fn: (...args: T) => void) => (...args: T) => {
     setTransitionKey(prev => prev + 1);
     requestAnimationFrame(() => {
       setTimeout(() => fn(...args), 60);
     });
-  };
+  }, []);
 
-  const handleOpenSystem = useMemo(() => withLoading((id: string) => {
+  const { 
+    openSystem, backToGalaxy, backToSystem, openBody, openShip, 
+    galaxy, fogOfWar, exploredSystemIds, setPage, 
+    setPlayerName, setPlayerAvatar, setOnboardingCompleted
+  } = app;
+
+  const handleOpenSystem = useCallback(withLoading((id: string) => {
     playTransition();
-    app.openSystem(id);
-  }), [app.openSystem, playTransition]);
+    openSystem(id);
+  }), [withLoading, playTransition, openSystem]);
 
-  const handleBackToGalaxy = useMemo(() => withLoading(() => {
+  const handleBackToGalaxy = useCallback(withLoading(() => {
     playTransition();
-    app.backToGalaxy();
-  }), [app.backToGalaxy, playTransition]);
+    backToGalaxy();
+  }), [withLoading, playTransition, backToGalaxy]);
 
-  const handleBackToSystem = useMemo(() => withLoading(() => {
+  const handleBackToSystem = useCallback(withLoading(() => {
     playTransition();
-    app.backToSystem();
-  }), [app.backToSystem, playTransition]);
+    backToSystem();
+  }), [withLoading, playTransition, backToSystem]);
 
-  const handleSystemBodyClick = useMemo(() => withLoading((id: string) => {
+  const handleSystemBodyClick = useCallback(withLoading((id: string) => {
     playClick();
     if (id.startsWith("gate:")) {
-      app.openSystem(id.slice(5));
+      openSystem(id.slice(5));
     } else if (id === "ship") {
-      app.openShip();
+      openShip();
     } else {
       // Restriction: Only open body details if system is explored or if it's the player's current system
-      const system = app.galaxy.systems.find(s => s.bodies.some(b => b.id === id));
-      const isSystemExplored = system ? (!app.fogOfWar || app.exploredSystemIds.has(system.id)) : true;
+      const system = galaxy.systems.find(s => s.bodies.some(b => b.id === id));
+      const isSystemExplored = system ? (!fogOfWar || exploredSystemIds.has(system.id)) : true;
 
       if (isSystemExplored) {
-        app.openBody(id);
+        openBody(id);
       } else {
         playAlert();
         toast.error("Telemetry Corrupted", {
@@ -91,12 +99,12 @@ const Index = () => {
         });
       }
     }
-  }), [app, playClick]);
+  }), [withLoading, playClick, playAlert, openSystem, openShip, openBody, galaxy, fogOfWar, exploredSystemIds]);
 
   const handleOnboardingComplete = (name: string, avatar: string) => {
-    app.setPlayerName(name);
-    app.setPlayerAvatar(avatar);
-    app.setOnboardingCompleted(true);
+    setPlayerName(name);
+    setPlayerAvatar(avatar);
+    setOnboardingCompleted(true);
   };
 
   const circles = useMemo(() => app.systemMatchesFilter, [app]);
@@ -740,6 +748,10 @@ const Index = () => {
           onEnter={() => {
             setHasInteracted(true);
             playSuccess();
+            // Resume Web Audio Context for Three.js Positional Audio
+            if (THREE.AudioContext.getContext().state === 'suspended') {
+              THREE.AudioContext.getContext().resume();
+            }
           }} 
         />
       )}

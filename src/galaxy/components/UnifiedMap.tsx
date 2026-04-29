@@ -150,6 +150,7 @@ function MapContent({
 }: Props & { containerRef: React.RefObject<HTMLDivElement> }) {
   const { camera, gl } = useThree();
   const controlsRef = useRef<CameraControls>(null);
+  const [listener, setListener] = useState<THREE.AudioListener | null>(null);
   const lastSystemRef = useRef<StarSystem | null>(null);
 
   const lastViewRef = useRef<ViewMode>(view);
@@ -263,16 +264,18 @@ function MapContent({
     }
     
     const targetViewOffset = targetViewPercentage * _state.size.height;
-    targetOffsetRef.current = THREE.MathUtils.lerp(targetOffsetRef.current, targetViewOffset, 0.1);
-    
-    if (Math.abs(targetOffsetRef.current) > 0.1) {
-      camera.setViewOffset(
-        _state.size.width, _state.size.height,
-        0, targetOffsetRef.current,
-        _state.size.width, _state.size.height
-      );
-    } else {
-      camera.clearViewOffset();
+    if (Math.abs(targetOffsetRef.current - targetViewOffset) > 0.01) {
+      targetOffsetRef.current = THREE.MathUtils.lerp(targetOffsetRef.current, targetViewOffset, 0.1);
+      
+      if (Math.abs(targetOffsetRef.current) > 0.1) {
+        camera.setViewOffset(
+          _state.size.width, _state.size.height,
+          0, targetOffsetRef.current,
+          _state.size.width, _state.size.height
+        );
+      } else {
+        camera.clearViewOffset();
+      }
     }
 
     // Keyboard movement across the XZ plane (speed scales with height)
@@ -351,7 +354,7 @@ function MapContent({
         dollySpeed={1.0}
       />
         <PerspectiveCamera makeDefault position={[0, 400, 500]} far={20000} near={0.1}>
-          <audioListener />
+          <audioListener ref={setListener} />
         </PerspectiveCamera>
         <SpaceBackground starType={system?.starType} view={view} quality={graphicsQuality} />
         <ambientLight intensity={0.05} />
@@ -419,6 +422,7 @@ function MapContent({
           controlsRef={controlsRef}
           trackingShip={view === 'ship'}
           onSelect={() => onSelectBody("ship")}
+          listener={listener}
         />
       </group>
     </>
@@ -813,7 +817,7 @@ function TerritoryMarker({ body, visualSize, galaxy }: { body: Body; visualSize:
         <ringGeometry args={[visualSize * 1.35, visualSize * 1.65, 64]} />
         <meshBasicMaterial 
           color={color} 
-          transparent={false} 
+          transparent={true} 
           opacity={1.0}
           side={THREE.DoubleSide} 
           depthWrite={true}
@@ -1209,17 +1213,16 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
 }
 
 /* ---------- Hyperlanes ---------- */
-function HyperlaneLines({ galaxy, filters, matches, fogOfWar, knownSystemIds }: { 
+import { memo } from "react";
+const HyperlaneLines = memo(function HyperlaneLines({ galaxy, filters, matches, fogOfWar, knownSystemIds }: { 
   galaxy: Galaxy; 
   filters: FilterState; 
   matches: (s: StarSystem) => boolean;
   fogOfWar: boolean;
   knownSystemIds: Set<string>;
 }) {
-  const { camera } = useThree();
   const show = filters.layers.has("hyperlanes");
   
-
   const laneData = useMemo(() => {
     if (!show) return new Float32Array(0);
     
@@ -1269,10 +1272,10 @@ function HyperlaneLines({ galaxy, filters, matches, fogOfWar, knownSystemIds }: 
       />
     </lineSegments>
   );
-}
+});
 
 /* ---------- Sector Borders (Voronoi) ---------- */
-function SectorBorders({ sectors }: { sectors: Sector[] }) {
+const SectorBorders = memo(function SectorBorders({ sectors }: { sectors: Sector[] }) {
   const uniforms = useMemo(() => {
     const centroids = new Float32Array(100 * 3);
     const hues = new Float32Array(100);
@@ -1359,10 +1362,10 @@ function SectorBorders({ sectors }: { sectors: Sector[] }) {
       />
     </mesh>
   );
-}
+});
 
 /* ---------- Sector Labels ---------- */
-function SectorLabels({ sectors }: { sectors: Sector[] }) {
+const SectorLabels = memo(function SectorLabels({ sectors }: { sectors: Sector[] }) {
   return (
     <group>
       {sectors.map(s => (
@@ -1379,7 +1382,7 @@ function SectorLabels({ sectors }: { sectors: Sector[] }) {
       ))}
     </group>
   );
-}
+});
 
 /* ---------- Dynamic Orbit ---------- */
 function DynamicOrbit({ radius, color, systemPos }: { radius: number; color: string; systemPos: THREE.Vector3 }) {
@@ -1573,9 +1576,8 @@ function getGateLocalPosition(system: StarSystem, targetSystemId: string) {
   return new THREE.Vector3(Math.cos(angle) * outer, 0, Math.sin(angle) * outer);
 }
 
-function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, view, controlsRef, trackingShip, onSelect }: { galaxy: Galaxy, playerSystemId: string, viewedSystemId: string | null, travel: { targetId: string; startTime: number; endTime: number } | null, view: string, controlsRef?: React.RefObject<CameraControls | null>, trackingShip?: boolean, onSelect?: () => void }) {
+function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, view, controlsRef, trackingShip, onSelect, listener }: { galaxy: Galaxy, playerSystemId: string, viewedSystemId: string | null, travel: { targetId: string; startTime: number; endTime: number } | null, view: string, controlsRef?: React.RefObject<CameraControls | null>, trackingShip?: boolean, onSelect?: () => void, listener: THREE.AudioListener | null }) {
   const { camera } = useThree();
-  const listener = useMemo(() => camera.children.find(c => c.type === 'AudioListener') as THREE.AudioListener, [camera]);
   
   const groupRef = useRef<THREE.Group>(null);
   const shipMeshRef = useRef<THREE.Group>(null);
@@ -1600,29 +1602,30 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
 
   // Initialize synthesized buffers
   useEffect(() => {
-    const listener = jumpSoundRef.current?.parent?.getObjectByProperty('type', 'AudioListener') as THREE.AudioListener;
     if (!listener) return;
     const ctx = listener.context;
     
     if (jumpSoundRef.current) {
       jumpSoundRef.current.setBuffer(createJumpBuffer(ctx));
-      jumpSoundRef.current.setRefDistance(1);
-      jumpSoundRef.current.setRolloffFactor(2);
+      jumpSoundRef.current.setRefDistance(15);
+      jumpSoundRef.current.setRolloffFactor(1.1);
+      jumpSoundRef.current.setVolume(0.2);
     }
     if (matSoundRef.current) {
       matSoundRef.current.setBuffer(createMatBuffer(ctx));
-      matSoundRef.current.setRefDistance(1);
-      matSoundRef.current.setRolloffFactor(2);
+      matSoundRef.current.setRefDistance(15);
+      matSoundRef.current.setRolloffFactor(1.1);
+      matSoundRef.current.setVolume(0.2);
     }
     if (engineSoundRef.current) {
       engineSoundRef.current.setBuffer(createEngineBuffer(ctx));
-      engineSoundRef.current.setRefDistance(0.5);
-      engineSoundRef.current.setRolloffFactor(2.5);
+      engineSoundRef.current.setRefDistance(20);
+      engineSoundRef.current.setRolloffFactor(1.0);
       engineSoundRef.current.setLoop(true);
       engineSoundRef.current.setVolume(0);
       engineSoundRef.current.play();
     }
-  }, []);
+  }, [listener]);
   
   // Camera Tracking Refs
   const lastWorldPosRef = useRef<THREE.Vector3>(new THREE.Vector3());
@@ -1755,7 +1758,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           }
 
           // Trigger Jump Sound
-          if (!hasJumpedRef.current && jumpSoundRef.current) {
+          if (!hasJumpedRef.current && jumpSoundRef.current && view !== 'galaxy' && viewedSystemId === playerSystemId) {
             if (jumpSoundRef.current.isPlaying) jumpSoundRef.current.stop();
             jumpSoundRef.current.play();
             hasJumpedRef.current = true;
@@ -1827,7 +1830,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           }
 
           // Trigger Materialize Sound
-          if (!hasMattedRef.current && matSoundRef.current) {
+          if (!hasMattedRef.current && matSoundRef.current && view !== 'galaxy' && viewedSystemId === playerSystemId) {
             if (matSoundRef.current.isPlaying) matSoundRef.current.stop();
             matSoundRef.current.play();
             hasMattedRef.current = true;
@@ -1934,12 +1937,19 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
 
     // Dynamic Engine Sound Scaling
     if (engineSoundRef.current) {
-      // Scale volume and pitch by engineIntensity
-      const vol = Math.max(0.1, Math.min(0.8, engineIntensity * 0.2));
-      engineSoundRef.current.setVolume(vol);
-      // @ts-ignore - PositionalAudio has setPlaybackRate
-      if (engineSoundRef.current.source) {
-        engineSoundRef.current.setPlaybackRate(0.8 + engineIntensity * 0.4);
+      // Audible only if NOT in galaxy view AND viewing the system where the ship is located
+      const isAudible = view !== 'galaxy' && viewedSystemId === playerSystemId && scale > 0;
+      
+      if (!isAudible) {
+        engineSoundRef.current.setVolume(0);
+      } else {
+        // Scale volume and pitch by engineIntensity (halved as requested)
+        const vol = Math.max(0.01, Math.min(0.1, engineIntensity * 0.025));
+        engineSoundRef.current.setVolume(vol);
+        // @ts-ignore - PositionalAudio has setPlaybackRate
+        if (engineSoundRef.current.source) {
+          engineSoundRef.current.setPlaybackRate(0.8 + engineIntensity * 0.4);
+        }
       }
     }
 
@@ -2246,7 +2256,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
 }
 
 /* ---------- Empire Territory Rings ---------- */
-function EmpireTerritoryRings({ galaxy, fogOfWar, knownSystemIds }: {
+const EmpireTerritoryRings = memo(function EmpireTerritoryRings({ galaxy, fogOfWar, knownSystemIds }: {
   galaxy: Galaxy;
   fogOfWar: boolean;
   knownSystemIds: Set<string>;
@@ -2292,7 +2302,7 @@ function EmpireTerritoryRings({ galaxy, fogOfWar, knownSystemIds }: {
             {/* Background Black Ring (Separator) - shifted slightly down */}
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]}>
               <ringGeometry args={[innerR - 0.1, midR + 0.1, 64]} />
-              <meshBasicMaterial color="#000000" transparent={false} depthWrite={true} />
+              <meshBasicMaterial color="#000000" transparent={true} opacity={1.0} depthWrite={true} />
             </mesh>
             {/* Proportional Segments */}
             {segments.map((seg) => {
@@ -2305,7 +2315,7 @@ function EmpireTerritoryRings({ galaxy, fogOfWar, knownSystemIds }: {
                   <ringGeometry args={[innerR, midR, 64, 1, 0, thetaLength]} />
                   <meshBasicMaterial 
                     color={color} 
-                    transparent={false} 
+                    transparent={true} 
                     opacity={1.0}
                     depthWrite={true}
                     depthTest={true}
@@ -2337,4 +2347,4 @@ function EmpireTerritoryRings({ galaxy, fogOfWar, knownSystemIds }: {
       })}
     </group>
   );
-}
+});
