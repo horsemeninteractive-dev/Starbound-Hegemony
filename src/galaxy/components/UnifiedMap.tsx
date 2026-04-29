@@ -10,6 +10,8 @@ import { StarVisual } from "./StarVisual";
 import { PlanetMaterial } from "./PlanetMaterial";
 import { PlanetaryRing } from "./PlanetaryRing";
 import { STAR_LUMINOSITY, STAR_META, STAR_BASE_SIZE, getOrbitalSpeed, BODY_META } from "@/galaxy/meta";
+import { ShipConfiguration } from "../shipPresets";
+import { ModularShip } from "./ModularShip";
 
 // --- AUDIO SYNTHESIS UTILITIES ---
 const createJumpBuffer = (ctx: AudioContext) => {
@@ -113,6 +115,7 @@ interface Props {
   travel?: { targetId: string; startTime: number; endTime: number } | null;
   isMobilePanelExpanded?: boolean;
   graphicsQuality?: "low" | "medium" | "high";
+  shipConfig?: ShipConfiguration;
 }
 
 /** 
@@ -146,7 +149,7 @@ function MapContent({
   galaxy, view, system, body, filters, 
   onSelectSystem, onSelectBody, onHoverSystem, hoverSystemId, 
   fogOfWar, exploredSystemIds, knownSystemIds, systemMatchesFilter,
-  currentSystemId, travel, isMobilePanelExpanded, containerRef, graphicsQuality
+  currentSystemId, travel, isMobilePanelExpanded, containerRef, graphicsQuality, shipConfig
 }: Props & { containerRef: React.RefObject<HTMLDivElement> }) {
   const { camera, gl } = useThree();
   const controlsRef = useRef<CameraControls>(null);
@@ -423,6 +426,7 @@ function MapContent({
           trackingShip={view === 'ship'}
           onSelect={() => onSelectBody("ship")}
           listener={listener}
+          config={shipConfig}
         />
       </group>
     </>
@@ -1576,13 +1580,10 @@ function getGateLocalPosition(system: StarSystem, targetSystemId: string) {
   return new THREE.Vector3(Math.cos(angle) * outer, 0, Math.sin(angle) * outer);
 }
 
-function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, view, controlsRef, trackingShip, onSelect, listener }: { galaxy: Galaxy, playerSystemId: string, viewedSystemId: string | null, travel: { targetId: string; startTime: number; endTime: number } | null, view: string, controlsRef?: React.RefObject<CameraControls | null>, trackingShip?: boolean, onSelect?: () => void, listener: THREE.AudioListener | null }) {
+function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, view, controlsRef, trackingShip, onSelect, listener, config }: { galaxy: Galaxy, playerSystemId: string, viewedSystemId: string | null, travel: { targetId: string; startTime: number; endTime: number } | null, view: string, controlsRef?: React.RefObject<CameraControls | null>, trackingShip?: boolean, onSelect?: () => void, listener: THREE.AudioListener | null, config?: ShipConfiguration }) {
   const { camera } = useThree();
   
   const groupRef = useRef<THREE.Group>(null);
-  const shipMeshRef = useRef<THREE.Group>(null);
-  const engineGlowRef = useRef<THREE.Group>(null);
-  const engineLightRef = useRef<THREE.PointLight>(null);
   const flashRef = useRef<THREE.Mesh>(null);
   const labelRef = useRef<HTMLDivElement>(null);
   const hitboxRef = useRef<THREE.Mesh>(null);
@@ -1592,13 +1593,13 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
   const prevSystemRef = useRef(playerSystemId);
   const prevPosRef = useRef(new THREE.Vector3());
   const arrivalDoneRef = useRef(false);
-  const runningLightsRef = useRef<THREE.Group>(null);
   
   const jumpSoundRef = useRef<THREE.PositionalAudio>(null);
   const matSoundRef = useRef<THREE.PositionalAudio>(null);
   const engineSoundRef = useRef<THREE.PositionalAudio>(null);
   const hasJumpedRef = useRef(false);
   const hasMattedRef = useRef(false);
+  const intensityRef = useRef(0.4);
 
   // Initialize synthesized buffers
   useEffect(() => {
@@ -1628,11 +1629,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
   }, [listener]);
   
   // Camera Tracking Refs
-  const lastWorldPosRef = useRef<THREE.Vector3>(new THREE.Vector3());
   const hasInitialPosRef = useRef(false);
-  const tempVec = useMemo(() => new THREE.Vector3(), []);
-  const tempVec2 = useMemo(() => new THREE.Vector3(), []);
-  const tempVec4 = useMemo(() => new THREE.Vector3(), []);
 
   useEffect(() => {
     if (!travel && prevSystemRef.current !== playerSystemId) {
@@ -1661,22 +1658,17 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     
     const globalPos = new THREE.Vector3();
     let scale = 1;
-    let engineColor = '#00ffff';
     let engineIntensity = 0.4;
     let flashScale = 0;
     let flashOpacity = 0;
 
     // Helper: calculate orbital position for idle states (dynamic over time)
     const getIdlePos = (sysPos: number[], starType: string, time: number) => {
-      // Use position as a seed so each system has a unique orbital phase offset
       const seed = Math.abs(Math.sin(sysPos[0] * 12.9898 + sysPos[2] * 78.233)) * 43758.5453;
       const baseAngle = (seed % 1) * Math.PI * 2;
-      
-      // Dynamic orbit based on time. 1 orbit per 60 seconds.
       const orbitalPeriod = 60000;
       const timeAngle = ((time % orbitalPeriod) / orbitalPeriod) * Math.PI * 2;
       const angle = baseAngle + timeAngle;
-      
       const starRadius = STAR_BASE_SIZE[starType as keyof typeof STAR_BASE_SIZE] || 2.4;
       const orbitRadius = starRadius * 1.6;
       return new THREE.Vector3(
@@ -1686,27 +1678,20 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
       );
     };
 
-    const SUB_LIGHT_VELOCITY = 2.0; // slightly faster for responsiveness
+    const SUB_LIGHT_VELOCITY = 2.0;
 
     if (travel) {
       const elapsed = now - travel.startTime;
       const total = travel.endTime - travel.startTime;
       const targetSys = galaxy.systemById[travel.targetId];
-
-      // Calculate transit duration
       const startPos = getIdlePos(sourceSys.pos, sourceSys.starType, travel.startTime);
       const gateOffset = getGateLocalPosition(sourceSys, travel.targetId);
       const gatePos = new THREE.Vector3(...sourceSys.pos).add(gateOffset);
       const localDist = startPos.distanceTo(gatePos);
-      
-      // Dynamic timing: if total is small, compress animation phases
-      // We want: Transit (40%), Charge (20%), Jump (40%)
       const idealTransit = (localDist / SUB_LIGHT_VELOCITY) * 1000;
       const idealCharge = 2500;
       const idealJump = 1000;
       const idealTotal = idealTransit + idealCharge + idealJump;
-      
-      // Scale everything to fit within 50% of the 'total' time to leave room for hyperspace
       const scaleFactor = Math.min(1.0, (total * 0.5) / idealTotal);
       const transitTime = idealTransit * scaleFactor;
       const chargeTime = idealCharge * scaleFactor;
@@ -1716,27 +1701,18 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
       if (total === 0) {
         scale = 0;
       } else if (elapsed < departureTotal) {
-        // ─── DEPARTURE SEQUENCE ───
         if (elapsed < transitTime) {
-          // 1: Transit to gate
           const p = elapsed / transitTime;
           const t = Math.pow(p, 1.2); 
-          
           if (view === 'galaxy') {
             const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
-            // Keep it very tight to the star in galaxy view
             globalPos.set(sourceSys.pos[0] - starRadius * 0.4, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 0.4);
           } else {
             globalPos.lerpVectors(startPos, gatePos, t);
           }
-          
-          engineColor = '#00ffff';
           engineIntensity = (0.8 + t * 2.5) * (1.0 + Math.random() * 0.15);
-          
-          // Visibility: Hidden if viewing target system while still in transit to gate
           if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
         } else if (elapsed < transitTime + chargeTime) {
-          // 2: Charge at gate
           const p = (elapsed - transitTime) / chargeTime;
           if (view === 'galaxy') {
             const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
@@ -1744,11 +1720,9 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           } else {
             globalPos.copy(gatePos);
           }
-          engineColor = `hsl(${180 - p * 60}, 100%, 70%)`; // Blue to Green
           engineIntensity = 2.5 + Math.sin(p * Math.PI * 10) * 1.0;
           if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
         } else {
-          // 3: Flash and enter hyperspace
           const p = (elapsed - (transitTime + chargeTime)) / jumpTime;
           if (view === 'galaxy') {
             const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
@@ -1756,29 +1730,20 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           } else {
             globalPos.copy(gatePos);
           }
-
-          // Trigger Jump Sound
           if (!hasJumpedRef.current && jumpSoundRef.current && view !== 'galaxy' && viewedSystemId === playerSystemId) {
             if (jumpSoundRef.current.isPlaying) jumpSoundRef.current.stop();
             jumpSoundRef.current.play();
             hasJumpedRef.current = true;
           }
-
           scale = Math.max(0, 1.0 - p * 3);
           flashScale = p * 12;
           flashOpacity = 1.0 - p;
-          engineColor = '#ffffff';
           engineIntensity = 5.0 * (1.0 + Math.random() * 0.2);
-          
-          // Visibility: Hidden if viewing target system while still jumping from source
           if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
         }
       } else if (elapsed < total) {
-        // Reset jump flag for next jump
         hasJumpedRef.current = false;
-        // ─── HYPERSPACE (Global physical transit) ───
         const t = (elapsed - departureTotal) / Math.max(1, total - departureTotal);
-        
         if (view === 'galaxy') {
           const sourceCenter = new THREE.Vector3(...sourceSys.pos);
           const targetCenter = new THREE.Vector3(...targetSys.pos);
@@ -1788,39 +1753,30 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           const targetGate = new THREE.Vector3(...targetSys.pos).add(getGateLocalPosition(targetSys, sourceSys.id));
           globalPos.lerpVectors(sourceGate, targetGate, t);
         }
-        engineColor = '#ffffff';
         engineIntensity = 3.0 + Math.random() * 1.0;
-        
-        // Visibility: In hyperspace, ship is hidden in all system views
         scale = view === 'galaxy' ? 4.0 : 0; 
       } else {
         scale = 0;
       }
     } else if (arrivalState) {
-      // ─── ARRIVAL SEQUENCE ───
       const elapsed = now - arrivalState.time;
       const targetSys = sourceSys; 
       const gateOffset = getGateLocalPosition(targetSys, arrivalState.fromId);
       const gatePos = new THREE.Vector3(...targetSys.pos).add(gateOffset);
       const matTime = 800;
-      
-      // Iteratively find the exact arrival time so the parking spot is stable and perfectly matches the orbit
       let expectedArrivalEndTime = arrivalState.time + 10000;
       let targetIdlePos = new THREE.Vector3();
       let transitTime = 0;
       let arrivalTotal = 0;
-      
       for (let i = 0; i < 3; i++) {
         targetIdlePos = getIdlePos(targetSys.pos, targetSys.starType, expectedArrivalEndTime);
         const localDist = gatePos.distanceTo(targetIdlePos);
-        transitTime = (localDist / SUB_LIGHT_VELOCITY) * 1200; // Slower arrival for effect
+        transitTime = (localDist / SUB_LIGHT_VELOCITY) * 1200;
         arrivalTotal = transitTime + matTime;
         expectedArrivalEndTime = arrivalState.time + arrivalTotal;
       }
-
       if (elapsed < arrivalTotal) {
         if (elapsed < matTime) {
-          // 1: Arrival flash & Materialize
           const p = elapsed / matTime;
           if (view === 'galaxy') {
             const starRadius = STAR_BASE_SIZE[targetSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
@@ -1828,36 +1784,28 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           } else {
             globalPos.copy(gatePos);
           }
-
-          // Trigger Materialize Sound
           if (!hasMattedRef.current && matSoundRef.current && view !== 'galaxy' && viewedSystemId === playerSystemId) {
             if (matSoundRef.current.isPlaying) matSoundRef.current.stop();
             matSoundRef.current.play();
             hasMattedRef.current = true;
           }
-
           scale = p;
           flashScale = (1.0 - p) * 10;
           flashOpacity = 1.0 - p;
-          engineColor = '#00ff44';
           engineIntensity = 4.0 * (1.0 + Math.random() * 0.2);
+          intensityRef.current = engineIntensity;
         } else {
-          // Reset materialize flag for next arrival
           hasMattedRef.current = false;
-          // 2: Transit from gate to star
           const p = (elapsed - matTime) / transitTime;
           const eased = 1 - Math.pow(1 - p, 2.0);
           if (view === 'galaxy') {
             const starRadius = STAR_BASE_SIZE[targetSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
-            // Move to top-right (+X, -Z)
             globalPos.set(targetSys.pos[0] + starRadius * 0.4, targetSys.pos[1], targetSys.pos[2] - starRadius * 0.4);
           } else {
             globalPos.lerpVectors(gatePos, targetIdlePos, eased);
           }
-          engineColor = '#00ffff';
           engineIntensity = (2.0 - p * 1.5) * (1.0 + Math.random() * 0.15);
-          
-          // Visibility: Hidden if viewing source system while ship is arriving in target
+          intensityRef.current = engineIntensity;
           if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
         }
       } else {
@@ -1868,108 +1816,60 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
         globalPos.copy(getIdlePos(targetSys.pos, targetSys.starType, now));
       }
     } else {
-      // ─── IDLE ORBIT ───
       globalPos.copy(getIdlePos(sourceSys.pos, sourceSys.starType, now));
-      engineColor = '#00ffff';
       engineIntensity = 0.3 + Math.sin(now * 0.005) * 0.1;
-      
-      // Visibility: Hidden if viewing a different system than where the player is
+      intensityRef.current = engineIntensity;
       if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
     }
-
-    // Orient ship toward velocity
     const velocity = globalPos.clone().sub(prevPosRef.current);
     if (velocity.lengthSq() > 1e-8) {
       const dir = velocity.clone().normalize();
-      // Ship forward is +Z in this geometry
       const quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
       groupRef.current.quaternion.slerp(quaternion, 0.15);
     }
     prevPosRef.current.copy(globalPos);
-
-    const localVec = new THREE.Vector3(); // PlayerFleetVisual is singleton, so local var in useFrame is okay but memo is better
-
-    // Blinking navigation lights
-    const isNavOn = Math.sin(now * 0.003) > 0;
-    const navRed = groupRef.current.getObjectByName('navRed') as THREE.Mesh;
-    const navGreen = groupRef.current.getObjectByName('navGreen') as THREE.Mesh;
-    if (navRed) navRed.visible = isNavOn;
-    if (navGreen) navGreen.visible = isNavOn;
-
-    // Sequential running lights
-    if (runningLightsRef.current) {
-      const cycle = Math.floor((now * 0.006) % 6); // 6 steps for 3 lights on each side
-      runningLightsRef.current.children.forEach((child, i) => {
-        // Pairs (Port/Starboard) light up together in sequence
-        child.visible = (i % 3) === (cycle % 3);
-      });
-    }
-
-    // Hide the 3D mesh in galaxy view when idle (HTML icon takes over)
     if (view === 'galaxy') {
       scale = 0;
     }
-
-    // Dynamic Opacity for the CMDR HTML icon so it doesn't cover the 3D model
     groupRef.current.position.copy(globalPos);
     groupRef.current.updateWorldMatrix(true, false);
-    
-    // Sync the label group and flash to the ship's physical position (but without its rotation and scale)
     if (labelGroupRef.current) {
       labelGroupRef.current.position.copy(globalPos);
       labelGroupRef.current.visible = (view === 'galaxy' || viewedSystemId === playerSystemId);
     }
-    
     const distToCamera = state.camera.position.distanceTo(globalPos);
-    
     let htmlOpacity = 0;
     if (view === 'galaxy') {
       htmlOpacity = 1.0;
     } else if (scale > 0) {
       htmlOpacity = Math.max(0, Math.min(1, (distToCamera - 15) / 10));
     }
-
-    // Dynamic Hitbox Scaling
     if (hitboxRef.current) {
       const scaleFactor = Math.max(1, distToCamera * 0.06);
       hitboxRef.current.scale.setScalar(scaleFactor);
     }
-
-    // Dynamic Engine Sound Scaling
     if (engineSoundRef.current) {
-      // Audible only if NOT in galaxy view AND viewing the system where the ship is located
       const isAudible = view !== 'galaxy' && viewedSystemId === playerSystemId && scale > 0;
-      
       if (!isAudible) {
         engineSoundRef.current.setVolume(0);
       } else {
-        // Scale volume and pitch by engineIntensity (halved as requested)
-        const vol = Math.max(0.01, Math.min(0.1, engineIntensity * 0.025));
+        const vol = Math.max(0.01, Math.min(0.4, engineIntensity * 0.1));
         engineSoundRef.current.setVolume(vol);
-        // @ts-ignore - PositionalAudio has setPlaybackRate
         if (engineSoundRef.current.source) {
-          engineSoundRef.current.setPlaybackRate(0.8 + engineIntensity * 0.4);
+          engineSoundRef.current.setPlaybackRate(0.7 + engineIntensity * 0.5);
         }
       }
     }
-
-    // Camera Tracking
     if (trackingShip && controlsRef?.current) {
       const controls = controlsRef.current;
       controls.smoothTime = 0;
       controls.restThreshold = 0.0001; 
-
       const targetX = globalPos.x - sX;
       const targetY = globalPos.y - sY;
       const targetZ = globalPos.z - sZ;
-
       if (!hasInitialPosRef.current) {
         const zoomDist = 6.0;
-        controls.setLookAt(
-          targetX + zoomDist * 0.8, targetY + zoomDist * 0.6, targetZ + zoomDist,
-          targetX, targetY, targetZ,
-          true
-        );
+        controls.setLookAt(targetX + zoomDist * 0.8, targetY + zoomDist * 0.6, targetZ + zoomDist, targetX, targetY, targetZ, true);
         hasInitialPosRef.current = true;
       } else {
         controls.moveTo(targetX, targetY, targetZ, false);
@@ -1977,33 +1877,13 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     } else {
       hasInitialPosRef.current = false;
     }
-
     groupRef.current.scale.setScalar(Math.max(0.0001, scale));
-
-    if (engineGlowRef.current) {
-      engineGlowRef.current.children.forEach((child) => {
-        child.scale.setScalar(engineIntensity);
-        const mesh = child.children[0] as THREE.Mesh;
-        if (mesh && mesh.material) {
-          (mesh.material as THREE.MeshBasicMaterial).color.set(engineColor);
-        }
-      });
-    }
-    if (engineLightRef.current) {
-      engineLightRef.current.color.set(engineColor);
-      engineLightRef.current.intensity = engineIntensity * 2;
-    }
-
-    // Flash sphere
     if (flashRef.current) {
       const mat = flashRef.current.material as THREE.MeshBasicMaterial;
-      flashRef.current.position.copy(globalPos);
       flashRef.current.scale.setScalar(Math.max(0, flashScale));
       mat.opacity = Math.max(0, flashOpacity);
       flashRef.current.visible = flashOpacity > 0;
     }
-
-    // Apply HTML icon properties via ref
     if (labelRef.current) {
       labelRef.current.style.opacity = htmlOpacity.toString();
       const s = view === 'galaxy' ? Math.max(0.9, Math.min(1.4, 1.0 + (distToCamera - 600) / 1500)) : 1.0;
@@ -2014,7 +1894,6 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
   return (
     <group>
       <group ref={groupRef}>
-        {/* Positional Audio Elements (Synthesized) */}
         {listener && (
           <>
             <positionalAudio ref={jumpSoundRef} args={[listener]} />
@@ -2023,220 +1902,31 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           </>
         )}
         
-        <group ref={shipMeshRef}>
-          {/* Main Hull (Cylindrical) — highly polished */}
-          <mesh position={[0, 0, 0.05]} rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.1, 0.1, 0.5, 32]} />
-            <meshStandardMaterial color="#c8d0dc" metalness={0.98} roughness={0.04} envMapIntensity={2.5} />
-          </mesh>
-          
-          {/* Forward Hull Section (Tapered) */}
-          <mesh position={[0, 0, 0.28]} rotation={[Math.PI / 2, 0, 0]}>
-            <coneGeometry args={[0.08, 0.18, 16]} />
-            <meshStandardMaterial color="#a0aab8" metalness={0.98} roughness={0.03} envMapIntensity={2.5} />
-          </mesh>
-          
-          <mesh position={[0, 0, 0.1]} rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.09, 0.1, 0.2, 16]} />
-            <meshStandardMaterial color="#9aa4b4" metalness={0.95} roughness={0.06} envMapIntensity={2.5} />
-          </mesh>
-
-          {/* Engineering Section (Rear) */}
-          <mesh position={[0, 0, -0.1]}>
-            <boxGeometry args={[0.18, 0.1, 0.2]} />
-            <meshStandardMaterial color="#7a8898" metalness={0.95} roughness={0.08} envMapIntensity={2.5} />
-          </mesh>
-
-          {/* Command Bridge (Detailed Top Deck) */}
-          <mesh position={[0, 0.08, 0.12]}>
-            <boxGeometry args={[0.07, 0.06, 0.15]} />
-            <meshStandardMaterial color="#222222" metalness={0.9} roughness={0.1} emissive="#00ccff" emissiveIntensity={0.4} />
-          </mesh>
-          {/* Bridge Viewport */}
-          <mesh position={[0, 0.09, 0.18]}>
-            <boxGeometry args={[0.06, 0.02, 0.02]} />
-            <meshStandardMaterial color="#ffffff" emissive="#00ffff" emissiveIntensity={2} />
-          </mesh>
-
-          {/* Port Wing & Nacelle Assembly */}
-          <group position={[0.2, 0, -0.05]}>
-            {/* Wing Strut */}
-            <mesh rotation={[0, -0.3, 0]}>
-              <boxGeometry args={[0.15, 0.02, 0.1]} />
-              <meshStandardMaterial color="#9aa4b4" metalness={0.95} roughness={0.08} envMapIntensity={2} />
-            </mesh>
-            {/* Nacelle Housing */}
-            <mesh position={[0.08, 0, -0.08]} rotation={[Math.PI / 2, 0, 0]}>
-              <cylinderGeometry args={[0.035, 0.045, 0.28, 12]} />
-              <meshStandardMaterial color="#6a7888" metalness={0.98} roughness={0.04} envMapIntensity={2.5} />
-            </mesh>
-            {/* Warp Coil Glow */}
-            <mesh position={[0.08, 0.03, -0.08]}>
-              <boxGeometry args={[0.015, 0.01, 0.18]} />
-              <meshStandardMaterial color="#ffffff" emissive="#0088ff" emissiveIntensity={3} />
-            </mesh>
-          </group>
-
-          {/* Starboard Wing & Nacelle Assembly */}
-          <group position={[-0.2, 0, -0.05]}>
-            {/* Wing Strut */}
-            <mesh rotation={[0, 0.3, 0]}>
-              <boxGeometry args={[0.15, 0.02, 0.1]} />
-              <meshStandardMaterial color="#9aa4b4" metalness={0.95} roughness={0.08} envMapIntensity={2} />
-            </mesh>
-            {/* Nacelle Housing */}
-            <mesh position={[-0.08, 0, -0.08]} rotation={[Math.PI / 2, 0, 0]}>
-              <cylinderGeometry args={[0.035, 0.045, 0.28, 12]} />
-              <meshStandardMaterial color="#6a7888" metalness={0.98} roughness={0.04} envMapIntensity={2.5} />
-            </mesh>
-            {/* Warp Coil Glow */}
-            <mesh position={[-0.08, 0.03, -0.08]}>
-              <boxGeometry args={[0.015, 0.01, 0.18]} />
-              <meshStandardMaterial color="#ffffff" emissive="#0088ff" emissiveIntensity={3} />
-            </mesh>
-          </group>
-
-          {/* Decorative Surface Plating (Greebles) */}
-          <mesh position={[0, -0.06, 0.05]}>
-            <boxGeometry args={[0.08, 0.02, 0.1]} />
-            <meshStandardMaterial color="#404a55" />
-          </mesh>
-          <mesh position={[0.06, 0.04, -0.15]}>
-            <boxGeometry args={[0.04, 0.04, 0.04]} />
-            <meshStandardMaterial color="#404a55" />
-          </mesh>
-          <mesh position={[-0.06, 0.04, -0.15]}>
-            <boxGeometry args={[0.04, 0.04, 0.04]} />
-            <meshStandardMaterial color="#404a55" />
-          </mesh>
-
-          {/* Navigation Lights */}
-          <mesh position={[0.3, 0.02, -0.1]} name="navGreen">
-            <sphereGeometry args={[0.015, 8, 8]} />
-            <meshBasicMaterial color="#00ff00" />
-          </mesh>
-          <mesh position={[-0.3, 0.02, -0.1]} name="navRed">
-            <sphereGeometry args={[0.015, 8, 8]} />
-            <meshBasicMaterial color="#ff0000" />
-          </mesh>
-
-          {/* Hull Windows (Emissive) */}
-          <mesh position={[0.08, 0, 0.1]}>
-            <boxGeometry args={[0.045, 0.02, 0.05]} />
-            <meshBasicMaterial color="#ffffff" />
-          </mesh>
-          <mesh position={[-0.08, 0, 0.1]}>
-            <boxGeometry args={[0.045, 0.02, 0.05]} />
-            <meshBasicMaterial color="#ffffff" />
-          </mesh>
-
-          {/* 3D Hitbox for Ship */}
-          <mesh 
-            onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
-            onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
-            onPointerOut={() => { document.body.style.cursor = "default"; }}
-          >
-            <sphereGeometry args={[0.5, 16, 16]} />
-            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-          </mesh>
-          <mesh position={[0.08, 0, -0.05]}>
-            <boxGeometry args={[0.045, 0.02, 0.05]} />
-            <meshBasicMaterial color="#ffffff" />
-          </mesh>
-          {/* Hull Sequential Running Lights (Cyan) */}
-          <group ref={runningLightsRef}>
-            {/* Port side: Forward, Mid, Aft */}
-            <mesh position={[0.105, 0.01, 0.22]}>
-              <sphereGeometry args={[0.008, 8, 8]} />
-              <meshBasicMaterial color="#00ffff" />
-            </mesh>
-            <mesh position={[0.105, 0.01, 0.05]}>
-              <sphereGeometry args={[0.008, 8, 8]} />
-              <meshBasicMaterial color="#00ffff" />
-            </mesh>
-            <mesh position={[0.105, 0.01, -0.12]}>
-              <sphereGeometry args={[0.008, 8, 8]} />
-              <meshBasicMaterial color="#00ffff" />
-            </mesh>
-            {/* Starboard side: Forward, Mid, Aft */}
-            <mesh position={[-0.105, 0.01, 0.22]}>
-              <sphereGeometry args={[0.008, 8, 8]} />
-              <meshBasicMaterial color="#00ffff" />
-            </mesh>
-            <mesh position={[-0.105, 0.01, 0.05]}>
-              <sphereGeometry args={[0.008, 8, 8]} />
-              <meshBasicMaterial color="#00ffff" />
-            </mesh>
-            <mesh position={[-0.105, 0.01, -0.12]}>
-              <sphereGeometry args={[0.008, 8, 8]} />
-              <meshBasicMaterial color="#00ffff" />
-            </mesh>
-          </group>
-
-          {/* Spotlight (Forward Facing) */}
-          <spotLight 
-            position={[0, 0, 0.4]} 
-            angle={0.4} 
-            penumbra={0.5} 
-            intensity={0.5} 
-            distance={10} 
-            color="#ffffff" 
-            target-position={[0, 0, 5]} 
+        {config && (
+          <ModularShip 
+            config={config} 
+            engineIntensityRef={intensityRef} 
+            engineColor={config.accentColor} 
           />
+        )}
 
-          {/* Engine Plumes — Anchored to nozzles to grow backwards (-Z) */}
-          <group ref={engineGlowRef}>
-            {/* Main Engine */}
-            <group position={[0, 0, -0.2]}>
-              <mesh position={[0, 0, -0.175]} rotation={[-Math.PI / 2, 0, 0]}>
-                <coneGeometry args={[0.10, 0.35, 16, 1, true]} />
-                <meshBasicMaterial color="#00ffff" transparent opacity={0.6} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
-              </mesh>
-            </group>
-            {/* Port Nacelle Engine */}
-            <group position={[0.28, 0, -0.27]}>
-              <mesh position={[0, 0, -0.08]} rotation={[-Math.PI / 2, 0, 0]}>
-                <coneGeometry args={[0.035, 0.16, 12, 1, true]} />
-                <meshBasicMaterial color="#00ffff" transparent opacity={0.55} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
-              </mesh>
-            </group>
-            {/* Starboard Nacelle Engine */}
-            <group position={[-0.28, 0, -0.27]}>
-              <mesh position={[0, 0, -0.08]} rotation={[-Math.PI / 2, 0, 0]}>
-                <coneGeometry args={[0.035, 0.16, 12, 1, true]} />
-                <meshBasicMaterial color="#00ffff" transparent opacity={0.55} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
-              </mesh>
-            </group>
-          </group>
-          <pointLight ref={engineLightRef} position={[0, 0, -0.4]} color="#00ffff" distance={15} />
-
-          {/* Invisible Hitbox for Selection */}
-          {onSelect && (
-            <Billboard>
-              <mesh 
-                ref={hitboxRef}
-                onClick={(e) => { e.stopPropagation(); onSelect(); }}
-                onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
-                onPointerOut={() => { document.body.style.cursor = "default"; }}
-              >
-                <planeGeometry args={[2.5, 2.5]} />
-                <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-              </mesh>
-            </Billboard>
-          )}
-        </group>
+        <mesh
+          ref={hitboxRef}
+          onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
+          onPointerOver={() => { document.body.style.cursor = "pointer"; }}
+          onPointerOut={() => { document.body.style.cursor = "default"; }}
+        >
+          <sphereGeometry args={[0.25, 16, 16]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
       </group>
 
-      {/* Jump Flash — lives outside the hull group so it doesn't rotate/scale with ship */}
-      <mesh ref={flashRef} visible={false}>
-        <sphereGeometry args={[0.5, 16, 16]} />
-        <meshBasicMaterial color="#88ffcc" transparent opacity={0} blending={THREE.AdditiveBlending} depthWrite={false} />
-      </mesh>
-
-      {/* The HTML icon represents the Commander. We use a separate world-space group to avoid parent rotation issues. */}
       <group ref={labelGroupRef}>
-        <Html center zIndexRange={[100, 0]} position={[0, view === 'galaxy' ? 0 : 1.2, 0]}>
-          <div ref={labelRef} className="cmdr-label pointer-events-none transition-opacity duration-300">
+        <Html center position={[0, 0.4, 0]}>
+          <div 
+            ref={labelRef}
+            className="flex flex-col items-center pointer-events-none select-none transition-opacity duration-300"
+          >
             <div className="relative flex flex-col items-center text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-pulse">
               <Rocket size={14} className="-rotate-45" />
               {(travel || arrivalState) && (
@@ -2247,9 +1937,20 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
                 </div>
               )}
             </div>
-            <div className="text-[6px] font-mono-hud mt-1 uppercase">CMDR</div>
+            <div className="text-[6px] font-mono-hud mt-1 uppercase text-primary/80">CMDR</div>
           </div>
         </Html>
+        
+        <mesh ref={flashRef} visible={false}>
+          <sphereGeometry args={[1, 32, 32]} />
+          <meshBasicMaterial 
+            color="#88ffcc" 
+            transparent 
+            opacity={0} 
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
+          />
+        </mesh>
       </group>
     </group>
   );

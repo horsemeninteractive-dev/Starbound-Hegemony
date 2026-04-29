@@ -1,4 +1,5 @@
 import { Suspense, useMemo, useState, useEffect, useRef, useCallback } from "react";
+import * as THREE from 'three';
 import { toast } from "sonner";
 import { 
   ChevronUp, ChevronDown, ChevronLeft, User as UserIcon, Users as UsersIcon, Coins, 
@@ -15,6 +16,7 @@ import { Legend } from "@/galaxy/components/Legend";
 import { SettingsModal } from "@/galaxy/components/SettingsModal";
 import { MiniMap } from "@/galaxy/components/MiniMap";
 import { CommanderOnboarding } from "@/galaxy/components/CommanderOnboarding";
+import { ShipCustomizer } from "@/galaxy/components/ShipCustomizer";
 import { useAudio } from "@/galaxy/useAudio";
 import logo from "@/assets/logo.png";
 
@@ -101,9 +103,10 @@ const Index = () => {
     }
   }), [withLoading, playClick, playAlert, openSystem, openShip, openBody, galaxy, fogOfWar, exploredSystemIds]);
 
-  const handleOnboardingComplete = (name: string, avatar: string) => {
+  const handleOnboardingComplete = (name: string, avatar: string, shipConfig: any) => {
     setPlayerName(name);
     setPlayerAvatar(avatar);
+    app.setShipConfig(shipConfig);
     setOnboardingCompleted(true);
   };
 
@@ -191,6 +194,7 @@ const Index = () => {
                     travel={app.travel}
                     isMobilePanelExpanded={isMobilePanelExpanded}
                     graphicsQuality={graphicsQuality}
+                    shipConfig={app.shipConfig}
                   />
                 </Suspense>
               </div>
@@ -279,9 +283,10 @@ const Index = () => {
           ) : app.page === "profile" ? (
             <ProfileView app={app} onPlayClick={playClick} />
           ) : (
-            <div className="flex-1 bg-background/40 backdrop-blur-sm p-4 sm:p-12 overflow-y-auto custom-scrollbar animate-in slide-in-from-bottom-2 duration-500">
-               <div className="max-w-5xl mx-auto space-y-12 pb-24">
-                  <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 border-b border-primary/20 pb-10">
+            <div className={`flex-1 bg-background/40 backdrop-blur-sm p-4 ${app.page === 'shipyard' ? 'sm:p-4' : 'sm:p-12'} custom-scrollbar animate-in slide-in-from-bottom-2 duration-500 flex flex-col ${app.page === 'shipyard' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+               <div className={`max-w-6xl mx-auto w-full flex flex-col ${app.page === 'shipyard' ? 'flex-1 min-h-0 h-full' : 'space-y-12 pb-24'}`}>
+                  {app.page !== 'shipyard' && (
+                    <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 border-b border-primary/20 pb-10">
                      <div className="flex items-center gap-5">
                         <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg shadow-[0_0_20px_hsl(var(--primary)/0.1)]">
                            {app.page === "articles" && <Newspaper size={32} className="text-primary" />}
@@ -313,7 +318,8 @@ const Index = () => {
                      >
                        Return to Map
                      </button>
-                  </header>
+                   </header>
+                  )}
 
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                      <div className="lg:col-span-2 space-y-8">
@@ -394,6 +400,20 @@ const Index = () => {
 
                         {app.page === "fleets" && (
                           <div className="space-y-6">
+                            <div className="flex justify-between items-center mb-4">
+                              <div className="space-y-1">
+                                <h3 className="font-display text-xs uppercase tracking-[0.2em] text-primary/60">Fleet Manifest</h3>
+                                <p className="font-mono-hud text-[8px] text-muted-foreground uppercase">Strategic Deployment & Vessel Customization</p>
+                              </div>
+                              <button 
+                                onClick={() => { playClick(); app.setPage("shipyard"); }}
+                                className="px-6 py-2.5 border-2 border-primary bg-primary/10 text-primary font-mono-hud text-[11px] uppercase tracking-[0.2em] hover:bg-primary hover:text-background transition-all shadow-[0_0_20px_hsl(var(--primary)/0.2)] flex items-center gap-2 group"
+                              >
+                                <Rocket size={14} className="group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform" />
+                                <span>Shipyard Registry</span>
+                              </button>
+                            </div>
+
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                               {[
                                 { label: "Total Ships", val: "14" },
@@ -453,6 +473,30 @@ const Index = () => {
                                   </div>
                                 </div>
                               ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {app.page === "shipyard" && (
+                          <div className="space-y-4 flex-1 flex flex-col min-h-0">
+                            <div className="flex justify-between items-center mb-2 shrink-0">
+                              <div className="space-y-1">
+                                <h3 className="font-display text-xl text-primary tracking-[0.3em] uppercase text-glow">Orbital Drydock</h3>
+                                <p className="font-mono-hud text-[10px] text-muted-foreground uppercase tracking-widest">Flagship Refit & Hull Calibration Module</p>
+                              </div>
+                              <button 
+                                onClick={() => { playClick(); app.setPage("fleets"); }}
+                                className="px-4 py-2 border border-primary/20 bg-primary/5 text-primary font-mono-hud text-[10px] uppercase tracking-widest hover:border-primary/60 hover:bg-primary/10 transition-all flex items-center gap-2"
+                              >
+                                <span>← Return to Command</span>
+                              </button>
+                            </div>
+                            <div className="flex-1 min-h-0">
+                              <ShipCustomizer 
+                                config={app.shipConfig} 
+                                onChange={app.setShipConfig} 
+                                playClick={playClick} 
+                              />
                             </div>
                           </div>
                         )}

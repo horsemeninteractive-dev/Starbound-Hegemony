@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { generateGalaxy } from "./generate";
 import type { Galaxy, StarSystem, Body, ContestState, EconomicStatus, StarType, PlanetSubtype } from "./types";
 import { STAR_BASE_SIZE } from "./meta";
+import { ShipConfiguration, DEFAULT_SHIP_CONFIG } from "./shipPresets";
 
 export type ViewMode = "galaxy" | "system" | "body" | "ship";
 export type DisplayLayer = "hyperlanes" | "sectorBorders" | "sectorLabels" | "objectLabels" | "habitableZones" | "orbitPaths" | "weatherSystems" | "cityLights" | "empireColors";
@@ -60,7 +61,11 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [playerLevel, setPlayerLevel] = useState(() => Number(localStorage.getItem("playerLevel") ?? 1));
   const [playerXP, setPlayerXP] = useState(() => Number(localStorage.getItem("playerXP") ?? 0));
   const [playerAvatar, setPlayerAvatar] = useState(() => localStorage.getItem("playerAvatar") ?? avatar);
-  const [page, setPage] = useState<"map" | "profile" | "articles" | "factories" | "fleets" | "party" | "skills">("map");
+  const [shipConfig, setShipConfig] = useState<ShipConfiguration>(() => {
+    const saved = localStorage.getItem("shipConfig");
+    return saved ? JSON.parse(saved) : DEFAULT_SHIP_CONFIG;
+  });
+  const [page, setPage] = useState<"map" | "profile" | "articles" | "factories" | "fleets" | "party" | "skills" | "shipyard">("map");
   const [systemId, setSystemId] = useState<string | null>(() => localStorage.getItem("systemId"));
   const [bodyId, setBodyId] = useState<string | null>(() => localStorage.getItem("bodyId"));
   const [hoverSystemId, setHoverSystemId] = useState<string | null>(null);
@@ -117,6 +122,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
   useEffect(() => { localStorage.setItem("playerLevel", String(playerLevel)); }, [playerLevel]);
   useEffect(() => { localStorage.setItem("playerXP", String(playerXP)); }, [playerXP]);
   useEffect(() => { localStorage.setItem("playerAvatar", playerAvatar); }, [playerAvatar]);
+  useEffect(() => { localStorage.setItem("shipConfig", JSON.stringify(shipConfig)); }, [shipConfig]);
   useEffect(() => { localStorage.setItem("onboardingCompleted", String(onboardingCompleted)); }, [onboardingCompleted]);
   useEffect(() => { localStorage.setItem("audioEnabled", String(audioEnabled)); }, [audioEnabled]);
   useEffect(() => { localStorage.setItem("musicVolume", String(musicVolume)); }, [musicVolume]);
@@ -354,6 +360,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
     playerXP,
     playerAvatar,
     setPlayerAvatar,
+    shipConfig,
+    setShipConfig,
     onboardingCompleted,
     setOnboardingCompleted,
     setPage,
