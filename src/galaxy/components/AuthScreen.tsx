@@ -35,9 +35,10 @@ export function AuthScreen({ onSuccess, playClick, playSuccess }: AuthScreenProp
         playSuccess();
         onSuccess();
       }
-    } catch (error: any) {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "An unknown error occurred";
       toast.error("Authentication Failed", {
-        description: error.message
+        description: message
       });
     } finally {
       setLoading(false);

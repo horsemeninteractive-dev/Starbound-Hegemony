@@ -77,6 +77,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [hoverSystemId, setHoverSystemId] = useState<string | null>(null);
 
   const [onboardingCompleted, setOnboardingCompleted] = useState(() => localStorage.getItem("onboardingCompleted") === "true");
+  const [initialDataLoaded, setInitialDataLoaded] = useState(false);
   
   const [audioEnabled, setAudioEnabled] = useState(() => localStorage.getItem("audioEnabled") !== "false");
   const [musicVolume, setMusicVolume] = useState(() => Number(localStorage.getItem("musicVolume") ?? 0.4));
@@ -100,49 +101,61 @@ export function useGalaxyApp(initialSeed = 20260423) {
 
   // 2. Load User Data from Supabase
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setInitialDataLoaded(false);
+      return;
+    }
 
     const loadData = async () => {
-      // Load Profile
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .single();
+      try {
+        // Load Profile
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .single();
 
-      if (profile) {
-        setPlayerName(profile.commander_name || "Majora");
-        setPlayerAvatar(profile.avatar_url || avatar);
-        setPlayerLevel(profile.level);
-        setPlayerXP(profile.xp);
-        setSc(profile.credits);
-        setOnboardingCompleted(profile.onboarding_completed);
-      }
+        if (profile) {
+          setPlayerName(profile.commander_name || "Majora");
+          setPlayerAvatar(profile.avatar_url || avatar);
+          setPlayerLevel(profile.level);
+          setPlayerXP(profile.xp);
+          setSc(profile.credits);
+          setOnboardingCompleted(profile.onboarding_completed);
+        }
 
-      // Load active Vessel
-      const { data: vessel } = await supabase
-        .from('vessels')
-        .select('*')
-        .eq('is_active', true)
-        .single();
+        // Load active Vessel
+        const { data: vessel } = await supabase
+          .from('vessels')
+          .select('*')
+          .eq('user_id', user.id)
+          .eq('is_active', true)
+          .single();
 
-      if (vessel) {
-        setShipConfig({
-          primaryColor: vessel.primary_color,
-          accentColor: vessel.accent_color,
-          hullId: vessel.hull_id,
-          wingsId: vessel.wings_id,
-          enginesId: vessel.engines_id,
-          bridgeId: vessel.bridge_id,
-        });
-      }
+        if (vessel) {
+          setShipConfig({
+            primaryColor: vessel.primary_color,
+            accentColor: vessel.accent_color,
+            hullId: vessel.hull_id,
+            wingsId: vessel.wings_id,
+            enginesId: vessel.engines_id,
+            bridgeId: vessel.bridge_id,
+          });
+        }
 
-      // Load Exploration
-      const { data: exploration } = await supabase
-        .from('exploration_logs')
-        .select('system_id');
-      
-      if (exploration && exploration.length > 0) {
-        setExploredSystemIds(new Set(exploration.map(e => e.system_id)));
+        // Load Exploration
+        const { data: exploration } = await supabase
+          .from('exploration_logs')
+          .select('system_id')
+          .eq('user_id', user.id);
+        
+        if (exploration && exploration.length > 0) {
+          setExploredSystemIds(new Set(exploration.map(e => e.system_id)));
+        }
+      } catch (err) {
+        console.error("Error loading user data:", err);
+      } finally {
+        setInitialDataLoaded(true);
       }
     };
 
@@ -151,7 +164,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
 
   // 3. Save Data to Supabase (Debounced/Automatic via useEffects)
   useEffect(() => {
-    if (!user) return;
+    if (!user || !initialDataLoaded) return;
     const updateProfile = async () => {
       await supabase.from('profiles').upsert({
         id: user.id,
@@ -165,10 +178,10 @@ export function useGalaxyApp(initialSeed = 20260423) {
       });
     };
     updateProfile();
-  }, [user, playerName, playerAvatar, playerLevel, playerXP, sc, onboardingCompleted]);
+  }, [user, initialDataLoaded, playerName, playerAvatar, playerLevel, playerXP, sc, onboardingCompleted]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !initialDataLoaded) return;
     const updateVessel = async () => {
       await supabase.from('vessels').upsert({
         user_id: user.id,
@@ -182,7 +195,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
       }, { onConflict: 'user_id' }); 
     };
     updateVessel();
-  }, [user, shipConfig]);
+  }, [user, initialDataLoaded, shipConfig]);
 
   // --- LOCALSTORAGE PERSISTENCE (Fallback/Sync) ---
   const setFogOfWar = (v: boolean) => {
@@ -195,10 +208,31 @@ export function useGalaxyApp(initialSeed = 20260423) {
     localStorage.setItem("instantJump", String(v));
   };
 
+  const resetGalaxy = () => {
+    setPlayerSystemId("sys-center");
+    setExploredSystemIds(new Set(["sys-center"]));
+    setTravel(null);
+    setView("system");
+    setSystemId("sys-center");
+    setBodyId(null);
+    toast.success("Galaxy reset", {
+      description: "Returned to central star. Exploration logs cleared."
+    });
+  };
+
   const regenerateGalaxy = () => {
     const newSeed = Math.floor(Math.random() * 1000000);
     setSeed(newSeed);
     localStorage.setItem("galaxy_seed", String(newSeed));
+    
+    // Reset state as well
+    setPlayerSystemId("sys-center");
+    setExploredSystemIds(new Set(["sys-center"]));
+    setTravel(null);
+    setView("system");
+    setSystemId("sys-center");
+    setBodyId(null);
+
     toast.success("Galaxy regenerated", {
       description: `New Seed: ${newSeed}. Coordinates shifted.`
     });
@@ -491,6 +525,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
     setFogOfWar,
     instantJump,
     setInstantJump,
+    resetGalaxy,
     regenerateGalaxy,
     seed,
     ap,

@@ -246,9 +246,9 @@ function MapContent({
     // Middle: Dolly (Zoom)
     // Right: Truck (Pan) - Force to XZ plane
     controls.mouseButtons.right = 2; // TRUCK
-    // @ts-ignore
+    // @ts-expect-error - CameraControls touch types are slightly incompatible with newer Three.js versions
     controls.touches.two = "truck"; 
-    // @ts-ignore
+    // @ts-expect-error - CameraControls touch types are slightly incompatible with newer Three.js versions
     controls.touches.three = "truck"; 
   }, []);
 
@@ -523,7 +523,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
   
   // Throttled distance check for performance
   const frameCount = useRef(Math.floor(Math.random() * 10)); 
-  useFrame((state) => {
+  useFrame((state, delta) => {
     // Only check distance every 10 frames if not focused for huge performance gain on mobile
     if (!isFocused && frameCount.current++ % 10 !== 0) return;
 
@@ -585,6 +585,8 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
       if (starGroupRef.current) {
         starGroupRef.current.updateWorldMatrix(true, false);
         controls.moveTo(0, 0, 0, false);
+        controls.update(delta);
+        state.camera.updateMatrixWorld();
       }
     }
   });
@@ -864,7 +866,7 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
 }) {
   const { camera } = useThree();
   const meshRef = useRef<THREE.Group>(null);
-  const sphereRef = useRef<any>(null);
+  const sphereRef = useRef<THREE.Object3D>(null);
   const labelRef = useRef<HTMLDivElement>(null);
   const hitboxRef = useRef<THREE.Mesh>(null);
   const lastWorldPosRef = useRef<THREE.Vector3>(new THREE.Vector3());
@@ -872,11 +874,14 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
   const lightDirRef = useRef(new THREE.Vector3(1, 0.5, 1).normalize());
   const angle = body.phase || 0;
   
-  // Deterministic rotation seed
-  const rotationSeed = useMemo(() => {
+  // Deterministic rotation properties
+  const { rotationSeed, axialTilt } = useMemo(() => {
     let hash = 0;
     for (let i = 0; i < body.id.length; i++) hash = (hash << 5) - hash + body.id.charCodeAt(i);
-    return Math.abs(hash % 100) / 100;
+    const seed = Math.abs(hash % 100) / 100;
+    // Axial tilt range from approx -35 to 35 degrees (randomized by seed)
+    const tilt = new THREE.Euler((seed * 2 - 1) * 0.05, 0, (seed * 2 - 1) * 0.6);
+    return { rotationSeed: seed, axialTilt: tilt };
   }, [body.id]);
 
   const localVec = useMemo(() => new THREE.Vector3(), []);
@@ -892,7 +897,7 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
   // Analytical orbital tracking using Three.js clock time, NOT performance.now().
   // performance.now() jitters badly under load since it reflects true wall-clock time.
   // Heavy frames cause a big delta, planets visually lurch ahead. state.clock.elapsedTime is smoothed.
-  useFrame((state) => {
+  useFrame((state, delta) => {
     if (!meshRef.current) return;
     
     // Single timestamp for this entire frame — mesh and camera MUST use the same value.
@@ -911,11 +916,45 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
       Math.sin(currentAngle) * body.orbit
     );
 
-    // Force update of full parent chain so getWorldPosition is accurate for moons and planets
-    meshRef.current.updateWorldMatrix(true, false);
+    // ANALYTICAL WORLD POSITION CALCULATION
+    // This bypasses Three.js frame-lag in recursive hierarchies (e.g. Moon -> Planet)
+    // by manually computing the parent's position at the exact same timestamp 't'.
+    localVec.set(0, 0, 0);
+    if (parentBody) {
+      const ps = getOrbitalSpeed(parentBody.orbit, starType, false);
+      const pa = (parentBody.phase || 0) + (t * ps) % (Math.PI * 2);
+      localVec.set(
+        Math.cos(pa) * parentBody.orbit,
+        0,
+        Math.sin(pa) * parentBody.orbit
+      );
+    }
+    localVec.add(meshRef.current.position);
 
-    // High-precision Light Direction
-    meshRef.current.getWorldPosition(localVec);
+    if (isFocused && view === "body" && controlsRef.current) {
+      const controls = controlsRef.current;
+      controls.smoothTime = 0;
+
+      if (!hasInitialPosRef.current) {
+        const zoomDist = body.size * 12;
+        controls.setLookAt(
+          localVec.x, localVec.y + zoomDist * 0.6, localVec.z + zoomDist,
+          localVec.x, localVec.y, localVec.z,
+          true
+        );
+        hasInitialPosRef.current = true;
+      } else {
+        // moveTo keeps the camera's angle and distance while moving the orbit center
+        // to the body's exact current world position — no formula, no drift.
+        controls.moveTo(localVec.x, localVec.y, localVec.z, false);
+        controls.update(delta);
+        state.camera.updateMatrixWorld();
+      }
+    } else {
+      hasInitialPosRef.current = false;
+    }
+
+    // Light Direction - after camera update for consistency
     lightDirRef.current.copy(starWorldPos).sub(localVec).normalize();
     
     // Star View Position for shader point lighting
@@ -923,6 +962,7 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
 
     // Compute parent position in view space for shadow casting (moon -> planet)
     if (parentBody && meshRef.current.parent) {
+      // For shadows we can stick to matrix for now as minor 1-frame lag is less noticeable than camera jitter
       meshRef.current.parent.getWorldPosition(localVec4);
       planetViewPosRef.current.copy(localVec4).applyMatrix4(state.camera.matrixWorldInverse);
     } else {
@@ -950,39 +990,14 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
       }
     }
 
-    // Camera Tracking: use the mesh's ACTUAL world position (already computed above via getWorldPosition).
-    // This guarantees zero divergence between where the mesh is and where the camera looks.
-    if (isFocused && view === "body" && controlsRef.current) {
-      const controls = controlsRef.current;
-      controls.smoothTime = 0;
-
-      if (!hasInitialPosRef.current) {
-        const zoomDist = body.size * 12;
-        controls.setLookAt(
-          localVec.x, localVec.y + zoomDist * 0.6, localVec.z + zoomDist,
-          localVec.x, localVec.y, localVec.z,
-          true
-        );
-        hasInitialPosRef.current = true;
-      } else {
-        // moveTo keeps the camera's angle and distance while moving the orbit center
-        // to the body's exact current world position — no formula, no drift.
-        controls.moveTo(localVec.x, localVec.y, localVec.z, false);
-      }
-    } else {
-      hasInitialPosRef.current = false;
-    }
-
     if (sphereRef.current) {
       const daySpeed = body.type === "gas_giant" ? 0.4 + rotationSeed * 0.4 : 0.08 + rotationSeed * 0.1;
       sphereRef.current.rotation.y = state.clock.elapsedTime * daySpeed;
     }
 
     if (hitboxRef.current) {
-      // Dynamically scale hitbox to maintain a constant target screen-space radius.
-      // Mobile needs significantly larger touch targets (44px+ per Apple HIG).
-      meshRef.current!.getWorldPosition(localVec2);
-      const d = state.camera.position.distanceTo(localVec2);
+      // Use analytical localVec instead of getWorldPosition to eliminate lag
+      const d = state.camera.position.distanceTo(localVec);
       const safeD = Math.max(0.1, d);
       const vFov = (state.camera as THREE.PerspectiveCamera).fov * Math.PI / 180;
       const screenH = window.innerHeight;
@@ -997,8 +1012,8 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
     }
 
     if (labelRef.current && view !== "galaxy") {
-      meshRef.current.getWorldPosition(localVec3);
-      const d = camera.position.distanceTo(localVec3);
+      // Use analytical localVec instead of getWorldPosition
+      const d = camera.position.distanceTo(localVec);
       const vFov = (camera as THREE.PerspectiveCamera).fov * Math.PI / 180;
       const screenH = window.innerHeight;
       const sizeToUse = (body.hasRings && body.type === "gas_giant") ? body.size * 2.25 : body.size;
@@ -1016,98 +1031,140 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
 
   return (
     <group ref={meshRef}>
-      {body.subtype === "station" ? (
-        <group ref={sphereRef}>
-          {/* Central Hub */}
-          <mesh>
-            <cylinderGeometry args={[visualSize * 0.35, visualSize * 0.35, visualSize * 2.5, 16]} />
-            <meshStandardMaterial color="#7a8a9e" metalness={0.8} roughness={0.2} />
+      {/* Visuals Group with Axial Tilt */}
+      <group rotation={axialTilt}>
+        {body.subtype === "station" ? (
+          <group ref={sphereRef}>
+            {/* Central Hub */}
+            <mesh>
+              <cylinderGeometry args={[visualSize * 0.35, visualSize * 0.35, visualSize * 2.5, 16]} />
+              <meshStandardMaterial color="#7a8a9e" metalness={0.8} roughness={0.2} />
+            </mesh>
+            {/* Solar Panels / Radiators */}
+            <mesh rotation={[0, 0, Math.PI / 2]}>
+              <boxGeometry args={[visualSize * 3.8, visualSize * 0.1, visualSize * 1.2]} />
+              <meshStandardMaterial color="#1a2538" metalness={0.9} roughness={0.2} emissive="#0d1b2a" emissiveIntensity={0.5} />
+            </mesh>
+            {/* Habitat Ring */}
+            <mesh rotation={[Math.PI / 2, 0, 0]}>
+              <torusGeometry args={[visualSize * 1.4, visualSize * 0.25, 16, 48]} />
+              <meshStandardMaterial color="#a0b0c0" metalness={0.6} roughness={0.4} />
+            </mesh>
+            {/* Docking Bay / Engineering Glow */}
+            <mesh position={[0, visualSize * 1.3, 0]}>
+              <cylinderGeometry args={[visualSize * 0.45, visualSize * 0.45, visualSize * 0.25, 16]} />
+              <meshStandardMaterial color="#3a4a5a" emissive="#00ffff" emissiveIntensity={1.2} />
+            </mesh>
+          </group>
+        ) : (
+          <mesh 
+            ref={sphereRef}
+            scale={body.subtype === "asteroid" ? [1.0 + rotationSeed * 0.4, 1.0 + (1.0 - rotationSeed) * 0.2, 1.0 + rotationSeed * 0.3] : [1, 1, 1]}
+          >
+            {body.subtype === "asteroid" ? (
+              // Smaller asteroids are more irregular; larger ones become spherical due to gravity.
+              <dodecahedronGeometry args={[visualSize, body.size < 1.0 ? 0 : (body.size < 1.5 ? 1 : 2)]} />
+            ) : (
+              <sphereGeometry args={[visualSize, quality === "low" ? 16 : (quality === "medium" ? 32 : 64), quality === "low" ? 16 : (quality === "medium" ? 32 : 64)]} />
+            )}
+            <PlanetMaterial 
+              subtype={body.subtype} 
+              hue={body.hue} 
+              lightDir={lightDirRef.current}
+              starWorldPos={starWorldPos}
+              starViewPos={starViewPosRef.current}
+              planetViewPos={parentBody ? planetViewPosRef.current : undefined}
+              parentSize={parentBody ? parentBody.size * 1.05 : 0}
+              moonOccluders={!parentBody ? moonOccluderBuf.current : undefined}
+              color={new THREE.Color(`#${STAR_META[starType]?.hex || "ffffff"}`)}
+              showWeather={filters.layers.has("weatherSystems") && !!body.atmosphere}
+              showCityLights={filters.layers.has("cityLights")}
+              quality={quality}
+              terrainSeed={body.terrainSeed}
+              geographyType={body.geographyType}
+              grayscale={!isSystemExplored}
+            />
           </mesh>
-          {/* Solar Panels / Radiators */}
-          <mesh rotation={[0, 0, Math.PI / 2]}>
-            <boxGeometry args={[visualSize * 3.8, visualSize * 0.1, visualSize * 1.2]} />
-            <meshStandardMaterial color="#1a2538" metalness={0.9} roughness={0.2} emissive="#0d1b2a" emissiveIntensity={0.5} />
-          </mesh>
-          {/* Habitat Ring */}
-          <mesh rotation={[Math.PI / 2, 0, 0]}>
-            <torusGeometry args={[visualSize * 1.4, visualSize * 0.25, 16, 48]} />
-            <meshStandardMaterial color="#a0b0c0" metalness={0.6} roughness={0.4} />
-          </mesh>
-          {/* Docking Bay / Engineering Glow */}
-          <mesh position={[0, visualSize * 1.3, 0]}>
-            <cylinderGeometry args={[visualSize * 0.45, visualSize * 0.45, visualSize * 0.25, 16]} />
-            <meshStandardMaterial color="#3a4a5a" emissive="#00ffff" emissiveIntensity={1.2} />
-          </mesh>
-        </group>
-      ) : (
-        <mesh 
-          ref={sphereRef}
-          scale={body.subtype === "asteroid" ? [1.0 + rotationSeed * 0.4, 1.0 + (1.0 - rotationSeed) * 0.2, 1.0 + rotationSeed * 0.3] : [1, 1, 1]}
-        >
-          {body.subtype === "asteroid" ? (
-            // Smaller asteroids are more irregular; larger ones become spherical due to gravity.
-            <dodecahedronGeometry args={[visualSize, body.size < 1.0 ? 0 : (body.size < 1.5 ? 1 : 2)]} />
-          ) : (
-            <sphereGeometry args={[visualSize, quality === "low" ? 16 : (quality === "medium" ? 32 : 64), quality === "low" ? 16 : (quality === "medium" ? 32 : 64)]} />
-          )}
-          <PlanetMaterial 
-            subtype={body.subtype} 
-            hue={body.hue} 
-            lightDir={lightDirRef.current}
-            starWorldPos={starWorldPos}
-            starViewPos={starViewPosRef.current}
-            planetViewPos={parentBody ? planetViewPosRef.current : undefined}
-            parentSize={parentBody ? parentBody.size * 1.05 : 0}
-            moonOccluders={!parentBody ? moonOccluderBuf.current : undefined}
-            color={new THREE.Color(`#${STAR_META[starType]?.hex || "ffffff"}`)}
-            showWeather={filters.layers.has("weatherSystems") && !!body.atmosphere}
-            showCityLights={filters.layers.has("cityLights")}
-            quality={quality}
-            terrainSeed={body.terrainSeed}
-            geographyType={body.geographyType}
-            grayscale={!isSystemExplored}
-          />
-        </mesh>
-      )}
+        )}
 
-      {/* Planetary Shield Orb - Multi-layered for volume */}
-      {body.isShielded && (
-        <group>
-          {/* Main Shield Shell */}
-          <mesh scale={1.15}>
-            <sphereGeometry args={[visualSize, quality === "low" ? 16 : 32, quality === "low" ? 16 : 32]} />
-            <meshBasicMaterial 
-              color="#7be9ff" 
-              transparent 
-              opacity={0.2} 
-              blending={THREE.AdditiveBlending} 
-              side={THREE.DoubleSide}
-              depthWrite={false}
-            />
-          </mesh>
-          {/* Outer Shield Glow */}
-          <mesh scale={1.22}>
-            <sphereGeometry args={[visualSize, quality === "low" ? 16 : 32, quality === "low" ? 16 : 32]} />
-            <meshBasicMaterial 
-              color="#00ffff" 
-              transparent 
-              opacity={0.1} 
-              blending={THREE.AdditiveBlending} 
-              side={THREE.BackSide}
-              depthWrite={false}
-            />
-          </mesh>
-        </group>
-      )}
+        {/* Moving Weather System (Clouds) - Tilted with the planet */}
+        {filters.layers.has("weatherSystems") && !!body.atmosphere && (
+          <CloudLayer body={body} visualSize={visualSize} quality={quality || "high"} starWorldPos={starWorldPos} starViewPos={starViewPosRef.current} />
+        )}
+
+        {/* Premium Atmospheric Effects - Tilted with the planet */}
+        {body.atmosphere && (
+          <>
+            {/* Main Atmosphere Glow */}
+            <mesh scale={1.025}>
+              <sphereGeometry args={[visualSize, quality === "low" ? 16 : 32, quality === "low" ? 16 : 32]} />
+              <meshBasicMaterial
+                color={atmoColor}
+                transparent
+                opacity={0.18}
+                side={THREE.BackSide}
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
+              />
+            </mesh>
+            {/* Outer Glow */}
+            <mesh scale={1.08}>
+              <sphereGeometry args={[visualSize, 32, 32]} />
+              <meshBasicMaterial
+                color={atmoColor}
+                transparent
+                opacity={0.06}
+                side={THREE.BackSide}
+                depthWrite={false}
+                blending={THREE.AdditiveBlending}
+              />
+            </mesh>
+          </>
+        )}
+
+        {/* Planetary Rings — Tilted with the planet */}
+        {body.hasRings && body.type === "gas_giant" && (
+          <PlanetaryRing
+            radius={visualSize}
+            innerRadius={visualSize * 1.35}
+            outerRadius={visualSize * 2.25}
+            color={!isSystemExplored ? new THREE.Color().setHSL((body.ringHue ?? 30) / 360, 0, 0.4) : ringColor}
+          />
+        )}
+        {/* Planetary Shield Orb - Tilted with the planet */}
+        {body.isShielded && (
+          <group>
+            {/* Main Shield Shell */}
+            <mesh scale={1.15}>
+              <sphereGeometry args={[visualSize, quality === "low" ? 16 : 32, quality === "low" ? 16 : 32]} />
+              <meshBasicMaterial 
+                color="#7be9ff" 
+                transparent 
+                opacity={0.2} 
+                blending={THREE.AdditiveBlending} 
+                side={THREE.DoubleSide}
+                depthWrite={false}
+              />
+            </mesh>
+            {/* Outer Shield Glow */}
+            <mesh scale={1.22}>
+              <sphereGeometry args={[visualSize, quality === "low" ? 16 : 32, quality === "low" ? 16 : 32]} />
+              <meshBasicMaterial 
+                color="#00ffff" 
+                transparent 
+                opacity={0.1} 
+                blending={THREE.AdditiveBlending} 
+                side={THREE.BackSide}
+                depthWrite={false}
+              />
+            </mesh>
+          </group>
+        )}
+      </group>
 
       {/* Empire Territory Marker (System View) */}
       {filters.layers.has("empireColors") && body.ownerId && galaxy && (
         <TerritoryMarker body={body} visualSize={visualSize} galaxy={galaxy} />
-      )}
-
-      {/* Moving Weather System (Clouds) - Separate transparent layer */}
-      {filters.layers.has("weatherSystems") && !!body.atmosphere && (
-        <CloudLayer body={body} visualSize={visualSize} quality={quality || "high"} starWorldPos={starWorldPos} starViewPos={starViewPosRef.current} />
       )}
 
       {/* Invisible Hitbox for easier selection — Billboard ensures it's always a flat disk facing the camera */}
@@ -1122,46 +1179,6 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
       </mesh>
 
       {/* Fog of War is now handled via the grayscale prop on PlanetMaterial */}
-
-      {/* Premium Atmospheric Effects - Only show if body has an atmosphere */}
-      {body.atmosphere && (
-        <>
-          {/* Main Atmosphere Glow */}
-          <mesh scale={1.025}>
-            <sphereGeometry args={[visualSize, quality === "low" ? 16 : 32, quality === "low" ? 16 : 32]} />
-            <meshBasicMaterial
-              color={atmoColor}
-              transparent
-              opacity={0.18}
-              side={THREE.BackSide}
-              depthWrite={false}
-              blending={THREE.AdditiveBlending}
-            />
-          </mesh>
-          {/* Outer Glow */}
-          <mesh scale={1.08}>
-            <sphereGeometry args={[visualSize, 32, 32]} />
-            <meshBasicMaterial
-              color={atmoColor}
-              transparent
-              opacity={0.06}
-              side={THREE.BackSide}
-              depthWrite={false}
-              blending={THREE.AdditiveBlending}
-            />
-          </mesh>
-        </>
-      )}
-
-      {/* Planetary Rings — rendered as sibling so they don't spin with the planet */}
-      {body.hasRings && body.type === "gas_giant" && (
-        <PlanetaryRing
-          radius={visualSize}
-          innerRadius={visualSize * 1.35}
-          outerRadius={visualSize * 2.25}
-          color={!isSystemExplored ? new THREE.Color().setHSL((body.ringHue ?? 30) / 360, 0, 0.4) : ringColor}
-        />
-      )}
 
       {/* Body Label */}
       {view !== "galaxy" && filters.layers.has("objectLabels") && (
@@ -1180,7 +1197,6 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
           </div>
         </Html>
       )}
-
 
       {/* Moon Orbits & Nodes relative to planet */}
       {body.type !== "moon" && galaxy.systemById[body.systemId].bodies
@@ -1390,7 +1406,7 @@ const SectorLabels = memo(function SectorLabels({ sectors }: { sectors: Sector[]
 
 /* ---------- Dynamic Orbit ---------- */
 function DynamicOrbit({ radius, color, systemPos }: { radius: number; color: string; systemPos: THREE.Vector3 }) {
-  const lineRef = useRef<any>(null);
+  const lineRef = useRef<THREE.Line>(null);
   const points = useMemo(() => {
     const pts = [];
     const segments = 128;
@@ -1529,7 +1545,7 @@ function JumpGateVisual({ isLocked }: { isLocked: boolean }) {
   );
 }
 
-function JumpGateMarkers({ system, galaxy, onSelect, filters }: { system: StarSystem; galaxy: Galaxy; onSelect: (id: string) => void; filters: any }) {
+function JumpGateMarkers({ system, galaxy, onSelect, filters }: { system: StarSystem; galaxy: Galaxy; onSelect: (id: string) => void; filters: FilterState }) {
   const outer = getSystemGateRadius(system);
   return (
     <group>
@@ -1641,10 +1657,17 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     }
   }, [playerSystemId, travel]);
   
+  const appStartTimeRef = useRef<number | null>(null);
+  
   // Tracking update.
-  useFrame((state) => {
+  useFrame((state, delta) => {
     if (!groupRef.current) return;
-    const now = Date.now();
+    
+    if (appStartTimeRef.current === null) {
+      appStartTimeRef.current = Date.now() - state.clock.elapsedTime * 1000;
+    }
+    const now = state.clock.elapsedTime * 1000 + appStartTimeRef.current;
+    
     const sourceSys = galaxy.systemById[playerSystemId];
     if (!sourceSys) return;
 
@@ -1692,17 +1715,17 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
       const idealCharge = 2500;
       const idealJump = 1000;
       const idealTotal = idealTransit + idealCharge + idealJump;
-      const scaleFactor = Math.min(1.0, (total * 0.5) / idealTotal);
-      const transitTime = idealTransit * scaleFactor;
-      const chargeTime = idealCharge * scaleFactor;
-      const jumpTime = idealJump * scaleFactor;
+      const scaleFactor = Math.max(0.0001, (total * 0.5) / Math.max(0.0001, idealTotal));
+      const transitTime = Math.max(0.0001, idealTransit * scaleFactor);
+      const chargeTime = Math.max(0.0001, idealCharge * scaleFactor);
+      const jumpTime = Math.max(0.0001, idealJump * scaleFactor);
       const departureTotal = transitTime + chargeTime + jumpTime;
 
       if (total === 0) {
         scale = 0;
       } else if (elapsed < departureTotal) {
         if (elapsed < transitTime) {
-          const p = elapsed / transitTime;
+          const p = Math.max(0, Math.min(1, elapsed / Math.max(0.0001, transitTime)));
           const t = Math.pow(p, 1.2); 
           if (view === 'galaxy') {
             const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
@@ -1713,7 +1736,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           engineIntensity = (0.8 + t * 2.5) * (1.0 + Math.random() * 0.15);
           if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
         } else if (elapsed < transitTime + chargeTime) {
-          const p = (elapsed - transitTime) / chargeTime;
+          const p = Math.max(0, Math.min(1, (elapsed - transitTime) / Math.max(0.0001, chargeTime)));
           if (view === 'galaxy') {
             const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
             globalPos.set(sourceSys.pos[0] + starRadius * 0.4, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 0.4);
@@ -1723,7 +1746,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           engineIntensity = 2.5 + Math.sin(p * Math.PI * 10) * 1.0;
           if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
         } else {
-          const p = (elapsed - (transitTime + chargeTime)) / jumpTime;
+          const p = Math.max(0, Math.min(1, (elapsed - (transitTime + chargeTime)) / Math.max(0.0001, jumpTime)));
           if (view === 'galaxy') {
             const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
             globalPos.set(sourceSys.pos[0] + starRadius * 0.4, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 0.4);
@@ -1743,7 +1766,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
         }
       } else if (elapsed < total) {
         hasJumpedRef.current = false;
-        const t = (elapsed - departureTotal) / Math.max(1, total - departureTotal);
+        const t = Math.max(0, Math.min(1, (elapsed - departureTotal) / Math.max(1, total - departureTotal)));
         if (view === 'galaxy') {
           const sourceCenter = new THREE.Vector3(...sourceSys.pos);
           const targetCenter = new THREE.Vector3(...targetSys.pos);
@@ -1772,12 +1795,12 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
         targetIdlePos = getIdlePos(targetSys.pos, targetSys.starType, expectedArrivalEndTime);
         const localDist = gatePos.distanceTo(targetIdlePos);
         transitTime = (localDist / SUB_LIGHT_VELOCITY) * 1200;
-        arrivalTotal = transitTime + matTime;
+        arrivalTotal = Math.max(1, transitTime + matTime);
         expectedArrivalEndTime = arrivalState.time + arrivalTotal;
       }
       if (elapsed < arrivalTotal) {
         if (elapsed < matTime) {
-          const p = elapsed / matTime;
+          const p = Math.max(0, Math.min(1, elapsed / Math.max(1, matTime)));
           if (view === 'galaxy') {
             const starRadius = STAR_BASE_SIZE[targetSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
             globalPos.set(targetSys.pos[0] + starRadius * 3.0, targetSys.pos[1], targetSys.pos[2] - starRadius * 3.0);
@@ -1796,8 +1819,8 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           intensityRef.current = engineIntensity;
         } else {
           hasMattedRef.current = false;
-          const p = (elapsed - matTime) / transitTime;
-          const eased = 1 - Math.pow(1 - p, 2.0);
+          const p = (elapsed - matTime) / Math.max(1, transitTime);
+          const eased = 1 - Math.pow(1 - Math.max(0, Math.min(1, p)), 2.0);
           if (view === 'galaxy') {
             const starRadius = STAR_BASE_SIZE[targetSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
             globalPos.set(targetSys.pos[0] + starRadius * 0.4, targetSys.pos[1], targetSys.pos[2] - starRadius * 0.4);
@@ -1831,6 +1854,11 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     if (view === 'galaxy') {
       scale = 0;
     }
+    // Clamp group position to finite values to prevent linearRampToValueAtTime errors in Three.js Audio
+    if (!Number.isFinite(globalPos.x) || !Number.isFinite(globalPos.y) || !Number.isFinite(globalPos.z)) {
+       globalPos.set(0, 0, 0); 
+    }
+    
     groupRef.current.position.copy(globalPos);
     groupRef.current.updateWorldMatrix(true, false);
     if (labelGroupRef.current) {
@@ -1853,10 +1881,12 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
       if (!isAudible) {
         engineSoundRef.current.setVolume(0);
       } else {
-        const vol = Math.max(0.01, Math.min(0.4, engineIntensity * 0.1));
-        engineSoundRef.current.setVolume(vol);
+        const safeIntensity = Number.isFinite(engineIntensity) ? engineIntensity : 0.4;
+        const vol = Math.max(0, Math.min(0.4, safeIntensity * 0.1));
+        engineSoundRef.current.setVolume(Number.isFinite(vol) ? vol : 0);
         if (engineSoundRef.current.source) {
-          engineSoundRef.current.setPlaybackRate(0.7 + engineIntensity * 0.5);
+          const rate = 0.7 + safeIntensity * 0.5;
+          engineSoundRef.current.setPlaybackRate(Number.isFinite(rate) ? rate : 1.0);
         }
       }
     }
@@ -1873,6 +1903,8 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
         hasInitialPosRef.current = true;
       } else {
         controls.moveTo(targetX, targetY, targetZ, false);
+        controls.update(delta);
+        state.camera.updateMatrixWorld();
       }
     } else {
       hasInitialPosRef.current = false;

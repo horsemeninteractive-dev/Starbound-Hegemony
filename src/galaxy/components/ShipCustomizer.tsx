@@ -31,7 +31,7 @@ const ShipPreview = memo(({ config, previewIntensityRef }: { config: ShipConfigu
       <SpaceBackground view="system" starType="A" quality="high" />
       
       <group position={[0, -0.2, 0]}>
-        <ModularShip config={config} engineIntensityRef={previewIntensityRef as any} engineColor={config.accentColor} />
+        <ModularShip config={config} engineIntensityRef={previewIntensityRef} engineColor={config.accentColor} />
       </group>
       
       <OrbitControls 
@@ -50,7 +50,7 @@ export function ShipCustomizer({ config, onChange, playClick }: Props) {
   const [activeTab, setActiveTab] = useState<ShipComponentType>('hull');
   const previewIntensityRef = useRef(0.8);
 
-  const tabs: { id: ShipComponentType; label: string; icon: any }[] = [
+  const tabs: { id: ShipComponentType; label: string; icon: React.ElementType }[] = [
     { id: 'hull', label: 'HULL', icon: Shield },
     { id: 'wings', label: 'WINGS', icon: Layout },
     { id: 'engines', label: 'ENGINES', icon: Rocket },

@@ -4,22 +4,23 @@ import { useEffect, useRef, useCallback } from "react";
  * useAudio hook manages the application's audio state and provides methods to play sound effects.
  * Wired up to all interactive UI elements for a premium, tactile experience.
  */
+
+// Audio sources
+const SOURCES = {
+  ambient: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/ambient.wav",
+  click: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/click.wav",
+  transition: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/transition.wav",
+  expand: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/expand.wav",
+  collapse: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/collapse.wav",
+  alert: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/alert.wav",
+  success: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/success.wav",
+  type: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/type.wav",
+  notification: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/notification.wav",
+};
+
 export function useAudio(enabled: boolean, musicVolume: number, sfxVolume: number) {
   const ambientRef = useRef<HTMLAudioElement | null>(null);
   
-  // Audio sources
-  const SOURCES = {
-    ambient: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/ambient.wav",
-    click: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/click.wav",
-    transition: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/transition.wav",
-    expand: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/expand.wav",
-    collapse: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/collapse.wav",
-    alert: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/alert.wav",
-    success: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/success.wav",
-    type: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/type.wav",
-    notification: "https://storage.googleapis.com/run-sources-starbound-hegemony-europe-west1/assets/sound/notification.wav",
-  };
-
   // Preload SFX for low latency
   const sfxPool = useRef<Record<string, HTMLAudioElement[]>>({});
 
@@ -128,7 +129,7 @@ export function useAudio(enabled: boolean, musicVolume: number, sfxVolume: numbe
       sfx.volume = sfxVolume * 0.5;
       sfx.play().catch(() => {});
     }
-  }, [getSfx]);
+  }, [getSfx, sfxVolume]);
 
   const playNotification = useCallback(() => {
     const sfx = getSfx("notification");

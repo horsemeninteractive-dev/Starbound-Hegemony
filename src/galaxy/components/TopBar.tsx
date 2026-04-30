@@ -40,6 +40,7 @@ interface Props {
   currentTime: number;
   galaxy: Galaxy;
   onRegenerate: () => void;
+  onReset: () => void;
   onSetAp: (val: number) => void;
   onPlayClick?: () => void;
   isGameReady?: boolean;
@@ -63,7 +64,7 @@ export function TopBar({
   onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills,
   ap, sc, playerName, playerLevel, playerXP, xpToNextLevel, playerAvatar,
   fogOfWar, setFogOfWar, instantJump, setInstantJump,
-  playerSystemName, travel, currentTime, galaxy, onRegenerate, onSetAp, onPlayClick, isGameReady = true
+  playerSystemName, travel, currentTime, galaxy, onRegenerate, onReset, onSetAp, onPlayClick, isGameReady = true
 }: Props) {
   // Game menu state - Radix Sheet handles escape/outside-click automatically
   const [menuOpen, setMenuOpen] = useState(false);
@@ -221,6 +222,14 @@ export function TopBar({
               <DropdownMenuLabel className="text-primary/40 text-[9px]">Neural Debug Interface</DropdownMenuLabel>
               <DropdownMenuSeparator className="bg-primary/10" />
               
+              <DropdownMenuItem 
+                onClick={() => { onReset(); onPlayClick?.(); }}
+                className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5"
+              >
+                <Compass size={14} />
+                <span>Reset Ship & Logs</span>
+              </DropdownMenuItem>
+
               <DropdownMenuItem 
                 onClick={() => { onRegenerate(); onPlayClick?.(); }}
                 className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5"

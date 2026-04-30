@@ -18,6 +18,7 @@ import { SettingsModal } from "@/galaxy/components/SettingsModal";
 import { MiniMap } from "@/galaxy/components/MiniMap";
 import { CommanderOnboarding } from "@/galaxy/components/CommanderOnboarding";
 import { ShipCustomizer } from "@/galaxy/components/ShipCustomizer";
+import { type ShipConfiguration } from "@/galaxy/shipPresets";
 import { AuthScreen } from "@/galaxy/components/AuthScreen";
 import { useAudio } from "@/galaxy/useAudio";
 import logo from "@/assets/logo.png";
@@ -106,7 +107,7 @@ const Index = () => {
     }
   }), [withLoading, playClick, playAlert, openSystem, openShip, openBody, galaxy, fogOfWar, exploredSystemIds]);
 
-  const handleOnboardingComplete = (name: string, avatar: string, shipConfig: any) => {
+  const handleOnboardingComplete = (name: string, avatar: string, shipConfig: ShipConfiguration) => {
     setPlayerName(name);
     setPlayerAvatar(avatar);
     app.setShipConfig(shipConfig);
@@ -169,6 +170,7 @@ const Index = () => {
           currentTime={app.currentTime}
           galaxy={app.galaxy}
           onRegenerate={app.regenerateGalaxy}
+          onReset={app.resetGalaxy}
           onSetAp={app.setAp}
           onPlayClick={playClick}
           isGameReady={isGameReady}
