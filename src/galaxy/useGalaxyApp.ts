@@ -71,7 +71,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
     const saved = localStorage.getItem("shipConfig");
     return saved ? JSON.parse(saved) : DEFAULT_SHIP_CONFIG;
   });
-  const [page, setPage] = useState<"map" | "profile" | "articles" | "factories" | "fleets" | "party" | "skills" | "shipyard">("map");
+  const [page, setPage] = useState<"map" | "profile" | "articles" | "factories" | "fleets" | "party" | "skills" | "shipyard" | "empire">("map");
+  const [selectedEmpireId, setSelectedEmpireId] = useState<string | null>(null);
   const [systemId, setSystemId] = useState<string | null>(() => localStorage.getItem("systemId"));
   const [bodyId, setBodyId] = useState<string | null>(() => localStorage.getItem("bodyId"));
   const [hoverSystemId, setHoverSystemId] = useState<string | null>(null);
@@ -82,6 +83,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [audioEnabled, setAudioEnabled] = useState(() => localStorage.getItem("audioEnabled") !== "false");
   const [musicVolume, setMusicVolume] = useState(() => Number(localStorage.getItem("musicVolume") ?? 0.4));
   const [sfxVolume, setSfxVolume] = useState(() => Number(localStorage.getItem("sfxVolume") ?? 0.6));
+  const [fxVolume, setFxVolume] = useState(() => Number(localStorage.getItem("fxVolume") ?? 0.5));
 
   // --- SUPABASE SYNC LOGIC ---
 
@@ -270,6 +272,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
   useEffect(() => { localStorage.setItem("audioEnabled", String(audioEnabled)); }, [audioEnabled]);
   useEffect(() => { localStorage.setItem("musicVolume", String(musicVolume)); }, [musicVolume]);
   useEffect(() => { localStorage.setItem("sfxVolume", String(sfxVolume)); }, [sfxVolume]);
+  useEffect(() => { localStorage.setItem("fxVolume", String(fxVolume)); }, [fxVolume]);
 
   // Unified Global Timer: AP regeneration and Clock Update
   useEffect(() => {
@@ -523,6 +526,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
     setOnboardingCompleted,
     setPage,
     page,
+    selectedEmpireId,
+    setSelectedEmpireId,
     xpToNextLevel: playerLevel * 1000,
     openSystem,
     openBody,
@@ -553,6 +558,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
     setMusicVolume,
     sfxVolume,
     setSfxVolume,
+    fxVolume,
+    setFxVolume,
     user,
     sessionLoading,
   };

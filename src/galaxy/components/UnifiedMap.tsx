@@ -1,9 +1,9 @@
-import { useMemo, useRef, useEffect, useState } from "react";
+import { useMemo, useRef, useEffect, useState, useCallback } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { CameraControls, Html, PerspectiveCamera, Line, Billboard, PositionalAudio, Environment } from "@react-three/drei";
 import { Rocket, ChevronUp } from "lucide-react";
 import * as THREE from "three";
-import type { Galaxy, StarSystem, Body, Sector, ContestState, StarType } from "@/galaxy/types";
+import type { Galaxy, StarSystem, Body, Empire, Sector, ContestState, StarType } from "@/galaxy/types";
 import type { FilterState, ViewMode } from "@/galaxy/useGalaxyApp";
 import { SpaceBackground } from "./SpaceBackground";
 import { StarVisual } from "./StarVisual";
@@ -73,95 +73,91 @@ const createCelestialBuffer = (ctx: AudioContext, type: string, subtype?: string
     if (type === "star") {
       if (isBlackHole) {
         // Haunted gravitational distortion
-        s = Math.sin(2 * Math.PI * 40 * t + Math.sin(t * 15) * 5) * 0.4;
-        s += (Math.random() * 2 - 1) * 0.1 * Math.sin(t * 2);
+        s = Math.sin(2 * Math.PI * 40 * t + Math.sin(t * 15) * 5) * 0.35;
+        s += (Math.random() * 2 - 1) * 0.08 * Math.sin(t * 2);
       } else if (isPulsar) {
         // Rhythmic "crystalline" chirps
         const pulse = Math.pow(Math.sin(t * 12.0 * Math.PI), 16.0);
-        s = Math.sin(2 * Math.PI * 800 * t) * pulse * 0.6;
-        s += (Math.random() * 2 - 1) * 0.1 * pulse;
+        s = Math.sin(2 * Math.PI * 800 * t) * pulse * 0.5;
+        s += (Math.random() * 2 - 1) * 0.05 * pulse;
       } else {
-        // Roiling plasma rumble
-        const freq = (starType === "O" || starType === "B") ? 120 : 60;
-        s = Math.sin(2 * Math.PI * freq * t) * 0.5;
-        s += Math.sin(2 * Math.PI * (freq * 0.5) * t) * 0.3;
-        s += (Math.random() * 2 - 1) * 0.15; // chaotic solar winds
+        // Roiling plasma rumble - use smoothed frequencies
+        const freq = (starType === "O" || starType === "B") ? 110 : 55;
+        s = Math.sin(2 * Math.PI * freq * t) * 0.4;
+        s += Math.sin(2 * Math.PI * (freq * 0.5) * t) * 0.2;
+        s += (Math.random() * 2 - 1) * 0.12; 
       }
     } else if (type === "gas_giant") {
-      // Thick atmospheric roaring
-      s = (Math.random() * 2 - 1) * 0.3;
-      // Simple low-pass filter effect via averaging
-      if (i > 0) data[i] = data[i-1] * 0.95 + s * 0.05;
-      s = data[i] * 5.0; 
+      // Thick atmospheric roaring - smoothed to prevent clipping
+      const raw = (Math.random() * 2 - 1) * 0.25;
+      if (i > 0) data[i] = data[i-1] * 0.98 + raw * 0.02;
+      s = data[i] * 3.0; 
     } else if (type === "terrestrial") {
       // Geological hum / sparse wind
-      s = Math.sin(2 * Math.PI * 45 * t) * 0.2;
-      if (Math.random() < 0.01) s += (Math.random() * 2 - 1) * 0.5;
+      s = Math.sin(2 * Math.PI * 45 * t) * 0.15;
+      if (Math.random() < 0.005) s += (Math.random() * 2 - 1) * 0.3;
     } else if (type === "station") {
-      // Industrial / Machinery
-      if (subtype === "station_hub") {
-        // High-frequency hub activity / data chatter
-        s = Math.sin(2 * Math.PI * 220 * t) * 0.15;
-        s += (Math.random() * 2 - 1) * 0.1 * Math.sin(t * 8);
-      } else if (subtype === "station_refinery") {
-        // Heavy rhythmic machinery
-        const beat = Math.pow(Math.sin(t * 1.5 * Math.PI), 12.0);
-        s = Math.sin(2 * Math.PI * 35 * t) * 0.6;
-        s += (Math.random() * 2 - 1) * 0.4 * beat;
-      } else if (subtype === "machine") {
-         // Dyson collector high-pitch "singing"
-         s = Math.sin(2 * Math.PI * 440 * t) * 0.1;
-         s += Math.sin(2 * Math.PI * 880 * t) * 0.05;
-      } else {
-        // Habitat life support / ambient crowds
-        s = Math.sin(2 * Math.PI * 55 * t) * 0.3;
-        s += Math.sin(2 * Math.PI * 110 * t) * 0.15;
-      }
+      // Industrial drone
+      s = Math.sin(2 * Math.PI * 220 * t) * 0.1;
+      s += Math.sin(2 * Math.PI * 440 * t) * 0.05;
+      s += (Math.random() * 2 - 1) * 0.02;
+    } else if (type === "moon") {
+      // Cold, hollow void sound
+      const raw = (Math.random() * 2 - 1) * 0.15;
+      if (i > 0) data[i] = data[i-1] * 0.99 + raw * 0.01;
+      s = data[i] * 2.0;
     } else if (type === "gate") {
-      // Spatial distortion "portal" sound
-      s = Math.sin(2 * Math.PI * 220 * t + Math.sin(t * 5.0) * 12.0) * 0.25;
-      s += (Math.random() * 2 - 1) * 0.08;
-    } else {
-      // Moon: Quiet silicate hum
-      s = Math.sin(2 * Math.PI * 55 * t) * 0.1;
+      // High-pitched spatial tear
+      s = Math.sin(2 * Math.PI * (1200 + Math.sin(t * 5) * 200) * t) * 0.08;
+      s += (Math.random() * 2 - 1) * 0.02;
     }
 
-    data[i] = s * 0.15; // Master celestial volume
+    // Apply a subtle fade in/out to the entire buffer to prevent clicks on loop
+    const fade = 0.01 * ctx.sampleRate;
+    let multiplier = 1.0;
+    if (i < fade) multiplier = i / fade;
+    if (i > buffer.length - fade) multiplier = (buffer.length - i) / fade;
+    
+    data[i] = Math.max(-1, Math.min(1, s * multiplier));
   }
   return buffer;
 };
 
+
 function CelestialAudio({ type, subtype, starType, scale, listener }: { type: string, subtype?: string, starType?: string, scale: number, listener: THREE.AudioListener | null }) {
-  const soundRef = useRef<THREE.PositionalAudio>(null);
-  
-  useEffect(() => {
-    if (!listener || !soundRef.current) return;
+  const soundNodeRef = useRef<THREE.PositionalAudio | null>(null);
+
+  const setAudioRef = useCallback((node: THREE.PositionalAudio | null) => {
+    if (soundNodeRef.current) {
+      try { soundNodeRef.current.stop(); } catch (_) {}
+    }
+    soundNodeRef.current = node;
+
+    if (!node || !listener) return;
     const ctx = listener.context;
-    
+
     const buffer = createCelestialBuffer(ctx, type, subtype, starType);
-    soundRef.current.setBuffer(buffer);
-    soundRef.current.setRefDistance(scale * 2.0);
-    soundRef.current.setRolloffFactor(2.5); // Steep falloff for celestial bodies
-    soundRef.current.setLoop(true);
-    
-    // Random start offset to prevent phasing when multiple bodies are near
-    soundRef.current.offset = Math.random() * 2.0;
-    
+    node.setBuffer(buffer);
+    node.setRefDistance(scale * 2.5);
+    node.setRolloffFactor(1.5); // Smoother falloff
+    node.setDistanceModel('exponential'); // More natural spatial attenuation
+    node.setLoop(true);
+    node.offset = Math.random() * 2.0;
+
     try {
-      soundRef.current.play();
+      // Ramp volume up slowly (50ms) to prevent clicks
+      node.setVolume(0);
+      node.play();
+      if (node.gain) {
+        node.gain.gain.setTargetAtTime(1.0, ctx.currentTime, 0.05);
+      }
     } catch (e) {
       console.warn("Audio play failed:", e);
     }
-    
-    return () => {
-      if (soundRef.current) {
-        try { soundRef.current.stop(); } catch(e) {}
-      }
-    };
   }, [listener, type, subtype, starType, scale]);
 
   if (!listener) return null;
-  return <positionalAudio ref={soundRef} args={[listener]} />;
+  return <positionalAudio ref={setAudioRef} args={[listener]} />;
 }
 
 // Shared temporary vectors for internal calculations within a single function call.
@@ -222,6 +218,8 @@ interface Props {
   isMobilePanelExpanded?: boolean;
   graphicsQuality?: "low" | "medium" | "high";
   shipConfig?: ShipConfiguration;
+  /** Master volume for all positional/FX audio (0–1). Drives AudioListener gain. */
+  fxVolume?: number;
 }
 
 /** 
@@ -255,12 +253,31 @@ function MapContent({
   galaxy, view, system, body, filters, 
   onSelectSystem, onSelectBody, onHoverSystem, hoverSystemId, 
   fogOfWar, exploredSystemIds, knownSystemIds, systemMatchesFilter,
-  currentSystemId, travel, isMobilePanelExpanded, containerRef, graphicsQuality, shipConfig
+  currentSystemId, travel, isMobilePanelExpanded, containerRef, graphicsQuality, shipConfig, fxVolume = 0.5
 }: Props & { containerRef: React.RefObject<HTMLDivElement> }) {
   const { camera, gl } = useThree();
   const controlsRef = useRef<CameraControls>(null);
   const [listener, setListener] = useState<THREE.AudioListener | null>(null);
   const lastSystemRef = useRef<StarSystem | null>(null);
+
+  // Sync fxVolume → AudioListener master volume whenever it changes.
+  // setMasterVolume drives the GainNode that all PositionalAudio sources route through.
+  useEffect(() => {
+    if (!listener) return;
+    listener.setMasterVolume(Math.max(0, Math.min(1, fxVolume)));
+  }, [listener, fxVolume]);
+
+  // Resume AudioContext after a system jump.
+  // The browser suspends the AudioContext when no user gesture occurs in the
+  // current task (which is exactly what happens during automatic hypergate travel).
+  // Watching `system?.id` catches every cross-system transition.
+  useEffect(() => {
+    if (!listener) return;
+    const ctx = listener.context;
+    if (ctx.state === "suspended") {
+      ctx.resume().catch(() => {});
+    }
+  }, [listener, system?.id]);
 
   const lastViewRef = useRef<ViewMode>(view);
 
@@ -1824,38 +1841,49 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
   const prevPosRef = useRef(new THREE.Vector3());
   const arrivalDoneRef = useRef(false);
   
-  const jumpSoundRef = useRef<THREE.PositionalAudio>(null);
-  const matSoundRef = useRef<THREE.PositionalAudio>(null);
-  const engineSoundRef = useRef<THREE.PositionalAudio>(null);
+  // Use direct refs for imperative access during useFrame
+  const jumpSoundRef = useRef<THREE.PositionalAudio | null>(null);
+  const matSoundRef = useRef<THREE.PositionalAudio | null>(null);
+  const engineSoundRef = useRef<THREE.PositionalAudio | null>(null);
   const hasJumpedRef = useRef(false);
   const hasMattedRef = useRef(false);
   const intensityRef = useRef(0.4);
 
-  // Initialize synthesized buffers
-  useEffect(() => {
-    if (!listener) return;
+  // Ref callbacks: fire after the PositionalAudio node is added to the scene graph,
+  // avoiding the useEffect race where the ref is still null on first render.
+  const setJumpRef = useCallback((node: THREE.PositionalAudio | null) => {
+    jumpSoundRef.current = node;
+    if (!node || !listener) return;
     const ctx = listener.context;
-    
-    if (jumpSoundRef.current) {
-      jumpSoundRef.current.setBuffer(createJumpBuffer(ctx));
-      jumpSoundRef.current.setRefDistance(15);
-      jumpSoundRef.current.setRolloffFactor(1.1);
-      jumpSoundRef.current.setVolume(0.2);
-    }
-    if (matSoundRef.current) {
-      matSoundRef.current.setBuffer(createMatBuffer(ctx));
-      matSoundRef.current.setRefDistance(15);
-      matSoundRef.current.setRolloffFactor(1.1);
-      matSoundRef.current.setVolume(0.2);
-    }
+    node.setBuffer(createJumpBuffer(ctx));
+    node.setRefDistance(15);
+    node.setRolloffFactor(1.1);
+    node.setVolume(0.2);
+  }, [listener]);
+
+  const setMatRef = useCallback((node: THREE.PositionalAudio | null) => {
+    matSoundRef.current = node;
+    if (!node || !listener) return;
+    const ctx = listener.context;
+    node.setBuffer(createMatBuffer(ctx));
+    node.setRefDistance(15);
+    node.setRolloffFactor(1.1);
+    node.setVolume(0.2);
+  }, [listener]);
+
+  const setEngineRef = useCallback((node: THREE.PositionalAudio | null) => {
     if (engineSoundRef.current) {
-      engineSoundRef.current.setBuffer(createEngineBuffer(ctx));
-      engineSoundRef.current.setRefDistance(20);
-      engineSoundRef.current.setRolloffFactor(1.0);
-      engineSoundRef.current.setLoop(true);
-      engineSoundRef.current.setVolume(0);
-      engineSoundRef.current.play();
+      try { engineSoundRef.current.stop(); } catch (_) {}
     }
+    engineSoundRef.current = node;
+    if (!node || !listener) return;
+    const ctx = listener.context;
+    node.setBuffer(createEngineBuffer(ctx));
+    node.setRefDistance(20);
+    node.setRolloffFactor(1.0);
+    node.setLoop(true);
+    node.setVolume(0);
+    node.play();
   }, [listener]);
   
   // Camera Tracking Refs
@@ -2142,9 +2170,9 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
       <group ref={groupRef}>
         {listener && (
           <>
-            <positionalAudio ref={jumpSoundRef} args={[listener]} />
-            <positionalAudio ref={matSoundRef} args={[listener]} />
-            <positionalAudio ref={engineSoundRef} args={[listener]} />
+            <positionalAudio ref={setJumpRef} args={[listener]} />
+            <positionalAudio ref={setMatRef} args={[listener]} />
+            <positionalAudio ref={setEngineRef} args={[listener]} />
           </>
         )}
         
@@ -2220,27 +2248,32 @@ const EmpireTerritoryRings = memo(function EmpireTerritoryRings({ galaxy, fogOfW
       if (ownerCounts.size === 0) return [];
       
       const totalOwned = [...ownerCounts.values()].reduce((a, b) => a + b, 0);
+      const isFullyOwned = ownerCounts.size === 1 && totalOwned === sys.bodies.length;
+      
       const segments = [...ownerCounts.entries()]
-        .map(([id, count]) => ({
-          empire: galaxy.empires.find(e => e.id === id)!,
-          proportion: count / totalOwned
-        }))
-        .filter(s => s.empire)
+        .map(([id, count]) => {
+          const emp = galaxy.empires.find(e => e.id === id);
+          if (!emp) return null;
+          return { empire: emp, proportion: count / totalOwned };
+        })
+        .filter((s): s is { empire: Empire; proportion: number } => s !== null)
         .sort((a, b) => b.proportion - a.proportion);
 
-      return [{ sys, segments }];
+      return [{ sys, segments, isFullyOwned }];
     });
   }, [galaxy, fogOfWar, knownSystemIds]);
 
   return (
     <group>
-      {entries.map(({ sys, segments }) => {
+      {entries.map(({ sys, segments, isFullyOwned }) => {
         const starRadius = STAR_BASE_SIZE[sys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
         const innerR = starRadius * 1.8;
-        const ringThickness = 1.2;
+        const ringThickness = isFullyOwned ? 1.8 : 1.2; // Thicker ring for full ownership
         const midR = innerR + ringThickness;
         const outerR = midR + 3.5;
         
+        if (segments.length === 0) return null;
+
         const dominantColor = new THREE.Color().setHSL(segments[0].empire.hue / 360, 0.72, 0.55);
         let currentAngle = 0;
 
@@ -2251,9 +2284,24 @@ const EmpireTerritoryRings = memo(function EmpireTerritoryRings({ galaxy, fogOfW
               <ringGeometry args={[innerR - 0.1, midR + 0.1, 64]} />
               <meshBasicMaterial color="#000000" transparent={true} opacity={1.0} depthWrite={true} />
             </mesh>
+            
+            {/* Sovereignty Aura (Only for fully owned systems) */}
+            {isFullyOwned && (
+              <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.2, 0]}>
+                <ringGeometry args={[midR + 0.5, midR + 6.0, 64]} />
+                <meshBasicMaterial 
+                  color={dominantColor} 
+                  transparent 
+                  opacity={0.08} 
+                  blending={THREE.AdditiveBlending}
+                  depthWrite={false}
+                />
+              </mesh>
+            )}
+
             {/* Proportional Segments */}
             {segments.map((seg) => {
-              const gap = 0.04; // Small angular gap
+              const gap = isFullyOwned ? 0 : 0.04; // No gap if fully owned
               const thetaLength = Math.max(0.01, seg.proportion * Math.PI * 2 - gap);
               const color = new THREE.Color().setHSL(seg.empire.hue / 360, 0.72, 0.55);
               

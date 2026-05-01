@@ -22,7 +22,7 @@ export function GalaxyOverview({ galaxy, hideHeader }: { galaxy: Galaxy; hideHea
 }
 
 /* ======================= SYSTEM OVERVIEW ======================= */
-export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, travel, arrival, initiateJump, getJumpCost, currentTime, isExplored, hideHeader, onPlayClick }: {
+export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, travel, arrival, initiateJump, getJumpCost, currentTime, isExplored, hideHeader, onPlayClick, onSelectEmpire }: {
   system: StarSystem;
   galaxy: Galaxy;
   onSelectBody: (id: string) => void;
@@ -35,6 +35,7 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, t
   isExplored: boolean;
   hideHeader?: boolean;
   onPlayClick?: () => void;
+  onSelectEmpire?: (id: string) => void;
 }) {
   const explored = isExplored || system.id === "sys-center";
   const meta = STAR_META[system.starType];
@@ -129,12 +130,20 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, t
             const emp = galaxy.empires.find((e) => e.id === id);
             if (!emp) return null;
             return (
-              <Row
+              <button
                 key={id}
-                k={emp.tag}
-                v={`${n} body${n > 1 ? "ies" : "y"}`}
-                dotColor={`hsl(${emp.hue} 70% 55%)`}
-              />
+                onClick={() => {
+                  onPlayClick?.();
+                  onSelectEmpire?.(id);
+                }}
+                className="w-full flex items-center justify-between gap-3 text-[11px] hover:bg-primary/5 transition-colors p-1 rounded group"
+              >
+                <span className="font-mono-hud text-[9px] uppercase tracking-widest text-muted-foreground group-hover:text-primary transition-colors">{emp.tag}</span>
+                <span className="flex items-center gap-1.5 text-right text-foreground">
+                  <span className="inline-block w-2 h-2 rounded-full" style={{ background: `hsl(${emp.hue} 70% 55%)` }} />
+                  {n} body{n > 1 ? "ies" : "y"}
+                </span>
+              </button>
             );
           })}
         </>
@@ -230,7 +239,14 @@ function formatLabel(raw: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function BodyOverview({ body, galaxy, hideHeader, isExplored = true, onPlayClick }: { body: Body; galaxy: Galaxy; hideHeader?: boolean; isExplored?: boolean; onPlayClick?: () => void }) {
+export function BodyOverview({ body, galaxy, hideHeader, isExplored = true, onPlayClick, onSelectEmpire }: { 
+  body: Body; 
+  galaxy: Galaxy; 
+  hideHeader?: boolean; 
+  isExplored?: boolean; 
+  onPlayClick?: () => void;
+  onSelectEmpire?: (id: string) => void;
+}) {
   const owner = body.ownerId ? galaxy.empires.find((e) => e.id === body.ownerId) : null;
   
   const zoneColors = { hot: "text-error", temperate: "text-success", cold: "text-info" };
@@ -283,11 +299,21 @@ export function BodyOverview({ body, galaxy, hideHeader, isExplored = true, onPl
           
           <Row k="Population" v={body.population > 0 ? `${body.population.toFixed(1)} M` : "Uninhabited"} />
           <Row k="Economy" v={ECON_META[body.economy].label} accent={ECON_META[body.economy].color} />
-          <Row
-            k="Sovereign"
-            v={owner?.name ?? "Unclaimed"}
-            dotColor={owner ? `hsl(${owner.hue} 70% 55%)` : undefined}
-          />
+          <button
+            onClick={() => {
+              if (owner) {
+                onPlayClick?.();
+                onSelectEmpire?.(owner.id);
+              }
+            }}
+            className={`w-full flex items-center justify-between gap-3 text-[11px] p-1 rounded transition-colors ${owner ? 'hover:bg-primary/5 group' : ''}`}
+          >
+            <span className={`font-mono-hud text-[9px] uppercase tracking-widest text-muted-foreground ${owner ? 'group-hover:text-primary transition-colors' : ''}`}>Sovereign</span>
+            <span className="flex items-center gap-1.5 text-right text-foreground">
+              {owner && <span className="inline-block w-2 h-2 rounded-full" style={{ background: `hsl(${owner.hue} 70% 55%)` }} />}
+              {owner?.name ?? "Unclaimed"}
+            </span>
+          </button>
           
           {body.type === "terrestrial" && (
             <>

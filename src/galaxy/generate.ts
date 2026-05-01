@@ -4,7 +4,7 @@
 import * as THREE from "three";
 import {
   Body, BodyType, ContestState, EconomicStatus, Empire,
-  Galaxy, Hyperlane, JumpGate, Sector, StarSystem, StarType, PlanetSubtype, ResourceDeposit,
+  Galaxy, Hyperlane, JumpGate, Sector, StarSystem, StarType, PlanetSubtype, ResourceDeposit, GovernmentType
 } from "./types";
 import { mulberry32, pick, randInt, weightedPick, sectorName, systemName, stationName, planetName, moonName, Rng } from "./rng";
 
@@ -43,6 +43,34 @@ const BODY_PROPER = [
   "Boreas", "Zephyr", "Notos", "Euros", "Aeolos", "Aether", "Hemera", "Nyx", "Erebos", "Tartarus"
 ];
 
+const OFFICIAL_NAMES = [
+  "Elias Thorne", "Vance Kaelen", "Lyra Vance", "Soren Voss", "Kira Dax", 
+  "Julian Bashir", "Kathryn Janeway", "Jean-Luc Picard", "Benjamin Sisko", "James Kirk",
+  "T'Pring", "Sarek", "Amanda Grayson", "Spock", "Pavel Chekov", "Nyota Uhura"
+];
+
+const ROLES = [
+  "Minister of Finance", "High Admiral", "Chancellor of Science", "Exarch of Trade", "Archivist of Knowledge",
+  "Overseer of Industry", "Director of Intelligence", "Magistrate of Justice"
+];
+
+const PARTIES = [
+  "Techno-Feudalists", "Void-Sentinels", "Core-Unionists", "Stellar-Expansionists", "Eternalists",
+  "New Hegemony", "Universalists", "Preservationists", "Cyber-Vanguard"
+];
+
+const LOGO_SYMBOLS = ["Shield", "Zap", "Globe", "Anchor", "Cpu", "Award", "Rocket", "Star", "Flame", "Droplets", "Target", "Hexagon", "Circle", "Triangle"];
+const LOGO_PATTERNS = ["grid", "dots", "waves", "cross", "circles"];
+
+const GOVERNMENT_TYPES: GovernmentType[] = [
+  "Parliamentary republic",
+  "Presidential republic",
+  "Dominant-party",
+  "Dictatorship",
+  "One-party system",
+  "Executive monarchy"
+];
+
 function buildEmpires(rng: Rng): Empire[] {
   const count = 36;
   const empires: Empire[] = [];
@@ -59,11 +87,75 @@ function buildEmpires(rng: Rng): Empire[] {
     if (usedTags.has(tag)) tag = (pre[0] + noun[0] + String.fromCharCode(65 + (i % 26))).toUpperCase();
     usedTags.add(tag);
 
-    empires.push({
-      id: `emp-${i}`,
-      name,
-      tag,
-      hue: (i * (360 / count)) % 360, // Distributed hues
+    const hue = (i * (360 / count)) % 360;
+    
+    // Generate Government
+    const factionsCount = randInt(rng, 2, 4);
+    const factions = [];
+    let totalAssigned = 0;
+    const totalSeats = pick(rng, [20, 30, 40, 60]);
+    
+    for (let f = 0; f < factionsCount; f++) {
+      const isLast = f === factionsCount - 1;
+      const count = isLast ? totalSeats - totalAssigned : randInt(rng, Math.floor(totalSeats / 6), totalSeats - totalAssigned - (factionsCount - f - 1) * 2);
+      totalAssigned += count;
+      factions.push({
+        id: `fac-${f}`,
+        name: pick(rng, PARTIES),
+        color: `hsl(${(hue + f * 40) % 360} 70% 50%)`,
+        count
+      });
+    }
+
+    const seats = [];
+    const occupiedCount = Math.floor(totalSeats * (rng() < 0.75 ? 1.0 : (0.4 + rng() * 0.5)));
+    
+    let factionIdx = 0;
+    let factionCountTracker = 0;
+    for (let s = 0; s < totalSeats; s++) {
+      if (factionCountTracker >= factions[factionIdx].count && factionIdx < factions.length - 1) {
+        factionIdx++;
+        factionCountTracker = 0;
+      }
+      
+      const isOccupied = s < occupiedCount;
+      seats.push({ 
+        id: s, 
+        factionId: factions[factionIdx].id,
+        occupantName: isOccupied ? pick(rng, OFFICIAL_NAMES) : undefined
+      });
+      factionCountTracker++;
+    }
+
+      const occupancyRate = rng() < 0.75 ? 1.0 : (0.4 + rng() * 0.5); // 75% full, 25% partial
+
+      empires.push({
+        id: `emp-${i}`,
+        name,
+        tag,
+        hue,
+        logo: {
+          symbol: pick(rng, LOGO_SYMBOLS),
+          pattern: pick(rng, LOGO_PATTERNS),
+          secondaryHue: (hue + 180) % 360,
+        },
+        government: {
+          president: rng() < occupancyRate ? { name: pick(rng, OFFICIAL_NAMES), role: "President", party: factions[0].name } : null as any,
+          vicePresident: rng() < occupancyRate ? { name: pick(rng, OFFICIAL_NAMES), role: "Vice President", party: factions[1]?.name || factions[0].name } : null as any,
+          ministers: Array.from({ length: 4 }).map(() => {
+            return rng() < occupancyRate ? {
+              name: pick(rng, OFFICIAL_NAMES),
+              role: pick(rng, ROLES),
+              party: pick(rng, factions).name
+            } : null as any;
+          }).filter(m => m !== null),
+        council: {
+          totalSeats,
+          factions,
+          seats
+        },
+        type: pick(rng, GOVERNMENT_TYPES)
+      }
     });
   }
   return empires;

@@ -11,12 +11,49 @@ export type ContestState = "controlled" | "contested" | "anarchic" | "frontier";
 
 export type EconomicStatus = "boom" | "stable" | "recession" | "blockaded" | "untapped";
 
+export interface GovernmentOfficial {
+  name: string;
+  role: string;
+  party: string;
+}
+
+export interface CouncilSeat {
+  id: number;
+  factionId: string;
+  occupantName?: string;
+}
+
+export type GovernmentType = 
+  | "Parliamentary republic"
+  | "Presidential republic"
+  | "Dominant-party"
+  | "Dictatorship"
+  | "One-party system"
+  | "Executive monarchy";
+
 export interface Empire {
   id: string;
   name: string;
   /** Hue 0-360 used to colour-code holdings. */
   hue: number;
   tag: string;
+  /** Visual tokens for logo generation */
+  logo: {
+    symbol: string;         // Icon name
+    pattern: string;        // 'grid' | 'dots' | 'waves' etc.
+    secondaryHue: number;   // For the symbol
+  };
+  government: {
+    type: GovernmentType;
+    president: GovernmentOfficial | null;
+    vicePresident: GovernmentOfficial | null;
+    ministers: GovernmentOfficial[];
+    council: {
+      totalSeats: number;
+      factions: { id: string; name: string; color: string; count: number }[];
+      seats: CouncilSeat[];
+    };
+  };
 }
 
 export type PlanetSubtype = 

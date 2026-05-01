@@ -4,10 +4,13 @@ import { toast } from "sonner";
 import { 
   ChevronUp, ChevronDown, ChevronLeft, User as UserIcon, Users as UsersIcon, Coins, 
   Newspaper, Sparkles, Globe, Zap, BarChart, TrendingUp, Shield, 
-  Anchor, Cpu, BookOpen, Rocket, Award, History, Factory
+  Anchor, Cpu, BookOpen, Rocket, Award, History, Factory,
+  Crown, Scale, Target, Flame, Droplets, Hexagon, Circle, Triangle, Briefcase, Star,
+  Sword, Fingerprint, LayoutGrid, ShieldAlert
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useGalaxyApp, type GalaxyApp } from "@/galaxy/useGalaxyApp";
+import type { StarSystem, Body, Empire } from "@/galaxy/types";
 import { UnifiedMap } from "@/galaxy/components/UnifiedMap";
 import { GalaxyOverview, SystemOverview, BodyOverview, ShipOverview } from "@/galaxy/components/Overview";
 import { TopBar } from "@/galaxy/components/TopBar";
@@ -22,6 +25,10 @@ import { type ShipConfiguration } from "@/galaxy/shipPresets";
 import { AuthScreen } from "@/galaxy/components/AuthScreen";
 import { useAudio } from "@/galaxy/useAudio";
 import logo from "@/assets/logo.png";
+
+const ICON_MAP: Record<string, any> = {
+  Shield, Zap, Globe, Anchor, Cpu, Award, Rocket, Star, Flame, Droplets, Target, Hexagon, Circle, Triangle, Briefcase, Crown, TrendingUp
+};
 
 const Index = () => {
   const app = useGalaxyApp(20260423);
@@ -63,6 +70,12 @@ const Index = () => {
       setTimeout(() => fn(...args), 60);
     });
   }, []);
+
+  const handleSelectEmpire = useCallback(withLoading((id: string) => {
+    playTransition();
+    app.setSelectedEmpireId(id);
+    app.setPage("empire");
+  }), [withLoading, playTransition, app]);
 
   const { 
     openSystem, backToGalaxy, backToSystem, openBody, openShip, 
@@ -112,6 +125,12 @@ const Index = () => {
     setPlayerAvatar(avatar);
     app.setShipConfig(shipConfig);
     setOnboardingCompleted(true);
+    setHasInteracted(true);
+    
+    // Resume Web Audio Context for Three.js Positional Audio
+    if (THREE.AudioContext.getContext().state === 'suspended') {
+      THREE.AudioContext.getContext().resume();
+    }
   };
 
   const circles = useMemo(() => app.systemMatchesFilter, [app]);
@@ -134,12 +153,17 @@ const Index = () => {
 
   return (
     <main className="relative flex flex-col h-screen w-screen overflow-hidden bg-background">
-      {/* Game Content Wrapper - Hides the map and UI until Auth & Onboarding is complete */}
-      <div 
-        className={`flex flex-col h-full w-full absolute inset-0 transition-opacity duration-1000 ${
-          isGameReady ? "opacity-100" : "opacity-0 pointer-events-none"
-        }`}
-      >
+      {/* Game Content — only mounted after auth + onboarding complete to avoid
+          loading the heavy WebGL canvas and galaxy generation during auth flows. */}
+      <AnimatePresence>
+        {isGameReady && (
+          <motion.div
+            key="game"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 1 }}
+            className="flex flex-col h-full w-full absolute inset-0"
+          >
         {scanning && (
           <div className="fixed inset-0 z-[200] pointer-events-none" style={{ background: "linear-gradient(90deg,transparent 0%,hsl(var(--primary)/0.18) 50%,transparent 100%)", animation: "scan-wipe 0.4s ease-in-out both", transformOrigin: "left center" }} />
         )}
@@ -210,6 +234,7 @@ const Index = () => {
                     isMobilePanelExpanded={isMobilePanelExpanded}
                     graphicsQuality={graphicsQuality}
                     shipConfig={app.shipConfig}
+                    fxVolume={app.audioEnabled ? app.fxVolume : 0}
                   />
                 </Suspense>
               </div>
@@ -274,6 +299,7 @@ const Index = () => {
                     currentTime={app.currentTime}
                     isExplored={!app.fogOfWar || app.exploredSystemIds.has(app.system.id)}
                     onPlayClick={playClick}
+                    onSelectEmpire={handleSelectEmpire}
                   />
                 )}
                 {app.view === "body" && app.body && app.system && (
@@ -282,6 +308,7 @@ const Index = () => {
                       galaxy={app.galaxy} 
                       isExplored={!app.fogOfWar || app.exploredSystemIds.has(app.system.id)}
                       onPlayClick={playClick}
+                      onSelectEmpire={handleSelectEmpire}
                     />
                 )}
                 {app.view === "ship" && (
@@ -299,6 +326,8 @@ const Index = () => {
           </>
           ) : app.page === "profile" ? (
             <ProfileView app={app} onPlayClick={playClick} />
+          ) : app.page === "empire" ? (
+            <EmpireView app={app} onPlayClick={playClick} />
           ) : (
             <div className={`flex-1 bg-background/40 backdrop-blur-sm p-4 ${app.page === 'shipyard' ? 'sm:p-4' : 'sm:p-12'} custom-scrollbar animate-in slide-in-from-bottom-2 duration-500 flex flex-col ${app.page === 'shipyard' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
                <div className={`max-w-6xl mx-auto w-full flex flex-col ${app.page === 'shipyard' ? 'flex-1 min-h-0 h-full' : 'space-y-12 pb-24'}`}>
@@ -774,6 +803,8 @@ const Index = () => {
         setMusicVolume={app.setMusicVolume}
         sfxVolume={app.sfxVolume}
         setSfxVolume={app.setSfxVolume}
+        fxVolume={app.fxVolume}
+        setFxVolume={app.setFxVolume}
         onPlayClick={playClick}
       />
 
@@ -789,9 +820,12 @@ const Index = () => {
           onPlayCollapse={playCollapse}
           expanded={isMobilePanelExpanded} 
           setExpanded={setIsMobilePanelExpanded} 
+          onSelectEmpire={handleSelectEmpire}
         />
       )}
-      </div>
+    </motion.div>
+    )}
+    </AnimatePresence>
 
       {/* Screen Overlays */}
       <AnimatePresence>
@@ -973,7 +1007,8 @@ function MobileHUD({
   onPlayExpand,
   onPlayCollapse,
   expanded, 
-  setExpanded 
+  setExpanded,
+  onSelectEmpire
 }: { 
   app: GalaxyApp; 
   onSelectBody: (id: string) => void; 
@@ -983,7 +1018,8 @@ function MobileHUD({
   onPlayExpand: () => void;
   onPlayCollapse: () => void;
   expanded: boolean; 
-  setExpanded: (v: boolean) => void 
+  setExpanded: (v: boolean) => void;
+  onSelectEmpire: (id: string) => void;
 }) {
   useEffect(() => {
     setExpanded(false);
@@ -1067,10 +1103,11 @@ function MobileHUD({
                 isExplored={!app.fogOfWar || app.exploredSystemIds.has(app.system.id)}
                 hideHeader={true}
                 onPlayClick={onPlayClick}
+                onSelectEmpire={onSelectEmpire}
               />
             )}
             {app.view === "body" && app.body && (
-              <BodyOverview body={app.body} galaxy={app.galaxy} hideHeader={true} onPlayClick={onPlayClick} />
+              <BodyOverview body={app.body} galaxy={app.galaxy} hideHeader={true} onPlayClick={onPlayClick} onSelectEmpire={onSelectEmpire} />
             )}
             {app.view === "ship" && (
               <ShipOverview
@@ -1433,6 +1470,430 @@ function ProfileView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: () => 
           </div>
         </div>
       </main>
+    </div>
+  );
+}
+
+
+function EmpireLogo({ empire, size = 120 }: { empire: Empire; size?: number }) {
+  const Icon = ICON_MAP[empire.logo.symbol] || Shield;
+  const primaryColor = `hsl(${empire.hue} 70% 50%)`;
+  const secondaryColor = `hsl(${empire.logo.secondaryHue} 70% 60%)`;
+  
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+       {/* Background Hexagon with Pattern */}
+       <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)]">
+          <defs>
+            <pattern id={`pattern-${empire.id}`} patternUnits="userSpaceOnUse" width="10" height="10">
+               {empire.logo.pattern === 'grid' && <path d="M 10 0 L 0 0 0 10" fill="none" stroke={primaryColor} strokeWidth="0.5" opacity="0.3" />}
+               {empire.logo.pattern === 'dots' && <circle cx="2" cy="2" r="1" fill={primaryColor} opacity="0.3" />}
+               {empire.logo.pattern === 'waves' && <path d="M 0 5 Q 2.5 0 5 5 T 10 5" fill="none" stroke={primaryColor} strokeWidth="0.5" opacity="0.3" />}
+               {empire.logo.pattern === 'circles' && <circle cx="5" cy="5" r="3" fill="none" stroke={primaryColor} strokeWidth="0.5" opacity="0.3" />}
+               {empire.logo.pattern === 'cross' && <path d="M 0 0 L 10 10 M 10 0 L 0 10" stroke={primaryColor} strokeWidth="0.5" opacity="0.3" />}
+            </pattern>
+          </defs>
+          <path 
+            d="M50 5 L90 27.5 L90 72.5 L50 95 L10 72.5 L10 27.5 Z" 
+            fill={`url(#pattern-${empire.id})`}
+            className="transition-all duration-700"
+          />
+          <path 
+            d="M50 5 L90 27.5 L90 72.5 L50 95 L10 72.5 L10 27.5 Z" 
+            fill="none" 
+            stroke={primaryColor} 
+            strokeWidth="2"
+            className="transition-all duration-700"
+          />
+       </svg>
+       {/* Central Symbol */}
+       <div className="absolute inset-0 flex items-center justify-center">
+          <Icon size={size * 0.4} style={{ color: secondaryColor }} className="drop-shadow-[0_0_8px_rgba(255,255,255,0.4)]" />
+       </div>
+    </div>
+  );
+}
+
+function CouncilHemicycle({ empire }: { empire: Empire }) {
+  const [hoveredSeat, setHoveredSeat] = useState<{ name: string; party: string; role?: string; color: string } | null>(null);
+  const council = empire.government.council;
+  
+  const GOV_ICON_MAP: Record<string, any> = {
+    "Parliamentary republic": Scale,
+    "Presidential republic": Briefcase,
+    "Dominant-party": LayoutGrid,
+    "Dictatorship": ShieldAlert,
+    "One-party system": Fingerprint,
+    "Executive monarchy": Crown
+  };
+  const GovIcon = GOV_ICON_MAP[empire.government.type] || Crown;
+
+  // Layout Constants
+  const CX = 100;
+  const CY = 105; // Lower base line to prevent cutting
+  const START_ANGLE = Math.PI + 0.3;
+  const END_ANGLE = -0.3;
+
+  // Leadership Ring (6 fixed seats, potentially vacant)
+  const leadershipSeats = [
+    { key: 'pres', role: "President", official: empire.government.president, color: "var(--primary)" },
+    { key: 'vp', role: "Vice President", official: empire.government.vicePresident, color: "#22d3ee" },
+    ...Array.from({ length: 4 }).map((_, i) => ({
+      key: `min-${i}`,
+      role: empire.government.ministers[i]?.role || "Minister",
+      official: empire.government.ministers[i] || null,
+      color: "#818cf8"
+    }))
+  ];
+
+  // Council Distribution
+  const numRows = council.totalSeats > 40 ? 3 : 2;
+  const rowConfig = numRows === 3 
+    ? [Math.floor(council.totalSeats * 0.25), Math.floor(council.totalSeats * 0.35), council.totalSeats - (Math.floor(council.totalSeats * 0.25) + Math.floor(council.totalSeats * 0.35))]
+    : [Math.floor(council.totalSeats * 0.4), council.totalSeats - Math.floor(council.totalSeats * 0.4)];
+
+  return (
+    <div className="relative w-full aspect-[2/1.2] max-w-[400px] mx-auto overflow-visible group">
+      <svg viewBox="0 0 200 120" className="w-full h-full overflow-visible">
+        {/* Leadership Ring (Inner-most) */}
+        {leadershipSeats.map((seat, i) => {
+          const radius = 28;
+          const step = (START_ANGLE - END_ANGLE) / (leadershipSeats.length - 1);
+          const angle = START_ANGLE - i * step;
+          const x = CX + Math.cos(angle) * radius;
+          const y = CY - Math.sin(angle) * radius;
+          const isOccupied = !!seat.official;
+
+          return (
+            <circle 
+              key={seat.key}
+              cx={x} cy={y} r="3"
+              fill={isOccupied ? seat.color : '#333'}
+              className={`${isOccupied ? 'cursor-help hover:r-[4] hover:brightness-125' : 'opacity-20'} transition-all`}
+              onMouseEnter={() => isOccupied && setHoveredSeat({ 
+                name: seat.official!.name, 
+                party: seat.official!.party, 
+                role: seat.role, 
+                color: seat.color 
+              })}
+              onMouseLeave={() => setHoveredSeat(null)}
+            />
+          );
+        })}
+
+        {/* Council Rings */}
+        {rowConfig.map((count, rowIndex) => {
+          const radius = 45 + rowIndex * 18;
+          const step = (START_ANGLE - END_ANGLE) / (count - 1);
+          
+          return Array.from({ length: count }).map((_, i) => {
+            // i=0 is Left, i=count-1 is Right
+            // We want seatIndex 0 to be Front-Right
+            const rightToLeftIndex = count - 1 - i;
+            const angle = START_ANGLE - i * step;
+            const x = CX + Math.cos(angle) * radius;
+            const y = CY - Math.sin(angle) * radius;
+            
+            const prevSeats = rowConfig.slice(0, rowIndex).reduce((a, b) => a + b, 0);
+            const seatIndex = prevSeats + rightToLeftIndex;
+            const seat = council.seats[seatIndex];
+            const faction = council.factions.find(f => f.id === seat?.factionId);
+            const color = faction?.color || '#333';
+            const isOccupied = !!seat?.occupantName;
+
+            return (
+              <circle 
+                key={`${rowIndex}-${i}`}
+                cx={x} cy={y} r="2.2"
+                fill={color}
+                className={`transition-all duration-300 ${isOccupied ? 'cursor-help hover:r-[3.2]' : 'opacity-20'}`}
+                onMouseEnter={() => isOccupied && setHoveredSeat({ 
+                  name: seat.occupantName!, 
+                  party: faction?.name || "Independent", 
+                  color: color 
+                })}
+                onMouseLeave={() => setHoveredSeat(null)}
+              />
+            );
+          });
+        })}
+
+        {/* Central Logo (Leader) */}
+        <g 
+          transform={`translate(${CX}, ${CY - 2})`}
+          className={empire.government.president ? "cursor-help group/leader" : ""}
+          onMouseEnter={() => {
+            const leaderFaction = council.factions.find(f => f.name === empire.government.president?.party);
+            const leaderColor = leaderFaction?.color || "var(--primary)";
+            if (empire.government.president) setHoveredSeat({
+              name: empire.government.president.name,
+              party: empire.government.president.party,
+              role: empire.government.type.includes("Dictator") || empire.government.type.includes("monarchy") ? "Head of State" : "President",
+              color: leaderColor
+            });
+          }}
+          onMouseLeave={() => setHoveredSeat(null)}
+        >
+          <circle 
+            r="16" 
+            fill={council.factions.find(f => f.name === empire.government.president?.party)?.color || "currentColor"} 
+            className="opacity-90 group-hover/leader:opacity-100 transition-opacity" 
+          />
+          <circle 
+            r="16" 
+            fill="none" 
+            stroke="white" 
+            strokeWidth="0.5" 
+            className="opacity-20" 
+          />
+          <foreignObject x="-9" y="-9" width="18" height="18">
+            <div className="flex items-center justify-center w-full h-full">
+              <GovIcon 
+                size={14} 
+                className="text-black"
+              />
+            </div>
+          </foreignObject>
+        </g>
+      </svg>
+
+      {/* Label Underneath */}
+      <div className="mt-6 text-center">
+        <div className="font-mono-hud text-[8px] uppercase tracking-[0.4em] text-primary/60 border-t border-primary/10 pt-4 inline-block px-12">
+          {empire.government.type}
+        </div>
+      </div>
+
+      {/* Tooltip */}
+      <AnimatePresence>
+        {hoveredSeat && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[120%] z-50 pointer-events-none"
+          >
+            <div className="hud-panel p-3 border-l-2 bg-black/90 backdrop-blur-md min-w-[140px] shadow-2xl" style={{ borderLeftColor: hoveredSeat.color }}>
+              {hoveredSeat.role && (
+                <div className="text-[7px] font-mono-hud text-primary uppercase tracking-[0.2em] mb-1">{hoveredSeat.role}</div>
+              )}
+              <div className="text-xs font-display uppercase tracking-wider mb-1">{hoveredSeat.name}</div>
+              <div className="text-[8px] font-mono-hud text-muted-foreground uppercase">{hoveredSeat.party}</div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function EmpireView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: () => void }) {
+  const empire = app.galaxy.empires.find(e => e.id === app.selectedEmpireId);
+  if (!empire) return <div className="p-20 text-center text-primary font-display uppercase tracking-widest animate-pulse">Sovereign Data Encrypted</div>;
+
+  const systemsOwned = app.galaxy.systems.filter(s => s.bodies.some(b => b.ownerId === empire.id));
+  const bodiesOwned = app.galaxy.systems.flatMap(s => s.bodies).filter(b => b.ownerId === empire.id);
+  const totalPop = bodiesOwned.reduce((sum, b) => sum + b.population, 0);
+
+  return (
+    <div className="flex-1 flex flex-col bg-background/40 backdrop-blur-sm animate-fade-in overflow-hidden relative">
+      <div className="absolute inset-0 pointer-events-none scanline opacity-5" />
+      
+      {/* Header */}
+      <header className="px-6 py-3 sm:py-4 border-b border-primary/20 flex flex-col sm:flex-row items-center justify-between gap-4 bg-primary/5">
+        <div className="flex items-center gap-6">
+          <EmpireLogo empire={empire} size={56} />
+          <div>
+            <h2 className="font-display text-lg sm:text-xl text-glow uppercase tracking-[0.2em]" style={{ color: `hsl(${empire.hue} 70% 55%)` }}>
+              {empire.name}
+            </h2>
+            <div className="flex items-center gap-3 mt-1">
+              <span className="font-mono-hud text-[8px] sm:text-[10px] uppercase tracking-[0.3em] text-muted-foreground">Sovereign State</span>
+              <span className="px-1.5 py-0.5 rounded bg-primary/20 text-primary font-mono-hud text-[8px] tracking-widest">{empire.tag}</span>
+            </div>
+          </div>
+        </div>
+        
+        <div className="flex gap-4">
+           <button 
+             onClick={() => { onPlayClick(); app.setPage("map"); }}
+             className="px-4 py-1.5 bg-primary text-background font-display text-[9px] uppercase tracking-widest hover:scale-105 transition-all rounded font-bold"
+           >
+             Return to Map
+           </button>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar">
+        <div className="max-w-6xl mx-auto space-y-12">
+          {/* Key Stats */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <StatCard label="Territorial Systems" value={systemsOwned.length} unit="SYS" icon={Globe} />
+            <StatCard label="Managed Bodies" value={bodiesOwned.length} unit="BOD" icon={Cpu} color="success" />
+            <StatCard label="Gross Population" value={totalPop.toFixed(1)} unit="M" icon={UsersIcon} color="warning" />
+            <StatCard label="Industrial Rating" value={(bodiesOwned.length * 1.4).toFixed(1)} unit="IDX" icon={Factory} color="primary" />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Intel Section */}
+            <div className="lg:col-span-2 space-y-8">
+               {/* Government / Council Section */}
+               <div className="hud-panel p-8 border border-primary/20 bg-primary/5 relative overflow-hidden">
+                  <h3 className="font-display text-sm uppercase tracking-[0.3em] text-primary mb-10 flex items-center gap-2">
+                    <Scale size={16} />
+                    High Council Representation
+                  </h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+                    <div className="space-y-6">
+                      <CouncilHemicycle empire={empire} />
+                      <div className="flex flex-wrap justify-center gap-4">
+                        {empire.government.council.factions.map(f => (
+                          <div key={f.id} className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: f.color }} />
+                            <span className="font-mono-hud text-[8px] uppercase text-muted-foreground">{f.name} ({f.count})</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-6">
+                      <div className="p-4 border border-primary/10 bg-black/20 rounded space-y-4">
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded ${empire.government.president ? 'bg-primary/20 text-primary' : 'bg-white/5 text-muted-foreground'}`}>
+                            {empire.government.type.includes("monarchy") || empire.government.type.includes("Dictator") ? <ShieldAlert size={18} /> : <Crown size={18} />}
+                          </div>
+                          <div>
+                            <div className="text-[10px] font-mono-hud text-primary uppercase tracking-widest">
+                              {empire.government.type.includes("Dictator") || empire.government.type.includes("party") || empire.government.type.includes("monarchy") ? "Head of State" : "President"}
+                            </div>
+                            <div className={`text-sm font-display uppercase tracking-widest ${!empire.government.president && 'opacity-30'}`}>
+                              {empire.government.president?.name || "VACANT"}
+                            </div>
+                            {empire.government.president && (
+                              <div className="text-[8px] font-mono-hud text-muted-foreground uppercase">{empire.government.president.party}</div>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2 rounded ${empire.government.vicePresident ? 'bg-primary/10 text-primary/70' : 'bg-white/5 text-muted-foreground'}`}>
+                            <UsersIcon size={18} />
+                          </div>
+                          <div>
+                            <div className="text-[10px] font-mono-hud text-primary/70 uppercase tracking-widest">Vice President</div>
+                            <div className={`text-sm font-display uppercase tracking-widest ${!empire.government.vicePresident && 'opacity-30'}`}>
+                              {empire.government.vicePresident?.name || "VACANT"}
+                            </div>
+                            {empire.government.vicePresident && (
+                              <div className="text-[8px] font-mono-hud text-muted-foreground uppercase">{empire.government.vicePresident.party}</div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-12 pt-8 border-t border-primary/10">
+                    <h4 className="text-[10px] font-mono-hud text-primary/40 uppercase tracking-[0.4em] mb-6">Cabinet Ministers</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {empire.government.ministers.map((m, i) => (
+                        <div key={i} className="flex items-center gap-3 p-3 border border-primary/5 bg-white/5 rounded">
+                          <Briefcase size={14} className="text-primary/40" />
+                          <div>
+                            <div className="text-[8px] font-mono-hud text-primary/60 uppercase">{m.role}</div>
+                            <div className="text-[10px] font-display uppercase">{m.name}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+               </div>
+
+               <div className="hud-panel p-8 border border-primary/20 bg-primary/5 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-2 opacity-10">
+                    <History size={120} className="text-primary" />
+                  </div>
+                  <h3 className="font-display text-sm uppercase tracking-[0.3em] text-primary mb-6 flex items-center gap-2">
+                    <BookOpen size={16} />
+                    Tactical Intelligence
+                  </h3>
+                  <div className="space-y-4 text-xs font-mono-hud text-muted-foreground leading-relaxed">
+                    <p>
+                      The <span className="text-primary font-bold">{empire.name}</span> maintain a presence across {systemsOwned.length} systems in this sector. 
+                      Their core doctrine appears focused on {bodiesOwned.length > 10 ? "rapid colonial expansion" : "high-density industrial consolidation"}.
+                    </p>
+                    <p>
+                      Recent telemetry indicates a significant shift in orbital logistics. Intelligence reports suggest a high level of neural integration within their command structure, 
+                      providing them with a distinct advantage in complex celestial navigation and fleet coordination.
+                    </p>
+                  </div>
+               </div>
+            </div>
+
+            {/* Faction Relations */}
+            <div className="space-y-6">
+              <div className="hud-panel p-6 border border-primary/20 bg-primary/5">
+                <h3 className="font-display text-sm uppercase tracking-[0.3em] text-primary mb-6 flex items-center gap-2">
+                  <TrendingUp size={16} />
+                  Hegemony Standing
+                </h3>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-[10px] font-mono-hud uppercase">
+                      <span>Diplomatic Status</span>
+                      <span className="text-success">Cordial</span>
+                    </div>
+                    <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-full bg-success w-[72%]" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-[10px] font-mono-hud uppercase">
+                      <span>Trade Access</span>
+                      <span className="text-primary">Restricted</span>
+                    </div>
+                    <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-full bg-primary w-[45%]" />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-[10px] font-mono-hud uppercase">
+                      <span>Military Threat</span>
+                      <span className="text-warning">Nominal</span>
+                    </div>
+                    <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-full bg-warning w-[15%]" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                 <h3 className="font-display text-sm uppercase tracking-[0.3em] text-primary/60 px-2">Primary Holdings</h3>
+                 <div className="space-y-3">
+                   {bodiesOwned.slice(0, 8).map(b => (
+                     <div key={b.id} className="flex items-center justify-between p-4 border border-primary/10 bg-primary/5 rounded hover:border-primary/40 transition-colors group">
+                       <div className="flex items-center gap-3">
+                         <Globe size={14} className="text-primary/60 group-hover:text-primary transition-colors" />
+                         <span className="font-display text-[10px] uppercase tracking-widest text-foreground">{b.name}</span>
+                       </div>
+                       <span className="font-mono-hud text-[8px] text-muted-foreground uppercase">{b.type}</span>
+                     </div>
+                   ))}
+                 </div>
+               </div>
+
+              <div className="p-4 border border-warning/20 bg-warning/5 rounded">
+                <p className="text-[9px] font-mono-hud text-warning/80 uppercase tracking-widest leading-relaxed">
+                  <Zap size={10} className="inline mr-2" />
+                  Note: Access to full strategic dossiers requires Level 10 Hegemony clearance.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { X, Maximize, Minimize, Volume2, VolumeX, Music, Zap } from "lucide-react";
+import { X, Maximize, Minimize, Volume2, VolumeX, Music, Zap, Radio } from "lucide-react";
 import { useState, useEffect } from "react";
 
 interface Props {
@@ -12,6 +12,8 @@ interface Props {
   setMusicVolume: (v: number) => void;
   sfxVolume: number;
   setSfxVolume: (v: number) => void;
+  fxVolume: number;
+  setFxVolume: (v: number) => void;
   onPlayClick?: () => void;
 }
 
@@ -26,6 +28,8 @@ export function SettingsModal({
   setMusicVolume,
   sfxVolume,
   setSfxVolume,
+  fxVolume,
+  setFxVolume,
   onPlayClick
 }: Props) {
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
@@ -48,11 +52,17 @@ export function SettingsModal({
 
   if (!isOpen) return null;
 
+  // Per-channel muted state: volume === 0 acts as the muted indicator
+  // We track a "pre-mute" value to restore when toggling back on
+  const isMusicMuted = musicVolume === 0;
+  const isSfxMuted = sfxVolume === 0;
+  const isFxMuted = fxVolume === 0;
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" onClick={onClose} />
       
-      <div className="hud-panel hud-corner w-full max-w-[400px] animate-fade-in relative">
+      <div className="hud-panel hud-corner w-full max-w-[420px] animate-fade-in relative">
         <div className="flex items-center justify-between px-4 py-3 border-b border-primary/20">
           <div className="font-display text-sm uppercase tracking-[0.2em] text-primary text-glow">
             System Settings
@@ -103,6 +113,7 @@ export function SettingsModal({
 
           {/* Audio Settings */}
           <div className="space-y-4 pt-2 border-t border-primary/10">
+            {/* Master Audio Toggle */}
             <div className="flex items-center justify-between">
               <div className="font-mono-hud text-[9px] uppercase tracking-[0.3em] text-muted-foreground">
                 Neural Audio Uplink
@@ -119,47 +130,48 @@ export function SettingsModal({
             </div>
 
             <div className="space-y-4">
-              {/* Music Volume */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center font-mono-hud text-[10px] uppercase tracking-widest">
-                  <div className="flex items-center gap-2">
-                    <Music size={12} className="opacity-60" />
-                    <span>Ambient Music</span>
-                  </div>
-                  <span className="text-primary">{Math.round(musicVolume * 100)}%</span>
-                </div>
-                <input 
-                  type="range" min="0" max="1" step="0.01" 
-                  value={musicVolume}
-                  onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
-                  disabled={!audioEnabled}
-                  className="w-full h-1 bg-primary/20 rounded-lg appearance-none cursor-pointer accent-primary disabled:opacity-30 disabled:cursor-not-allowed"
-                />
-              </div>
+              {/* Ambient Music */}
+              <AudioChannel
+                icon={<Music size={12} className="opacity-60" />}
+                label="Ambient Music"
+                volume={musicVolume}
+                setVolume={setMusicVolume}
+                isMuted={isMusicMuted}
+                masterDisabled={!audioEnabled}
+                onToggleMute={() => setMusicVolume(isMusicMuted ? 0.4 : 0)}
+                onPlayClick={onPlayClick}
+              />
 
-              {/* SFX Volume */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center font-mono-hud text-[10px] uppercase tracking-widest">
-                  <div className="flex items-center gap-2">
-                    <Zap size={12} className="opacity-60" />
-                    <span>HUD Feedback</span>
-                  </div>
-                  <span className="text-primary">{Math.round(sfxVolume * 100)}%</span>
-                </div>
-                <input 
-                  type="range" min="0" max="1" step="0.01" 
-                  value={sfxVolume}
-                  onChange={(e) => setSfxVolume(parseFloat(e.target.value))}
-                  disabled={!audioEnabled}
-                  className="w-full h-1 bg-primary/20 rounded-lg appearance-none cursor-pointer accent-primary disabled:opacity-30 disabled:cursor-not-allowed"
-                />
-              </div>
+              {/* HUD SFX */}
+              <AudioChannel
+                icon={<Zap size={12} className="opacity-60" />}
+                label="HUD Feedback"
+                volume={sfxVolume}
+                setVolume={setSfxVolume}
+                isMuted={isSfxMuted}
+                masterDisabled={!audioEnabled}
+                onToggleMute={() => setSfxVolume(isSfxMuted ? 0.6 : 0)}
+                onPlayClick={onPlayClick}
+              />
+
+              {/* Positional / FX Audio */}
+              <AudioChannel
+                icon={<Radio size={12} className="opacity-60" />}
+                label="FX Audio"
+                sublabel="Stars · Planets · Ships · Gates"
+                volume={fxVolume}
+                setVolume={setFxVolume}
+                isMuted={isFxMuted}
+                masterDisabled={!audioEnabled}
+                onToggleMute={() => setFxVolume(isFxMuted ? 0.5 : 0)}
+                onPlayClick={onPlayClick}
+              />
             </div>
           </div>
 
           <div className="space-y-4 pt-2 border-t border-primary/10">
             <div className="font-mono-hud text-[9px] uppercase tracking-[0.3em] text-muted-foreground">
-              Display & HUD
+              Display &amp; HUD
             </div>
             
             <div className="flex items-center justify-between">
@@ -190,6 +202,74 @@ export function SettingsModal({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Reusable audio channel row: icon, label, mute toggle, volume %, slider */
+function AudioChannel({
+  icon,
+  label,
+  sublabel,
+  volume,
+  setVolume,
+  isMuted,
+  masterDisabled,
+  onToggleMute,
+  onPlayClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  sublabel?: string;
+  volume: number;
+  setVolume: (v: number) => void;
+  isMuted: boolean;
+  masterDisabled: boolean;
+  onToggleMute: () => void;
+  onPlayClick?: () => void;
+}) {
+  const disabled = masterDisabled;
+
+  return (
+    <div className={`space-y-2 transition-opacity ${disabled ? "opacity-40 pointer-events-none" : ""}`}>
+      <div className="flex justify-between items-center font-mono-hud text-[10px] uppercase tracking-widest">
+        {/* Left: icon + labels */}
+        <div className="flex items-center gap-2">
+          {icon}
+          <div className="flex flex-col leading-none gap-0.5">
+            <span>{label}</span>
+            {sublabel && (
+              <span className="text-[7px] text-muted-foreground/60 normal-case tracking-wider">{sublabel}</span>
+            )}
+          </div>
+        </div>
+        {/* Right: percentage + mute toggle */}
+        <div className="flex items-center gap-2">
+          <span className={`tabular-nums w-8 text-right ${isMuted ? "text-muted-foreground/40" : "text-primary"}`}>
+            {isMuted ? "OFF" : `${Math.round(volume * 100)}%`}
+          </span>
+          <button
+            onClick={() => { onToggleMute(); onPlayClick?.(); }}
+            className={`p-0.5 rounded transition-colors ${isMuted ? "text-muted-foreground/40" : "text-primary"}`}
+            title={isMuted ? "Unmute" : "Mute"}
+          >
+            {isMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}
+          </button>
+        </div>
+      </div>
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.01"
+        value={volume}
+        onChange={(e) => {
+          setVolume(parseFloat(e.target.value));
+          onPlayClick?.();
+        }}
+        disabled={disabled}
+        className="w-full h-1 bg-primary/20 rounded-lg appearance-none cursor-pointer accent-primary disabled:opacity-30 disabled:cursor-not-allowed"
+      />
     </div>
   );
 }

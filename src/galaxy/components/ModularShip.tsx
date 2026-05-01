@@ -40,8 +40,10 @@ const ThrusterPlume = React.memo(({ color, intensityRef, scale = 1 }: { color: s
     if (!groupRef.current) return;
     const baseIntensity = intensityRef?.current ?? 0.4;
     const flicker = Math.sin(state.clock.elapsedTime * 25) * 0.05;
-    const intensity = Math.max(0.1, baseIntensity + flicker);
-    groupRef.current.scale.set(scale, scale, intensity * 2.0 * scale);
+    const intensity = Math.max(0.1, Math.min(3.0, baseIntensity + flicker));
+    // Z is the thrust axis (group is rotated -π/2 on X). Cap at 3× to prevent
+    // hyperjump-era intensity spikes from distorting the plume into a tall spike.
+    groupRef.current.scale.set(scale, scale, intensity * 1.4 * scale);
   });
 
   return (

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback } from "react";
+import * as THREE from "three";
 
 /**
  * useAudio hook manages the application's audio state and provides methods to play sound effects.
@@ -65,6 +66,12 @@ export function useAudio(enabled: boolean, musicVolume: number, sfxVolume: numbe
 
     // Autoplay policy workaround: Retry playing after user interacts with the document
     const handleInteraction = () => {
+      // Resume Web Audio Context for Three.js / Positional Audio
+      const context = THREE.AudioContext.getContext();
+      if (context.state === "suspended") {
+        context.resume();
+      }
+
       if (ambientRef.current && ambientRef.current.paused) {
         ambientRef.current.play().then(() => {
           window.removeEventListener("click", handleInteraction);
