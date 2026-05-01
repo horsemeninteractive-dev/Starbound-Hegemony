@@ -14,7 +14,7 @@ const STAR_WEIGHTS: [StarType, number][] = [
   ["M", 38], ["K", 18], ["G", 12], ["F", 8], ["A", 5],
   ["B", 2], ["O", 0.6], ["whitedwarf", 5], ["neutron", 2],
   ["pulsar", 1.4], ["binary", 6], ["trinary", 2], ["blackhole", 1],
-  ["quasar", 0.1], ["magnetar", 0.2], ["protostar", 0.8], ["dyson_swarm", 0.05],
+  ["magnetar", 0.2], ["protostar", 0.8], ["dyson_swarm", 0.05],
 ];
 
 const ECON_WEIGHTS: [EconomicStatus, number][] = [
@@ -136,9 +136,9 @@ const getAtmosphere = (subtype: PlanetSubtype, zone: "hot" | "temperate" | "cold
 function generateBodies(rng: Rng, systemId: string, systemName: string, starType: StarType): Body[] {
   const bodies: Body[] = [];
 
-  // Ultra-exotic stars: quasars/whiteholes produce extreme high-energy environments,
+  // Ultra-exotic stars: whiteholes produce extreme high-energy environments,
   // mostly accretion debris, not stable planetary systems.
-  const ultraExotic = starType === "quasar" || starType === "whitehole";
+  const ultraExotic = starType === "whitehole";
   // Compact remnants: sparse debris fields.
   const compactExotic = starType === "blackhole" || starType === "neutron" || starType === "pulsar" || starType === "magnetar";
   // Dyson swarms: engineered bodies only, no naturals
@@ -401,29 +401,58 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
       planet.geographyType = weightedPick(rng, [["continental", 50], ["pangaea", 25], ["islands", 25]]);
     }
     bodies.push(planet);
+
+    // CHANCE TO INSERT ASTEROID BELT (Now can be inner/middle belts)
+    if (rng() < 0.08) {
+      orbit += randInt(rng, 15, 30) * spacingMult;
+      const beltId = rng().toString(36).substring(7);
+      const rocks = randInt(rng, 10, 25);
+      for (let r = 0; r < rocks; r++) {
+        bodies.push({
+          id: `${systemId}-belt-${beltId}-${r}`,
+          systemId,
+          name: `${systemName} Belt Fragment ${r + 1}`,
+          type: "asteroid",
+          subtype: "asteroid",
+          orbit: orbit + (rng() - 0.5) * 4.0,
+          phase: rng() * Math.PI * 2,
+          size: 0.1 + rng() * 0.25,
+          hue: 20 + rng() * 20, // grey-brown
+          ownerId: null,
+          population: 0,
+          deposits: [{ resource: "Ore", richness: "moderate", depleted: false }],
+          economy: "untapped",
+          temperature: temp - 50,
+          habitabilityZone: zone,
+          flora: "none",
+          fauna: "none",
+          hazards: [],
+        });
+      }
+      orbit += randInt(rng, 10, 20) * spacingMult;
+    }
   }
 
-  // Asteroid belt(s)
-  const beltCount = randInt(rng, 0, 2);
-  for (let b = 0; b < beltCount; b++) {
-    orbit += randInt(rng, 3, 5);
-    const rocks = randInt(rng, 6, 14);
+  // Final catch-all outer asteroid belt if none were generated
+  if (!bodies.some(b => b.type === "asteroid") && rng() < 0.35) {
+    orbit += randInt(rng, 40, 80);
+    const rocks = randInt(rng, 15, 30);
     for (let r = 0; r < rocks; r++) {
       bodies.push({
-        id: `${systemId}-a${b}-${r}`,
+        id: `${systemId}-outer-a${r}`,
         systemId,
-        name: `${systemId.split("-")[1]}-Belt-${b + 1}-${r + 1}`,
+        name: `${systemName} Kuiper Object ${r + 1}`,
         type: "asteroid",
         subtype: "asteroid",
-        orbit: orbit + (rng() - 0.5) * 1.2,
+        orbit: orbit + (rng() - 0.5) * 10.0,
         phase: rng() * Math.PI * 2,
-        size: 0.12 + rng() * 0.18,
-        hue: 30,
+        size: 0.15 + rng() * 0.3,
+        hue: 210 + rng() * 30, // bluish-grey (icy)
         ownerId: null,
         population: 0,
-        deposits: [{ resource: "Ore", richness: "moderate", depleted: false }],
+        deposits: [{ resource: "Water Ice", richness: "abundant", depleted: false }],
         economy: "untapped",
-        temperature: 150,
+        temperature: 50,
         habitabilityZone: "cold",
         flora: "none",
         fauna: "none",
@@ -433,19 +462,33 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
   }
 
   // Stations
-  if (rng() < 0.45) {
+  if (rng() < 0.55) {
+    const stationSubtype = weightedPick(rng, [
+      ["station_hub", 30],
+      ["station_habitat", 30],
+      ["station_refinery", 20],
+      ["station_outpost", 20]
+    ]) as PlanetSubtype;
+
+    const stationHue = weightedPick(rng, [
+      [180, 40], // Cyan/Teal
+      [210, 30], // Blue
+      [30, 20],  // Amber/Orange
+      [0, 10]    // Red
+    ]) as number;
+
     bodies.push({
       id: `${systemId}-stn`,
       systemId,
       name: stationName(rng, systemId.split("-")[1]),
       type: "station",
-      subtype: "station",
-      orbit: orbit + 4,
+      subtype: stationSubtype,
+      orbit: orbit * 0.4 + randInt(rng, 10, 40), // Place stations somewhat randomly but often in inner-mid system
       phase: rng() * Math.PI * 2,
-      size: 0.5,
-      hue: 180,
+      size: 0.6,
+      hue: stationHue, // Used for light colors
       ownerId: null,
-      population: Math.floor(rng() * 20) / 10,
+      population: Math.floor(rng() * 40) / 10,
       deposits: [{ resource: "Trade Hub", richness: "abundant", depleted: false }],
       economy: "stable",
       temperature: 290,
@@ -493,34 +536,95 @@ function generateHyperlanes(rng: Rng, systems: StarSystem[]): Hyperlane[] {
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
   };
 
-  // For each system, link to 2-3 nearest neighbours; chance of long-haul jump.
   for (const s of systems) {
+    const r = Math.hypot(s.pos[0], s.pos[2]);
+    const isOuter = r > 2800;
+    const isCore = r < 1400;
+
     const sorted = systems
       .filter((o) => o.id !== s.id)
       .map((o) => [o, distance(s, o)] as const)
       .sort((a, b) => a[1] - b[1]);
 
-    const MAX_LOCAL_DIST = 600;
-    const MAX_HUB_DIST = 1400;
+    const MAX_LOCAL_DIST = isOuter ? 1000 : 800;
+    const MAX_HUB_DIST = 1600;
 
-    const localLinks = randInt(rng, 2, 3);
-    for (let i = 0; i < localLinks && i < sorted.length; i++) {
+    // 1. Proximity Pass: Link to the 2 absolute nearest neighbors (CLEAN MESH)
+    // This ensures that "stars almost next to each other" are connected.
+    for (let i = 0; i < 2 && i < sorted.length; i++) {
       const [target, dist] = sorted[i];
-      if (dist > MAX_LOCAL_DIST) continue; // Don't link across voids
+      if (dist > MAX_LOCAL_DIST) continue;
       
+      // OCCLUSION CHECK: Never cross the galactic core
+      const dx = target.pos[0] - s.pos[0];
+      const dz = target.pos[2] - s.pos[2];
+      const lenSq = dx * dx + dz * dz;
+      const t = Math.max(0, Math.min(1, -(s.pos[0] * dx + s.pos[2] * dz) / lenSq));
+      const closestX = s.pos[0] + t * dx;
+      const closestZ = s.pos[2] + t * dz;
+      const distToCore = Math.sqrt(closestX * closestX + closestZ * closestZ);
+      if (distToCore < 450) continue;
+
       const k = key(s.id, target.id);
-      if (seen.has(k)) continue;
-      seen.add(k);
-      lanes.push({ id: `lane-${lanes.length}`, a: s.id, b: target.id });
+      if (!seen.has(k)) {
+        seen.add(k);
+        lanes.push({ id: `lane-${lanes.length}`, a: s.id, b: target.id });
+      }
     }
 
-    // Hub systems (~5%) get extra long-range jumps.
-    if (rng() < 0.05) {
-      const extras = randInt(rng, 2, 5);
+    // 2. Connectivity Pass: If none of the local links go inward, add one inward link.
+    // This guarantees a path to the core while minimizing "messy" long-range jumps.
+    const currentLanes = lanes.filter(l => l.a === s.id || l.b === s.id);
+    const hasInward = currentLanes.some(l => {
+      const otherId = l.a === s.id ? l.b : l.a;
+      const other = systems.find(sys => sys.id === otherId);
+      return other && Math.hypot(other.pos[0], other.pos[2]) < r;
+    });
+
+    if (!hasInward) {
+      const inward = sorted.find(([o]) => Math.hypot(o.pos[0], o.pos[2]) < r);
+      if (inward) {
+        const [target, dist] = inward;
+        
+        // OCCLUSION CHECK: Never cross the galactic core
+        const dx = target.pos[0] - s.pos[0];
+        const dz = target.pos[2] - s.pos[2];
+        const lenSq = dx * dx + dz * dz;
+        const t = Math.max(0, Math.min(1, -(s.pos[0] * dx + s.pos[2] * dz) / lenSq));
+        const closestX = s.pos[0] + t * dx;
+        const closestZ = s.pos[2] + t * dz;
+        const distToCore = Math.sqrt(closestX * closestX + closestZ * closestZ);
+        const occluded = distToCore < 450;
+
+        if (dist < MAX_LOCAL_DIST * 1.5 && !occluded) {
+          const k = key(s.id, target.id);
+          if (!seen.has(k)) {
+            seen.add(k);
+            lanes.push({ id: `lane-${lanes.length}`, a: s.id, b: target.id });
+          }
+        }
+      }
+    }
+
+    // 3. Hub Pass: Rare long-range jumps.
+    const hubProb = isOuter ? 0.02 : 0.05;
+    if (rng() < hubProb) {
+      const extras = isOuter ? 1 : randInt(rng, 1, 2);
       for (let i = 0; i < extras; i++) {
-        const idx = randInt(rng, 4, Math.min(30, sorted.length - 1));
+        const idx = randInt(rng, 5, Math.min(25, sorted.length - 1));
         const [target, dist] = sorted[idx];
         if (dist > MAX_HUB_DIST) continue; 
+
+        // OCCLUSION CHECK: Never cross the galactic core
+        // If the line segment passes within 450 units of [0,0,0], block it.
+        const dx = target.pos[0] - s.pos[0];
+        const dz = target.pos[2] - s.pos[2];
+        const lenSq = dx * dx + dz * dz;
+        const t = Math.max(0, Math.min(1, -(s.pos[0] * dx + s.pos[2] * dz) / lenSq));
+        const closestX = s.pos[0] + t * dx;
+        const closestZ = s.pos[2] + t * dz;
+        const distToCore = Math.sqrt(closestX * closestX + closestZ * closestZ);
+        if (distToCore < 450) continue;
 
         const k = key(s.id, target.id);
         if (seen.has(k)) continue;
@@ -548,7 +652,11 @@ a.gates.push({ id: `${lane.id}-g0`, systemId: a.id, targetSystemId: b.id, ownerI
 }
 
 function assignOwnership(rng: Rng, systems: StarSystem[], empires: Empire[]) {
-  const remaining = new Set(systems.map((s) => s.id));
+  const remaining = new Set(
+    systems
+      .filter((s) => s.id !== "sys-center" && !s.id.startsWith("sys-inner-"))
+      .map((s) => s.id)
+  );
   
   for (const emp of empires) {
     const seed = pick(rng, [...remaining]);
@@ -561,6 +669,7 @@ function assignOwnership(rng: Rng, systems: StarSystem[], empires: Empire[]) {
     
     while (queue.length && claimedInThisBlob.length < claimSize) {
       const id = queue.shift()!;
+      if (id === "sys-center" || id.startsWith("sys-inner-")) continue;
       const sys = systems.find((s) => s.id === id)!;
       if (!sys) continue;
 
@@ -649,7 +758,7 @@ function assignOwnership(rng: Rng, systems: StarSystem[], empires: Empire[]) {
   for (const sys of systems) {
     const owners = new Set<string>();
     for (const b of sys.bodies) if (b.ownerId) owners.add(b.ownerId);
-    if (owners.size === 0) sys.contest = remaining.has(sys.id) ? "frontier" : "anarchic";
+    if (owners.size === 0) sys.contest = (remaining.has(sys.id) || sys.id === "sys-center" || sys.id.startsWith("sys-inner-")) ? "frontier" : "anarchic";
     else if (owners.size === 1) sys.contest = "controlled";
     else sys.contest = "contested";
   }
@@ -709,9 +818,7 @@ export function generateGalaxy(seed: number = 42, opts?: {
 
   // 2. Generate remaining systems following Hubble Sb classification (bulge + arms)
   const remainingCount = systemsCount - 13;
-  const bulgeRadius = 900;
   const spiralArms = 4;
-  const armTightness = 0.35;
   const armWidth = 350;
 
   for (let i = 0; i < remainingCount; i++) {
@@ -719,14 +826,19 @@ export function generateGalaxy(seed: number = 42, opts?: {
     let pos: [number, number, number] = [0, 0, 0];
     let attempts = 0;
     let valid = false;
-    const minDist = 120; // Minimum distance to prevent visual overlap on map
 
-    while (!valid && attempts < 15) {
+    while (!valid && attempts < 40) {
       attempts++;
-      if (t < 0.25) {
-        // Bulge Distribution
-        const minBulge = 550;
-        const r = minBulge + rng() * (bulgeRadius - minBulge - 20);
+      
+      // 1. Unified radial distribution
+      // Reduced core bias (exp 1.6) to spread stars more evenly
+      const r = 500 + Math.pow(t, 1.6) * 4000;
+      
+      // 2. Decide geometry: Bulge vs Arms based on radius.
+      const bulgeFactor = Math.max(0, Math.min(1, (1300 - r) / 800));
+      const isBulge = rng() < bulgeFactor;
+
+      if (isBulge) {
         const angle = rng() * Math.PI * 2;
         pos = [
           Math.cos(angle) * r,
@@ -734,12 +846,10 @@ export function generateGalaxy(seed: number = 42, opts?: {
           Math.sin(angle) * r,
         ];
       } else {
-        // Spiral Arms
-        const spiralT = (t - 0.25) / 0.75;
         const arm = i % spiralArms;
+        const spiralT = Math.max(0, (r - 700) / 3800); 
         const angle = spiralT * Math.PI * 6 + (arm * Math.PI * 2) / spiralArms;
-        const r = bulgeRadius + 200 + spiralT * 3200;
-        const jitter = armWidth * (1.0 - spiralT * 0.3);
+        const jitter = armWidth * (1.1 - spiralT * 0.5);
         
         pos = [
           Math.cos(angle) * r + (rng() - 0.5) * jitter,
@@ -748,6 +858,10 @@ export function generateGalaxy(seed: number = 42, opts?: {
         ];
       }
 
+      // Dynamic density curve (Separation increases with radius)
+      // Further increased core separation to 150 for better readability
+      const currentMinDist = 150 + Math.pow(r / 4500, 1.5) * 400;
+
       // Poisson-ish check
       valid = true;
       for (let j = 0; j < systems.length; j++) {
@@ -755,7 +869,7 @@ export function generateGalaxy(seed: number = 42, opts?: {
         const dx = pos[0] - other.pos[0];
         const dz = pos[2] - other.pos[2];
         const dSq = dx * dx + dz * dz;
-        if (dSq < minDist * minDist) {
+        if (dSq < currentMinDist * currentMinDist) {
           valid = false;
           break;
         }
@@ -781,7 +895,7 @@ export function generateGalaxy(seed: number = 42, opts?: {
   }
 
   // 2b. Guaranteed rare star spawns — without this, low-weight types may never appear
-  const guaranteedTypes: StarType[] = ["quasar", "magnetar", "dyson_swarm", "whitehole"];
+  const guaranteedTypes: StarType[] = ["magnetar", "dyson_swarm", "whitehole"];
   for (const rareType of guaranteedTypes) {
     const hasIt = systems.some(s => s.starType === rareType);
     if (!hasIt) {
@@ -846,6 +960,7 @@ export function generateGalaxy(seed: number = 42, opts?: {
   // 3. Link Z* to the 12 Inner Rim systems only
   const innerRimSystems = systems.filter(s => s.id.startsWith("sys-inner-"));
   
+  // 3. Generate Hyperlanes (Exclude the central singularity AND the Sanctum ring from automated mesh)
   const hyperlanes = generateHyperlanes(rng, systems.filter(s => s.id !== "sys-center" && !s.id.startsWith("sys-inner-")));
   
   // Connect Z* to inner rim
@@ -853,14 +968,17 @@ export function generateGalaxy(seed: number = 42, opts?: {
     hyperlanes.push({ id: `lane-z-${inner.id}`, a: "sys-center", b: inner.id });
   }
 
-  // Connect inner rim to nearest outer systems to ensure connectivity
+  // Ensure inner rim has strong outward connectivity (link each to 2 nearest outer systems)
   const outerSystems = systems.filter(s => !s.id.startsWith("sys-inner-") && s.id !== "sys-center");
   for (const inner of innerRimSystems) {
-    const nearest = outerSystems
+    const sorted = outerSystems
       .map(s => ({ id: s.id, d: Math.hypot(s.pos[0] - inner.pos[0], s.pos[2] - inner.pos[2]) }))
-      .sort((a, b) => a.d - b.d)[0];
-    if (nearest) {
-      hyperlanes.push({ id: `lane-connect-${inner.id}`, a: inner.id, b: nearest.id });
+      .sort((a, b) => a.d - b.d);
+    
+    for (let j = 0; j < 2; j++) {
+      if (sorted[j]) {
+        hyperlanes.push({ id: `lane-connect-${inner.id}-${j}`, a: inner.id, b: sorted[j].id });
+      }
     }
   }
   attachJumpGates(systems, hyperlanes);

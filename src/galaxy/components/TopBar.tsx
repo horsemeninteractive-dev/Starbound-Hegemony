@@ -37,6 +37,7 @@ interface Props {
   setInstantJump: (v: boolean) => void;
   playerSystemName?: string;
   travel?: { targetId?: string; endTime: number; startTime: number } | null;
+  arrival?: { fromId: string; startTime: number; duration: number } | null;
   currentTime: number;
   galaxy: Galaxy;
   onRegenerate: () => void;
@@ -64,7 +65,7 @@ export function TopBar({
   onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills,
   ap, sc, playerName, playerLevel, playerXP, xpToNextLevel, playerAvatar,
   fogOfWar, setFogOfWar, instantJump, setInstantJump,
-  playerSystemName, travel, currentTime, galaxy, onRegenerate, onReset, onSetAp, onPlayClick, isGameReady = true
+  playerSystemName, travel, arrival, currentTime, galaxy, onRegenerate, onReset, onSetAp, onPlayClick, isGameReady = true
 }: Props) {
   // Game menu state - Radix Sheet handles escape/outside-click automatically
   const [menuOpen, setMenuOpen] = useState(false);
@@ -148,25 +149,29 @@ export function TopBar({
         <div className="flex items-center gap-1.5 sm:gap-3 px-1.5 sm:px-3 py-1 sm:py-1.5 bg-primary/5 border border-primary/15 rounded-lg border-l-4 border-l-cyan-500 min-w-0 flex-grow max-w-[140px] sm:min-w-[180px] sm:max-w-none">
           <div className="flex flex-col flex-1 min-w-0">
             <div className="flex items-center gap-1.5 sm:gap-2">
-              <Compass size={10} className={`${travel ? "text-cyan-400 animate-spin-slow" : "text-cyan-400/60"} shrink-0`} />
+              <Compass size={10} className={`${(travel || arrival) ? "text-cyan-400 animate-spin-slow" : "text-cyan-400/60"} shrink-0`} />
               <span className="text-[8px] sm:text-[9px] font-display text-cyan-400 uppercase tracking-widest truncate">
-                {travel ? `FTL → ${destinationName}` : playerSystemName || "Unknown Space"}
+                {travel ? `FTL → ${destinationName}` : arrival ? `TRANSIT → STAR` : playerSystemName || "Unknown Space"}
               </span>
             </div>
             <div className="flex items-center gap-1.5 sm:gap-2 mt-0.5 h-2.5">
-              {travel ? (
+              {travel || arrival ? (
                 <div className="flex-1 flex flex-col justify-center">
                   <div className="flex items-center justify-between mb-0.5">
-                    <span className="text-[6px] sm:text-[7px] font-mono-hud text-cyan-400/80 uppercase tracking-widest">Warping...</span>
+                    <span className="text-[6px] sm:text-[7px] font-mono-hud text-cyan-400/80 uppercase tracking-widest">
+                      {travel ? "Warping..." : "Landing..."}
+                    </span>
                     <span className="text-[6px] sm:text-[7px] font-mono-hud text-cyan-400 font-bold uppercase tracking-widest">
-                      ETA {Math.max(0, Math.ceil((travel.endTime - currentTime) / 1000))}S
+                      {travel ? `ETA ${Math.max(0, Math.ceil((travel.endTime - currentTime) / 1000))}S` : "EST. CONTACT"}
                     </span>
                   </div>
                   <div className="h-1 bg-cyan-950 rounded-full overflow-hidden w-full border border-cyan-500/20">
                     <div 
                       className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_8px_cyan]"
                       style={{ 
-                        width: `${Math.min(100, ((currentTime - travel.startTime) / (travel.endTime - travel.startTime)) * 100)}%`,
+                        width: travel 
+                          ? `${Math.min(100, ((currentTime - travel.startTime) / (travel.endTime - travel.startTime)) * 100)}%`
+                          : `${Math.min(100, ((currentTime - arrival!.startTime) / arrival!.duration) * 100)}%`,
                         transition: "width 0.1s linear"
                       }}
                     />

@@ -22,12 +22,13 @@ export function GalaxyOverview({ galaxy, hideHeader }: { galaxy: Galaxy; hideHea
 }
 
 /* ======================= SYSTEM OVERVIEW ======================= */
-export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, travel, initiateJump, getJumpCost, currentTime, isExplored, hideHeader, onPlayClick }: {
+export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, travel, arrival, initiateJump, getJumpCost, currentTime, isExplored, hideHeader, onPlayClick }: {
   system: StarSystem;
   galaxy: Galaxy;
   onSelectBody: (id: string) => void;
   playerSystemId: string;
   travel: { targetId: string; startTime: number; endTime: number } | null;
+  arrival: { fromId: string; startTime: number; duration: number } | null;
   initiateJump: (id: string) => void;
   getJumpCost: (id: string) => number;
   currentTime: number;
@@ -57,7 +58,9 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, t
       {isCurrent && (
         <div className="mb-4 bg-primary/10 border border-primary/20 px-3 py-2 rounded flex items-center justify-between">
           <span className="text-[10px] font-bold text-primary">CURRENT LOCATION</span>
-          <span className="text-[10px] text-primary/60">STATIONARY</span>
+          <span className={`text-[10px] font-bold ${(travel || arrival) ? "text-warning animate-pulse" : "text-primary/60"}`}>
+            {(travel || arrival) ? "IN TRANSIT" : "STATIONARY"}
+          </span>
         </div>
       )}
 
@@ -351,18 +354,21 @@ export function BodyOverview({ body, galaxy, hideHeader, isExplored = true, onPl
 }
 
 /* ======================= SHIP OVERVIEW ======================= */
-export function ShipOverview({ system, travel, currentTime, onDeselect, hideHeader, onPlayClick }: {
+export function ShipOverview({ system, travel, arrival, currentTime, onDeselect, hideHeader, onPlayClick }: {
   system: StarSystem | null;
   travel: { targetId: string; startTime: number; endTime: number } | null;
+  arrival: { fromId: string; startTime: number; duration: number } | null;
   currentTime: number;
   onDeselect?: () => void;
   hideHeader?: boolean;
   onPlayClick?: () => void;
 }) {
-  const isInTransit = !!travel;
+  const isMoving = !!travel || !!arrival;
   const transitPct = travel
     ? Math.min(100, ((currentTime - travel.startTime) / (travel.endTime - travel.startTime)) * 100)
-    : 0;
+    : arrival 
+      ? Math.min(100, ((currentTime - arrival.startTime) / arrival.duration) * 100)
+      : 0;
   const etaSec = travel ? Math.max(0, Math.ceil((travel.endTime - currentTime) / 1000)) : 0;
 
   return (
@@ -374,19 +380,19 @@ export function ShipOverview({ system, travel, currentTime, onDeselect, hideHead
           <div className="text-[9px] text-muted-foreground uppercase">Commander Vessel · Class I</div>
         </div>
       </div>
-      <Row k="Status" v={isInTransit ? "FTL Transit" : "Stationary"} accent={isInTransit ? "text-warning" : "text-success"} />
+      <Row k="Status" v={isMoving ? (travel ? "FTL Transit" : "Inbound Transit") : "Stationary"} accent={isMoving ? "text-warning" : "text-success"} />
       <Row k="Location" v={system?.name ?? "Deep Space"} />
       <Row k="Hull Integrity" v="100%" accent="text-success" />
       <Row k="Shield Status" v="Online" accent="text-info" />
       <Divider />
       <SubTitle>Drive Systems</SubTitle>
       <Row k="Sub-Light Drive" v="Online" accent="text-success" />
-      <Row k="FTL Drive" v={isInTransit ? "Active" : "Standby"} accent={isInTransit ? "text-warning" : "text-success"} />
-      {isInTransit && (
+      <Row k="FTL Drive" v={travel ? "Active" : "Standby"} accent={travel ? "text-warning" : "text-success"} />
+      {isMoving && (
         <>
           <Divider />
-          <SubTitle>FTL Transit</SubTitle>
-          <Row k="ETA" v={`${etaSec}s`} accent="text-warning" />
+          <SubTitle>{travel ? "FTL Transit" : "Sub-Light Arrival"}</SubTitle>
+          {!arrival && <Row k="ETA" v={`${etaSec}s`} accent="text-warning" />}
           <div className="h-1 w-full bg-warning/20 rounded-full overflow-hidden mt-1">
             <div className="h-full bg-warning rounded-full" style={{ width: `${transitPct}%` }} />
           </div>

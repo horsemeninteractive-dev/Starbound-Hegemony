@@ -3,7 +3,7 @@
 export type StarType =
   | "O" | "B" | "A" | "F" | "G" | "K" | "M"
   | "neutron" | "blackhole" | "pulsar" | "binary" | "trinary" | "whitedwarf" | "whitehole"
-  | "quasar" | "magnetar" | "protostar" | "dyson_swarm";
+  | "magnetar" | "protostar" | "dyson_swarm";
 
 export type BodyType = "terrestrial" | "gas_giant" | "moon" | "asteroid" | "station" | "jump_gate" | "ship" | "star";
 
@@ -31,7 +31,7 @@ export type PlanetSubtype =
   // Uninhabitable
   | "barren" | "toxic" | "frozen" | "gas_giant" | "molten" | "shrouded" | "broken" | "shattered" | "shielded" | "infested"
   // Utilities / legacy
-  | "asteroid" | "station" | "moon" | "rocky_moon" | "commander" | "gas_giant_hot" | "gas_giant_cold" | "lava" | "temperate" | "ice" | "rogue" | "carbon" | "super_earth";
+  | "asteroid" | "station" | "station_habitat" | "station_refinery" | "station_outpost" | "station_hub" | "moon" | "rocky_moon" | "commander" | "gas_giant_hot" | "gas_giant_cold" | "lava" | "temperate" | "ice" | "rogue" | "carbon" | "super_earth";
 
 export interface Body {
   id: string;

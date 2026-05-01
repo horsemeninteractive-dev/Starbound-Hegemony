@@ -1,6 +1,6 @@
 import { useMemo, useRef, useEffect, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { CameraControls, Html, PerspectiveCamera, Line, Billboard, PositionalAudio } from "@react-three/drei";
+import { CameraControls, Html, PerspectiveCamera, Line, Billboard, PositionalAudio, Environment } from "@react-three/drei";
 import { Rocket, ChevronUp } from "lucide-react";
 import * as THREE from "three";
 import type { Galaxy, StarSystem, Body, Sector, ContestState, StarType } from "@/galaxy/types";
@@ -57,6 +57,112 @@ const createEngineBuffer = (ctx: AudioContext) => {
   }
   return buffer;
 };
+
+// --- CELESTIAL AUDIO SYNTHESIS ---
+const createCelestialBuffer = (ctx: AudioContext, type: string, subtype?: string, starType?: string) => {
+  const duration = 2.0;
+  const buffer = ctx.createBuffer(1, ctx.sampleRate * duration, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  const isPulsar = starType === "pulsar" || starType === "magnetar";
+  const isBlackHole = starType === "blackhole";
+
+  for (let i = 0; i < buffer.length; i++) {
+    const t = i / ctx.sampleRate;
+    let s = 0;
+
+    if (type === "star") {
+      if (isBlackHole) {
+        // Haunted gravitational distortion
+        s = Math.sin(2 * Math.PI * 40 * t + Math.sin(t * 15) * 5) * 0.4;
+        s += (Math.random() * 2 - 1) * 0.1 * Math.sin(t * 2);
+      } else if (isPulsar) {
+        // Rhythmic "crystalline" chirps
+        const pulse = Math.pow(Math.sin(t * 12.0 * Math.PI), 16.0);
+        s = Math.sin(2 * Math.PI * 800 * t) * pulse * 0.6;
+        s += (Math.random() * 2 - 1) * 0.1 * pulse;
+      } else {
+        // Roiling plasma rumble
+        const freq = (starType === "O" || starType === "B") ? 120 : 60;
+        s = Math.sin(2 * Math.PI * freq * t) * 0.5;
+        s += Math.sin(2 * Math.PI * (freq * 0.5) * t) * 0.3;
+        s += (Math.random() * 2 - 1) * 0.15; // chaotic solar winds
+      }
+    } else if (type === "gas_giant") {
+      // Thick atmospheric roaring
+      s = (Math.random() * 2 - 1) * 0.3;
+      // Simple low-pass filter effect via averaging
+      if (i > 0) data[i] = data[i-1] * 0.95 + s * 0.05;
+      s = data[i] * 5.0; 
+    } else if (type === "terrestrial") {
+      // Geological hum / sparse wind
+      s = Math.sin(2 * Math.PI * 45 * t) * 0.2;
+      if (Math.random() < 0.01) s += (Math.random() * 2 - 1) * 0.5;
+    } else if (type === "station") {
+      // Industrial / Machinery
+      if (subtype === "station_hub") {
+        // High-frequency hub activity / data chatter
+        s = Math.sin(2 * Math.PI * 220 * t) * 0.15;
+        s += (Math.random() * 2 - 1) * 0.1 * Math.sin(t * 8);
+      } else if (subtype === "station_refinery") {
+        // Heavy rhythmic machinery
+        const beat = Math.pow(Math.sin(t * 1.5 * Math.PI), 12.0);
+        s = Math.sin(2 * Math.PI * 35 * t) * 0.6;
+        s += (Math.random() * 2 - 1) * 0.4 * beat;
+      } else if (subtype === "machine") {
+         // Dyson collector high-pitch "singing"
+         s = Math.sin(2 * Math.PI * 440 * t) * 0.1;
+         s += Math.sin(2 * Math.PI * 880 * t) * 0.05;
+      } else {
+        // Habitat life support / ambient crowds
+        s = Math.sin(2 * Math.PI * 55 * t) * 0.3;
+        s += Math.sin(2 * Math.PI * 110 * t) * 0.15;
+      }
+    } else if (type === "gate") {
+      // Spatial distortion "portal" sound
+      s = Math.sin(2 * Math.PI * 220 * t + Math.sin(t * 5.0) * 12.0) * 0.25;
+      s += (Math.random() * 2 - 1) * 0.08;
+    } else {
+      // Moon: Quiet silicate hum
+      s = Math.sin(2 * Math.PI * 55 * t) * 0.1;
+    }
+
+    data[i] = s * 0.15; // Master celestial volume
+  }
+  return buffer;
+};
+
+function CelestialAudio({ type, subtype, starType, scale, listener }: { type: string, subtype?: string, starType?: string, scale: number, listener: THREE.AudioListener | null }) {
+  const soundRef = useRef<THREE.PositionalAudio>(null);
+  
+  useEffect(() => {
+    if (!listener || !soundRef.current) return;
+    const ctx = listener.context;
+    
+    const buffer = createCelestialBuffer(ctx, type, subtype, starType);
+    soundRef.current.setBuffer(buffer);
+    soundRef.current.setRefDistance(scale * 2.0);
+    soundRef.current.setRolloffFactor(2.5); // Steep falloff for celestial bodies
+    soundRef.current.setLoop(true);
+    
+    // Random start offset to prevent phasing when multiple bodies are near
+    soundRef.current.offset = Math.random() * 2.0;
+    
+    try {
+      soundRef.current.play();
+    } catch (e) {
+      console.warn("Audio play failed:", e);
+    }
+    
+    return () => {
+      if (soundRef.current) {
+        try { soundRef.current.stop(); } catch(e) {}
+      }
+    };
+  }, [listener, type, subtype, starType, scale]);
+
+  if (!listener) return null;
+  return <positionalAudio ref={soundRef} args={[listener]} />;
+}
 
 // Shared temporary vectors for internal calculations within a single function call.
 // DO NOT use these across async boundaries or between different components' useFrame calls.
@@ -360,6 +466,7 @@ function MapContent({
           <audioListener ref={setListener} />
         </PerspectiveCamera>
         <SpaceBackground starType={system?.starType} view={view} quality={graphicsQuality} />
+        <Environment preset="city" />
         <ambientLight intensity={0.05} />
 
         {/* 1. Galactic Infrastructure (Only in Galaxy View) */}
@@ -413,6 +520,7 @@ function MapContent({
             isPlayerHere={s.id === currentSystemId}
             isMobilePanelExpanded={isMobilePanelExpanded}
             quality={graphicsQuality}
+            listener={listener}
           />
         ))}
 
@@ -477,7 +585,7 @@ function ContestStatusRing({ contest }: { contest: ContestState }) {
   );
 }
 
-function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocused, focusedBodyId, onSelect, onSelectBody, filters, isExplored, isKnown, isPlayerHere, isMobilePanelExpanded, quality }: {
+function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocused, focusedBodyId, onSelect, onSelectBody, filters, isExplored, isKnown, isPlayerHere, isMobilePanelExpanded, quality, listener }: {
   system: StarSystem;
   galaxy: Galaxy;
   view: ViewMode;
@@ -493,6 +601,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
   isPlayerHere: boolean;
   isMobilePanelExpanded: boolean;
   quality: "low" | "medium" | "high";
+  listener: THREE.AudioListener | null;
 }) {
   const { camera } = useThree();
   const starGroupRef = useRef<THREE.Group>(null);
@@ -598,6 +707,10 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
 
   return (
     <group position={system.pos}>
+      {/* 3D Audio - Only render star sound when camera is near and system is active */}
+      {isNear && (isFocused || view === "galaxy") && (
+        <CelestialAudio type="star" starType={system.starType} scale={baseStarScale} listener={listener} />
+      )}
       <group ref={starGroupRef}>
         <StarVisual 
           type={system.starType} 
@@ -661,6 +774,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
                 quality={quality}
                 galaxy={galaxy}
                 isSystemExplored={explored}
+                listener={listener}
               />
             ))}
           {/* Orbits — hidden for the focused planet in body view (camera is inside that orbit, causing a horizon-line artifact) */}
@@ -674,7 +788,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
               />
             )
           ))}
-          <JumpGateMarkers system={system} galaxy={galaxy} onSelect={onSelectBody} filters={filters} />
+          <JumpGateMarkers system={system} galaxy={galaxy} onSelect={onSelectBody} filters={filters} listener={listener} />
           
           {/* Stellar Temperature Zones Overlay - Smooth Gradient Shader */}
           {filters.layers.has("habitableZones") && (() => {
@@ -847,7 +961,7 @@ function TerritoryMarker({ body, visualSize, galaxy }: { body: Body; visualSize:
   );
 }
 
-function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, onSelectBody, focusedBodyId, starWorldPos, starType, filters, isMobilePanelExpanded, quality, galaxy, isSystemExplored = true }: {
+function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, onSelectBody, focusedBodyId, starWorldPos, starType, filters, isMobilePanelExpanded, quality, galaxy, isSystemExplored = true, listener }: {
   body: Body;
   parentBody: Body | null;
   view: ViewMode;
@@ -863,10 +977,11 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
   quality: "low" | "medium" | "high";
   galaxy: Galaxy;
   isSystemExplored?: boolean;
+  listener: THREE.AudioListener | null;
 }) {
   const { camera } = useThree();
   const meshRef = useRef<THREE.Group>(null);
-  const sphereRef = useRef<THREE.Object3D>(null);
+  const sphereRef = useRef<any>(null);
   const labelRef = useRef<HTMLDivElement>(null);
   const hitboxRef = useRef<THREE.Mesh>(null);
   const lastWorldPosRef = useRef<THREE.Vector3>(new THREE.Vector3());
@@ -1031,29 +1146,124 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
 
   return (
     <group ref={meshRef}>
+      {/* 3D Audio - Play sound based on planet/moon/station type */}
+      <CelestialAudio 
+        type={body.type === "moon" ? "moon" : (body.type === "gas_giant" ? "gas_giant" : (body.type === "station" ? "station" : "terrestrial"))} 
+        subtype={body.subtype}
+        scale={visualSize} 
+        listener={listener} 
+      />
       {/* Visuals Group with Axial Tilt */}
       <group rotation={axialTilt}>
-        {body.subtype === "station" ? (
+        {body.type === "station" ? (
           <group ref={sphereRef}>
-            {/* Central Hub */}
+            {/* Base reflective shell for all stations */}
             <mesh>
-              <cylinderGeometry args={[visualSize * 0.35, visualSize * 0.35, visualSize * 2.5, 16]} />
-              <meshStandardMaterial color="#7a8a9e" metalness={0.8} roughness={0.2} />
+              <sphereGeometry args={[visualSize * 0.4, 32, 32]} />
+              <meshStandardMaterial 
+                color="#2a3a4a" 
+                metalness={0.9} 
+                roughness={0.1} 
+                envMapIntensity={1.2}
+              />
             </mesh>
-            {/* Solar Panels / Radiators */}
-            <mesh rotation={[0, 0, Math.PI / 2]}>
-              <boxGeometry args={[visualSize * 3.8, visualSize * 0.1, visualSize * 1.2]} />
-              <meshStandardMaterial color="#1a2538" metalness={0.9} roughness={0.2} emissive="#0d1b2a" emissiveIntensity={0.5} />
-            </mesh>
-            {/* Habitat Ring */}
-            <mesh rotation={[Math.PI / 2, 0, 0]}>
-              <torusGeometry args={[visualSize * 1.4, visualSize * 0.25, 16, 48]} />
-              <meshStandardMaterial color="#a0b0c0" metalness={0.6} roughness={0.4} />
-            </mesh>
-            {/* Docking Bay / Engineering Glow */}
-            <mesh position={[0, visualSize * 1.3, 0]}>
-              <cylinderGeometry args={[visualSize * 0.45, visualSize * 0.45, visualSize * 0.25, 16]} />
-              <meshStandardMaterial color="#3a4a5a" emissive="#00ffff" emissiveIntensity={1.2} />
+
+            {/* Subtype-specific geometry */}
+            {body.subtype === "station_hub" && (
+              <group>
+                <mesh rotation={[Math.PI / 2, 0, 0]}>
+                  <torusGeometry args={[visualSize * 1.5, visualSize * 0.15, 16, 64]} />
+                  <meshStandardMaterial color="#7a8a9e" metalness={0.8} roughness={0.2} />
+                </mesh>
+                <mesh rotation={[0, 0, 0]}>
+                  <cylinderGeometry args={[visualSize * 0.2, visualSize * 0.2, visualSize * 3.5, 16]} />
+                  <meshStandardMaterial color="#6a7a8e" metalness={0.7} roughness={0.3} />
+                </mesh>
+                {[0, 1, 2].map(i => (
+                  <mesh key={i} rotation={[0, (i * Math.PI * 2) / 3, Math.PI / 2]} position={[0, 0, 0]}>
+                    <boxGeometry args={[visualSize * 3.0, visualSize * 0.05, visualSize * 0.8]} />
+                    <meshStandardMaterial color="#1a2538" metalness={0.9} roughness={0.1} />
+                  </mesh>
+                ))}
+              </group>
+            )}
+
+            {body.subtype === "station_refinery" && (
+              <group>
+                <mesh position={[0, 0, 0]}>
+                  <boxGeometry args={[visualSize * 1.8, visualSize * 1.8, visualSize * 1.8]} />
+                  <meshStandardMaterial color="#5a6a7a" metalness={0.6} roughness={0.4} />
+                </mesh>
+                {[0, 1, 2, 3].map(i => (
+                  <mesh key={i} position={[
+                    Math.cos(i * Math.PI * 0.5) * visualSize * 1.5,
+                    0,
+                    Math.sin(i * Math.PI * 0.5) * visualSize * 1.5
+                  ]}>
+                    <cylinderGeometry args={[visualSize * 0.4, visualSize * 0.4, visualSize * 2.8, 12]} />
+                    <meshStandardMaterial color="#4a5a6a" metalness={0.8} roughness={0.2} />
+                  </mesh>
+                ))}
+              </group>
+            )}
+
+            {body.subtype === "station_habitat" && (
+              <group>
+                <mesh rotation={[Math.PI * 0.25, 0, 0]}>
+                  <torusGeometry args={[visualSize * 1.2, visualSize * 0.3, 16, 48]} />
+                  <meshStandardMaterial color="#a0b0c0" metalness={0.5} roughness={0.5} />
+                </mesh>
+                <mesh rotation={[-Math.PI * 0.25, 0, 0]}>
+                  <torusGeometry args={[visualSize * 1.2, visualSize * 0.3, 16, 48]} />
+                  <meshStandardMaterial color="#a0b0c0" metalness={0.5} roughness={0.5} />
+                </mesh>
+                <mesh>
+                  <sphereGeometry args={[visualSize * 0.7, 32, 32]} />
+                  <meshStandardMaterial color="#ffffff" metalness={0.2} roughness={0.8} />
+                </mesh>
+              </group>
+            )}
+
+            {body.subtype === "station_outpost" && (
+              <group>
+                <mesh>
+                  <octahedronGeometry args={[visualSize * 1.5, 0]} />
+                  <meshStandardMaterial color="#3a4a5a" metalness={0.9} roughness={0.1} />
+                </mesh>
+                <mesh position={[0, visualSize * 1.5, 0]}>
+                  <cylinderGeometry args={[0.02, 0.02, visualSize * 3.0, 8]} />
+                  <meshStandardMaterial color="#ffffff" />
+                </mesh>
+              </group>
+            )}
+
+            {/* Animated Lights & Windows */}
+            <group>
+              {[...Array(12)].map((_, i) => {
+                const a = (i / 12) * Math.PI * 2;
+                const r = visualSize * 1.35;
+                const hColor = new THREE.Color().setHSL(body.hue / 360, 0.8, 0.6);
+                return (
+                  <mesh key={i} position={[Math.cos(a) * r, (Math.random() - 0.5) * visualSize, Math.sin(a) * r]}>
+                    <sphereGeometry args={[0.04, 8, 8]} />
+                    <meshStandardMaterial 
+                      color={hColor} 
+                      emissive={hColor} 
+                      emissiveIntensity={2.0 + Math.sin(i + Date.now() * 0.002) * 1.5} 
+                    />
+                  </mesh>
+                );
+              })}
+            </group>
+
+            {/* Engineering / Docking Glow */}
+            <mesh position={[0, -visualSize * 1.2, 0]}>
+              <cylinderGeometry args={[visualSize * 0.4, visualSize * 0.2, visualSize * 0.3, 16]} />
+              <meshStandardMaterial 
+                color="#000000" 
+                emissive={new THREE.Color().setHSL(body.hue / 360, 1.0, 0.5)} 
+                emissiveIntensity={3.0 + Math.sin(Date.now() * 0.005) * 1.0} 
+              />
             </mesh>
           </group>
         ) : (
@@ -1225,6 +1435,7 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
               quality={quality}
               galaxy={galaxy}
               isSystemExplored={isSystemExplored}
+              listener={listener}
             />
           </group>
         ))}
@@ -1406,7 +1617,7 @@ const SectorLabels = memo(function SectorLabels({ sectors }: { sectors: Sector[]
 
 /* ---------- Dynamic Orbit ---------- */
 function DynamicOrbit({ radius, color, systemPos }: { radius: number; color: string; systemPos: THREE.Vector3 }) {
-  const lineRef = useRef<THREE.Line>(null);
+  const lineRef = useRef<any>(null);
   const points = useMemo(() => {
     const pts = [];
     const segments = 128;
@@ -1421,7 +1632,7 @@ function DynamicOrbit({ radius, color, systemPos }: { radius: number; color: str
     if (lineRef.current && state.camera) {
       const camDist = state.camera.position.distanceTo(systemPos);
       if (lineRef.current.material) {
-        lineRef.current.material.linewidth = Math.max(0.6, Math.min(2.5, camDist / 120));
+        (lineRef.current.material as any).linewidth = Math.max(0.6, Math.min(2.5, camDist / 120));
       }
     }
   });
@@ -1545,7 +1756,7 @@ function JumpGateVisual({ isLocked }: { isLocked: boolean }) {
   );
 }
 
-function JumpGateMarkers({ system, galaxy, onSelect, filters }: { system: StarSystem; galaxy: Galaxy; onSelect: (id: string) => void; filters: FilterState }) {
+function JumpGateMarkers({ system, galaxy, onSelect, filters, listener }: { system: StarSystem; galaxy: Galaxy; onSelect: (id: string) => void; filters: FilterState; listener: THREE.AudioListener | null }) {
   const outer = getSystemGateRadius(system);
   return (
     <group>
@@ -1555,6 +1766,9 @@ function JumpGateMarkers({ system, galaxy, onSelect, filters }: { system: StarSy
         const isLocked = !!gate.locked;
         return (
           <group key={gate.id} position={pos} rotation={[0, -angle + Math.PI / 2, 0]}>
+            {/* 3D Audio for Jump Gates */}
+            <CelestialAudio type="gate" scale={3.0} listener={listener} />
+            
             <JumpGateVisual isLocked={isLocked} />
             {/* Invisible Hitbox for easier selection — Billboard ensures it's always a flat disk facing the camera */}
             <mesh

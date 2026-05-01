@@ -19,7 +19,7 @@ export interface FilterState {
 
 const ALL_CONTEST: ContestState[] = ["controlled", "contested", "anarchic", "frontier"];
 const ALL_ECON: EconomicStatus[] = ["boom", "stable", "recession", "blockaded", "untapped"];
-const ALL_STAR: StarType[] = ["O", "B", "A", "F", "G", "K", "M", "whitedwarf", "neutron", "pulsar", "binary", "trinary", "blackhole", "whitehole", "quasar", "magnetar", "protostar", "dyson_swarm"];
+const ALL_STAR: StarType[] = ["O", "B", "A", "F", "G", "K", "M", "whitedwarf", "neutron", "pulsar", "binary", "trinary", "blackhole", "whitehole", "magnetar", "protostar", "dyson_swarm"];
 const ALL_LAYERS: DisplayLayer[] = ["hyperlanes", "sectorBorders", "sectorLabels", "objectLabels", "habitableZones", "orbitPaths", "weatherSystems", "cityLights", "empireColors"];
 
 import avatar from "@/assets/avatar.png";
@@ -428,19 +428,33 @@ export function useGalaxyApp(initialSeed = 20260423) {
     setTravel({ targetId, startTime: now, endTime: now + durationMs });
   }, [playerSystemId, galaxy, travel, instantJump, ap, getJumpCost]);
 
+  const [arrival, setArrival] = useState<{ fromId: string; startTime: number; duration: number } | null>(null);
+
   // Arrive at destination
   useEffect(() => {
     if (travel && currentTime >= travel.endTime) {
       const targetId = travel.targetId;
+      const fromId = playerSystemId;
       setPlayerSystemId(targetId);
       setTravel(null);
+      
+      // Set arrival sequence (approx 10s sub-light transit to star)
+      setArrival({ fromId, startTime: currentTime, duration: 10000 });
+
       setExploredSystemIds(prev => {
         const next = new Set(prev);
         next.add(targetId);
         return next;
       });
     }
-  }, [travel, currentTime]);
+  }, [travel, currentTime, playerSystemId]);
+
+  // Clear arrival after duration
+  useEffect(() => {
+    if (arrival && currentTime >= arrival.startTime + arrival.duration) {
+      setArrival(null);
+    }
+  }, [arrival, currentTime]);
 
   const openSystem = useCallback((id: string) => {
     setSystemId(id);
@@ -517,6 +531,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
     backToSystem,
     playerSystemId,
     travel,
+    arrival,
     getJumpCost,
     initiateJump,
     currentTime,

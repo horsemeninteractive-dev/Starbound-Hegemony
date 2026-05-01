@@ -41,8 +41,6 @@ export function StarVisual({ type, scale = 1, detailed = false, grayscale = fals
         return <BlackHole scale={scale} detailed={detailed} quality={quality} />;
       case "whitehole":
         return <WhiteHole scale={scale} detailed={detailed} quality={quality} />;
-      case "quasar":
-        return <Quasar scale={scale} detailed={detailed} quality={quality} />;
       case "magnetar":
         return <Magnetar scale={scale} color={color} detailed={detailed} quality={quality} />;
       case "protostar":
@@ -343,16 +341,25 @@ function NeutronStar({ scale, color, pulsar, detailed, quality }: { scale: numbe
   const beam = useRef<THREE.Group>(null);
   const coreRef = useRef<THREE.Mesh>(null);
   
+  const uniforms = useMemo(() => ({
+    uColor: { value: color },
+    uTime: { value: 0 },
+    uPulsar: { value: pulsar ? 1.0 : 0.0 }
+  }), [color, pulsar]);
+
   useFrame((state, dt) => {
     const t = state.clock.getElapsedTime();
-    if (beam.current) {
-      // Polar precession + rotation
-      beam.current.rotation.y += dt * (pulsar ? 4.0 : 1.2);
-      beam.current.rotation.z = Math.sin(t * (pulsar ? 2.5 : 0.8)) * 0.2;
-      beam.current.rotation.x = Math.cos(t * (pulsar ? 2.5 : 0.8)) * 0.2;
+    if (beam.current && pulsar) {
+      // Polar precession + rotation (Only for Pulsars)
+      beam.current.rotation.y += dt * 8.0;
+      beam.current.rotation.z = Math.sin(t * 4.5) * 0.15;
+      beam.current.rotation.x = Math.cos(t * 4.5) * 0.15;
     }
     if (coreRef.current) {
-      coreRef.current.rotation.y += dt * (pulsar ? 8.0 : 2.0);
+      coreRef.current.rotation.y += dt * (pulsar ? 40.0 : 10.0);
+      if (coreRef.current.material instanceof THREE.ShaderMaterial) {
+        coreRef.current.material.uniforms.uTime.value = t;
+      }
     }
   });
 
@@ -364,7 +371,100 @@ function NeutronStar({ scale, color, pulsar, detailed, quality }: { scale: numbe
     <group>
       <mesh ref={coreRef}>
         <sphereGeometry args={[scale * 0.5, segments, segments]} />
-        <meshBasicMaterial color="#ffffff" toneMapped={false} />
+        <shaderMaterial
+          uniforms={uniforms}
+          vertexShader={`
+            varying vec3 vPosition;
+            void main() {
+              vPosition = position;
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+          `}
+          fragmentShader={`
+            varying vec3 vPosition;
+            uniform vec3 uColor;
+            uniform float uTime;
+            uniform float uPulsar;
+
+            vec4 permute(vec4 x){return mod(((x*34.0)+1.0)*x, 289.0);}
+            vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
+            float snoise(vec3 v){ 
+              const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
+              const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
+              vec3 i  = floor(v + dot(v, C.yyy) );
+              vec3 x0 =   v - i + dot(i, C.xxx) ;
+              vec3 g = step(x0.yzx, x0.xyz);
+              vec3 l = 1.0 - g;
+              vec3 i1 = min( g.xyz, l.zxy );
+              vec3 i2 = max( g.xyz, l.zxy );
+              vec3 x1 = x0 - i1 + 1.0 * C.xxx;
+              vec3 x2 = x0 - i2 + 2.0 * C.xxx;
+              vec3 x3 = x0 - D.yyy;
+              i = mod(i, 289.0 ); 
+              vec4 p = permute( permute( permute( 
+                         i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
+                       + i.y + vec4(0.0, i1.y, i2.y, 1.0 )) 
+                       + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
+              float n_ = 1.0/7.0;
+              vec3  ns = n_ * D.wyz - D.xzx;
+              vec4 j = p - 49.0 * floor(p * (1.0 / 49.0));
+              vec4 x_ = floor(j * ns.z);
+              vec4 y_ = floor(j - 7.0 * x_ );
+              vec4 x = x_ *ns.x + ns.yyyy;
+              vec4 y = y_ *ns.x + ns.yyyy;
+              vec4 h = 1.0 - abs(x) - abs(y);
+              vec4 b0 = vec4( x.xy, y.xy );
+              vec4 b1 = vec4( x.zw, y.zw );
+              vec4 s0 = floor(b0)*2.0 + 1.0;
+              vec4 s1 = floor(b1)*2.0 + 1.0;
+              vec4 sh = -step(h, vec4(0.0));
+              vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;
+              vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;
+              vec3 p0 = vec3(a0.xy,h.x);
+              vec3 p1 = vec3(a0.zw,h.y);
+              vec3 p2 = vec3(a1.xy,h.z);
+              vec3 p3 = vec3(a1.zw,h.w);
+              vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+              p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+              vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+              m = m * m;
+              return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3) ) );
+            }
+
+            void main() {
+              float speedMultiplier = (uPulsar > 0.5 ? 20.0 : 6.0);
+              float t = uTime * speedMultiplier;
+              
+              // High-frequency noise for crystalline look
+              vec3 p = normalize(vPosition) * 6.0;
+              float n1 = snoise(p + vec3(0, t * 0.3, 0));
+              float n2 = snoise(p * 2.5 - vec3(t * 0.2, 0, t * 0.1));
+              float noise = n1 * 0.5 + n2 * 0.5;
+              
+              // SHARP contrast: Map noise to create energy peaks
+              float pattern = smoothstep(-0.1, 0.45, noise);
+              
+              // Colors: Electric Cyan valleys to Blinding White peaks
+              vec3 electricCyan = vec3(0.3, 0.8, 1.0); 
+              vec3 midTone = mix(electricCyan, uColor, 0.7);
+              vec3 peak = vec3(1.1, 1.2, 1.4); 
+              
+              vec3 col = mix(electricCyan, midTone, pattern);
+              col = mix(col, peak, pow(pattern, 2.5));
+              
+              // Energetic "Sparkle" scintilla
+              float sparkle = pow(smoothstep(0.6, 0.85, noise), 6.0);
+              col += vec3(0.9, 0.95, 1.0) * sparkle * 2.0;
+
+              // View-independent subtle edge glow
+              float dist = length(vPosition.xy) / (0.5);
+              float edge = pow(smoothstep(0.75, 1.0, dist), 3.0);
+              col = mix(col, uColor * 2.2, edge * 0.4);
+
+              gl_FragColor = vec4(col * 1.8, 1.0);
+            }
+          `}
+        />
       </mesh>
       
       {/* Realistic Volumetric Aura - Skip for far stars on low */}
@@ -377,29 +477,31 @@ function NeutronStar({ scale, color, pulsar, detailed, quality }: { scale: numbe
 
       {detailed && <pointLight color={color} intensity={6} distance={80} />}
 
-      {/* Precessing Polar Jets */}
-      <group ref={beam}>
-        {/* Top Jet */}
-        <mesh position={[0, jetLen / 2 + scale * 0.4, 0]}>
-          <cylinderGeometry args={[jetRad * 0.15, jetRad * 0.15, jetLen, quality === "low" ? 8 : 16, 4, true]} />
-          <meshBasicMaterial color={color} transparent opacity={0.7} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} />
-        </mesh>
-        {/* Bottom Jet */}
-        <mesh position={[0, -jetLen / 2 - scale * 0.4, 0]} rotation={[Math.PI, 0, 0]}>
-          <cylinderGeometry args={[jetRad * 0.15, jetRad * 0.15, jetLen, quality === "low" ? 8 : 16, 4, true]} />
-          <meshBasicMaterial color={color} transparent opacity={0.7} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} />
-        </mesh>
-        
-        {/* Jet base flares */}
-        <mesh position={[0, scale * 0.5, 0]}>
-          <sphereGeometry args={[scale * 0.8, 16, 16]} />
-          <meshBasicMaterial color={color} transparent opacity={0.4} blending={THREE.AdditiveBlending} />
-        </mesh>
-        <mesh position={[0, -scale * 0.5, 0]}>
-          <sphereGeometry args={[scale * 0.8, 16, 16]} />
-          <meshBasicMaterial color={color} transparent opacity={0.4} blending={THREE.AdditiveBlending} />
-        </mesh>
-      </group>
+      {/* Precessing Polar Jets (Pulsar Only) */}
+      {pulsar && (
+        <group ref={beam}>
+          {/* Top Jet */}
+          <mesh position={[0, jetLen / 2 + scale * 0.4, 0]}>
+            <cylinderGeometry args={[jetRad * 0.15, jetRad * 0.15, jetLen, quality === "low" ? 8 : 16, 4, true]} />
+            <meshBasicMaterial color={color} transparent opacity={0.7} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} />
+          </mesh>
+          {/* Bottom Jet */}
+          <mesh position={[0, -jetLen / 2 - scale * 0.4, 0]} rotation={[Math.PI, 0, 0]}>
+            <cylinderGeometry args={[jetRad * 0.15, jetRad * 0.15, jetLen, quality === "low" ? 8 : 16, 4, true]} />
+            <meshBasicMaterial color={color} transparent opacity={0.7} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} />
+          </mesh>
+          
+          {/* Jet base flares */}
+          <mesh position={[0, scale * 0.5, 0]}>
+            <sphereGeometry args={[scale * 0.8, 16, 16]} />
+            <meshBasicMaterial color={color} transparent opacity={0.4} blending={THREE.AdditiveBlending} />
+          </mesh>
+          <mesh position={[0, -scale * 0.5, 0]}>
+            <sphereGeometry args={[scale * 0.8, 16, 16]} />
+            <meshBasicMaterial color={color} transparent opacity={0.4} blending={THREE.AdditiveBlending} />
+          </mesh>
+        </group>
+      )}
 
       {/* Atmospheric Halo */}
       <mesh scale={2.5}>
@@ -821,68 +923,86 @@ function BlackHole({ scale, detailed, quality }: { scale: number; detailed: bool
 }
 
 
-/* ---------- Quasar (Supermassive active black hole) ---------- */
-function Quasar({ scale, detailed, quality }: { scale: number; detailed: boolean; quality: "low" | "medium" | "high" }) {
-  const jetColor = useMemo(() => new THREE.Color("#ffffff"), []);
-  const jetRef = useRef<THREE.Group>(null);
-  useFrame((state) => {
-    if (jetRef.current) jetRef.current.rotation.y = state.clock.elapsedTime * 2.0;
-  });
-  return (
-    <group>
-      <BlackHole scale={scale * 1.5} detailed={detailed} quality={quality} />
-      <group ref={jetRef}>
-        <mesh position={[0, scale * 40, 0]}>
-          <cylinderGeometry args={[scale * 0.12, scale * 0.12, scale * 80, quality === "low" ? 8 : 16, 1, true]} />
-          <meshBasicMaterial color={jetColor} transparent opacity={0.5} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
-        </mesh>
-        <mesh position={[0, -scale * 40, 0]} rotation={[Math.PI, 0, 0]}>
-          <cylinderGeometry args={[scale * 0.12, scale * 0.12, scale * 80, quality === "low" ? 8 : 16, 1, true]} />
-          <meshBasicMaterial color={jetColor} transparent opacity={0.5} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
-        </mesh>
-      </group>
-      {detailed && <pointLight color="white" intensity={20} distance={300} />}
-    </group>
-  );
-}
+
 
 /* ---------- Magnetar (Neutron star with extreme fields) ---------- */
 function Magnetar({ scale, color, detailed, quality }: { scale: number; color: THREE.Color; detailed: boolean; quality: "low" | "medium" | "high" }) {
+  const fieldRef = useRef<THREE.Group>(null);
   const pulseRef = useRef<THREE.Mesh>(null);
+  
   useFrame((state) => {
+    const t = state.clock.getElapsedTime();
+    if (fieldRef.current) {
+      fieldRef.current.rotation.y = t * 0.5;
+      fieldRef.current.rotation.z = Math.sin(t * 0.2) * 0.1;
+      
+      // Update flux uniforms
+      fieldRef.current.children.forEach((child) => {
+        if (child instanceof THREE.Mesh && child.material instanceof THREE.ShaderMaterial) {
+          child.material.uniforms.uTime.value = t;
+        }
+      });
+    }
     if (pulseRef.current) {
-      const s = 1.0 + Math.pow(Math.sin(state.clock.elapsedTime * 6.0), 2.0) * 0.5;
+      const s = 1.0 + Math.pow(Math.sin(t * 4.0), 4.0) * 0.3;
       pulseRef.current.scale.setScalar(s);
     }
   });
+
   return (
     <group>
       <NeutronStar scale={scale} color={color} pulsar={false} detailed={detailed} quality={quality} />
       
-      {/* Extreme Magnetic Shimmer */}
+      {/* Extreme Magnetic Field Shimmer (Toroidal bands with flux animation) */}
+      <group ref={fieldRef}>
+        {[0, 1, 2].map((i) => (
+          <mesh key={i} rotation={[Math.PI / 2, (i * Math.PI) / 3, 0]}>
+            <torusGeometry args={[scale * (1.5 + i * 0.5), scale * 0.02, 16, 64]} />
+            <shaderMaterial 
+              transparent
+              blending={THREE.AdditiveBlending}
+              side={THREE.DoubleSide}
+              uniforms={{
+                uColor: { value: color },
+                uTime: { value: 0 },
+                uIndex: { value: i as number }
+              }}
+              vertexShader={`
+                varying vec2 vUv;
+                void main() {
+                  vUv = uv;
+                  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+              `}
+              fragmentShader={`
+                varying vec2 vUv;
+                uniform vec3 uColor;
+                uniform float uTime;
+                uniform float uIndex;
+                void main() {
+                  // Magnetic flux animation along the torus
+                  float flux = sin(vUv.x * 30.0 - uTime * (5.0 + uIndex)) * 0.5 + 0.5;
+                  float glow = pow(flux, 2.0);
+                  float opacity = (0.18 - uIndex * 0.05) * glow;
+                  gl_FragColor = vec4(uColor, opacity);
+                }
+              `}
+              onBeforeCompile={(shader) => {
+                // Ensure uTime is updated if needed (though we handle it in useFrame)
+              }}
+            />
+          </mesh>
+        ))}
+      </group>
+
+      {/* Surface magnetic distortion aura */}
       <mesh ref={pulseRef}>
-        <sphereGeometry args={[scale * 1.8, 32, 32]} />
-        <shaderMaterial
-          transparent
-          side={THREE.BackSide}
+        <sphereGeometry args={[scale * 1.2, 32, 32]} />
+        <meshBasicMaterial 
+          color={color} 
+          transparent 
+          opacity={0.1} 
           blending={THREE.AdditiveBlending}
-          depthWrite={false}
-          uniforms={{ uColor: { value: color } }}
-          vertexShader={`
-            varying vec3 vNormal;
-            void main() {
-              vNormal = normalize(normalMatrix * normal);
-              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-            }
-          `}
-          fragmentShader={`
-            varying vec3 vNormal;
-            uniform vec3 uColor;
-            void main() {
-              float intensity = pow(0.1 + vNormal.z, 2.0);
-              gl_FragColor = vec4(uColor, intensity * 0.2);
-            }
-          `}
         />
       </mesh>
     </group>

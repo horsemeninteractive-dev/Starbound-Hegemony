@@ -167,6 +167,7 @@ const Index = () => {
           setInstantJump={app.setInstantJump}
           playerSystemName={app.galaxy.systemById[app.playerSystemId]?.name}
           travel={app.travel}
+          arrival={app.arrival}
           currentTime={app.currentTime}
           galaxy={app.galaxy}
           onRegenerate={app.regenerateGalaxy}
@@ -267,6 +268,7 @@ const Index = () => {
                     onSelectBody={handleSystemBodyClick}
                     playerSystemId={app.playerSystemId}
                     travel={app.travel}
+                    arrival={app.arrival}
                     initiateJump={app.initiateJump}
                     getJumpCost={app.getJumpCost}
                     currentTime={app.currentTime}
@@ -286,6 +288,7 @@ const Index = () => {
                   <ShipOverview
                     system={app.system}
                     travel={app.travel}
+                    arrival={app.arrival}
                     currentTime={app.currentTime}
                     onDeselect={handleBackToSystem}
                     onPlayClick={playClick}
@@ -1057,6 +1060,7 @@ function MobileHUD({
                 onSelectBody={onSelectBody}
                 playerSystemId={app.playerSystemId}
                 travel={app.travel}
+                arrival={app.arrival}
                 initiateJump={app.initiateJump}
                 getJumpCost={app.getJumpCost}
                 currentTime={app.currentTime}
@@ -1072,6 +1076,7 @@ function MobileHUD({
               <ShipOverview
                 system={app.system}
                 travel={app.travel}
+                arrival={app.arrival}
                 currentTime={app.currentTime}
                 onDeselect={() => setExpanded(false)}
                 hideHeader={true}
