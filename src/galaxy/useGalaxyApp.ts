@@ -54,6 +54,9 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [exploredSystemIds, setExploredSystemIds] = useState<Set<string>>(
     () => new Set(JSON.parse(localStorage.getItem("exploredIds") ?? '["sys-center"]'))
   );
+  const [exploredBodyIds, setExploredBodyIds] = useState<Set<string>>(
+    () => new Set(JSON.parse(localStorage.getItem("exploredBodyIds") ?? '["sys-center:star"]'))
+  );
   const [fogOfWar, setFogOfWarState] = useState(() => localStorage.getItem("fogOfWar") !== "false");
   const [instantJump, setInstantJumpState] = useState(() => localStorage.getItem("instantJump") === "true");
   
@@ -247,6 +250,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
   useEffect(() => { localStorage.setItem("playerSystemId", playerSystemId); }, [playerSystemId]);
   useEffect(() => { localStorage.setItem("playerBodyId", playerBodyId); }, [playerBodyId]);
   useEffect(() => { localStorage.setItem("exploredIds", JSON.stringify([...exploredSystemIds])); }, [exploredSystemIds]);
+  useEffect(() => { localStorage.setItem("exploredBodyIds", JSON.stringify([...exploredBodyIds])); }, [exploredBodyIds]);
   useEffect(() => { 
     if (view === "galaxy" || view === "system") {
       localStorage.setItem("view", view); 
@@ -479,6 +483,11 @@ export function useGalaxyApp(initialSeed = 20260423) {
 
       if (travelType === "intra") {
         setPlayerBodyId(targetId);
+        setExploredBodyIds(prev => {
+          const next = new Set(prev);
+          next.add(`${playerSystemId}:${targetId}`);
+          return next;
+        });
         setTravel(null);
         toast.success("Arrival confirmed", {
           description: `Vessel has entered orbit around ${targetId === "star" ? "the system star" : targetId}.`
@@ -495,6 +504,11 @@ export function useGalaxyApp(initialSeed = 20260423) {
         setExploredSystemIds(prev => {
           const next = new Set(prev);
           next.add(targetId);
+          return next;
+        });
+        setExploredBodyIds(prev => {
+          const next = new Set(prev);
+          next.add(`${targetId}:star`);
           return next;
         });
       }
@@ -598,6 +612,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
     initiateTravelToBody,
     currentTime,
     exploredSystemIds,
+    exploredBodyIds,
     fogOfWar,
     setFogOfWar,
     instantJump,

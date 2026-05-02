@@ -24,6 +24,8 @@ import { ShipCustomizer } from "@/galaxy/components/ShipCustomizer";
 import { type ShipConfiguration } from "@/galaxy/shipPresets";
 import { AuthScreen } from "@/galaxy/components/AuthScreen";
 import { useAudio } from "@/galaxy/useAudio";
+import { ChangelogModal } from "@/galaxy/components/ChangelogModal";
+import { CreditsScreen } from "@/galaxy/components/CreditsScreen";
 import logo from "@/assets/logo.png";
 
 const ICON_MAP: Record<string, any> = {
@@ -51,6 +53,8 @@ const Index = () => {
   }, [transitionKey, playNotification]);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+  const [isCreditsOpen, setIsCreditsOpen] = useState(false);
   const [isMobilePanelExpanded, setIsMobilePanelExpanded] = useState(false);
   const [graphicsQuality, setGraphicsQuality] = useState<"low" | "medium" | "high">(() => {
     return (localStorage.getItem("gfx_quality") as "low" | "medium" | "high") || "high";
@@ -184,6 +188,8 @@ const Index = () => {
           onOpenFleets={() => navigateTo("fleets")}
           onOpenParty={() => navigateTo("party")}
           onOpenSkills={() => navigateTo("skills")}
+          onOpenChangelog={() => setIsChangelogOpen(true)}
+          onOpenCredits={() => setIsCreditsOpen(true)}
           ap={app.ap}
           sc={app.sc}
           playerName={app.playerName}
@@ -335,6 +341,7 @@ const Index = () => {
                       body={app.body} 
                       galaxy={app.galaxy} 
                       isExplored={!app.fogOfWar || app.exploredSystemIds.has(app.system.id)}
+                      isVisited={app.exploredBodyIds.has(`${app.system.id}:${app.body.id}`)}
                       onPlayClick={playClick}
                       onSelectEmpire={handleSelectEmpire}
                       playerSystemId={app.playerSystemId}
@@ -826,20 +833,37 @@ const Index = () => {
 
       {/* Overlays */}
       <SettingsModal 
-        isOpen={isSettingsOpen} 
-        onClose={() => setIsSettingsOpen(false)} 
+        open={isSettingsOpen} 
+        onOpenChange={setIsSettingsOpen} 
         quality={graphicsQuality}
-        setQuality={setGraphicsQuality}
-        audioEnabled={app.audioEnabled}
-        setAudioEnabled={app.setAudioEnabled}
+        onQualityChange={setGraphicsQuality}
         musicVolume={app.musicVolume}
-        setMusicVolume={app.setMusicVolume}
+        onMusicVolumeChange={app.setMusicVolume}
         sfxVolume={app.sfxVolume}
-        setSfxVolume={app.setSfxVolume}
+        onSfxVolumeChange={app.setSfxVolume}
         fxVolume={app.fxVolume}
-        setFxVolume={app.setFxVolume}
+        onFxVolumeChange={app.setFxVolume}
+        audioEnabled={app.audioEnabled}
+        onAudioEnabledChange={app.setAudioEnabled}
         onPlayClick={playClick}
       />
+
+      <ChangelogModal 
+        open={isChangelogOpen} 
+        onOpenChange={setIsChangelogOpen} 
+        onPlayClick={playClick}
+      />
+
+      <AnimatePresence>
+        {isCreditsOpen && (
+          <CreditsScreen 
+            onClose={() => setIsCreditsOpen(false)} 
+            onPlayClick={playClick}
+          />
+        )}
+      </AnimatePresence>
+
+      <Sonner position="top-right" theme="dark" closeButton />
 
       {/* Mobile Tactical Panel Overlay */}
       {app.page === "map" && (

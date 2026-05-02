@@ -255,11 +255,12 @@ function formatLabel(raw: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function BodyOverview({ body, galaxy, hideHeader, isExplored = true, onPlayClick, onSelectEmpire, playerSystemId, playerBodyId, travel, initiateTravelToBody, currentTime }: { 
+export function BodyOverview({ body, galaxy, hideHeader, isExplored = true, isVisited = false, onPlayClick, onSelectEmpire, playerSystemId, playerBodyId, travel, initiateTravelToBody, currentTime }: { 
   body: Body; 
   galaxy: Galaxy; 
   hideHeader?: boolean; 
   isExplored?: boolean; 
+  isVisited?: boolean;
   onPlayClick?: () => void;
   onSelectEmpire?: (id: string) => void;
   playerSystemId: string;
@@ -320,6 +321,16 @@ export function BodyOverview({ body, galaxy, hideHeader, isExplored = true, onPl
         <div className="mb-4 bg-primary/10 border border-primary/20 px-3 py-2 rounded flex items-center justify-between">
           <span className="text-[10px] font-bold text-primary tracking-widest uppercase">Vessel in Orbit</span>
           <span className="text-[10px] font-bold text-primary/60">STATIONARY</span>
+        </div>
+      )}
+
+      {isExplored && !isVisited && !isShip && !isStar && (
+        <div className="mb-4 bg-info/10 border border-info/20 px-3 py-2 rounded">
+          <div className="flex items-center gap-2">
+            <div className="w-1.5 h-1.5 rounded-full bg-info animate-pulse" />
+            <span className="text-[10px] font-bold text-info uppercase tracking-widest">Awaiting Survey</span>
+          </div>
+          <p className="text-[9px] text-info/60 mt-1 italic">Orbital sensors have identified resource signatures. Surface survey required for tactical quantification.</p>
         </div>
       )}
 
@@ -427,8 +438,8 @@ export function BodyOverview({ body, galaxy, hideHeader, isExplored = true, onPl
                       <span className="text-[9px] uppercase tracking-wider text-primary/80 font-bold leading-tight">
                         {d.resource}
                       </span>
-                      <span className={`text-[9px] font-mono-hud font-bold tracking-tighter ${richnessColor}`}>
-                        {richnessSymbols}
+                      <span className={`text-[9px] font-mono-hud font-bold tracking-tighter ${isVisited ? richnessColor : "text-muted-foreground"}`}>
+                        {isVisited ? richnessSymbols : "???"}
                       </span>
                     </div>
                   );

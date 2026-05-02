@@ -452,7 +452,7 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
       subtype,
       orbit,
       phase: rng() * Math.PI * 2,
-      size: isGas ? 1.4 + rng() * 1.2 : 0.6 + rng() * 0.7,
+      size: isGas ? 2.6 + rng() * 1.5 : 0.6 + rng() * 0.7,
       hue: Math.floor(rng() * 360),
       isShielded,
       ownerId: null,
@@ -477,7 +477,7 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
     const moonCount = isGas ? randInt(rng, 1, 5) : randInt(rng, 0, 3);
     for (let m = 0; m < moonCount; m++) {
       // Moon orbits are local to the planet. Tighter scaling to prevent inter-planetary interference.
-      const moonOrbit = planet.size * 1.5 + 2.0 + m * 2.5;
+      const moonOrbit = planet.size * 1.6 + 3.0 + m * 3.5;
       
       let moonSubtype: Body["subtype"] = "barren";
       const parentZone = planet.habitabilityZone;

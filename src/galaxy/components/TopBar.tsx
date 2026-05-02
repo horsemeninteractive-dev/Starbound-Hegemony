@@ -24,6 +24,8 @@ interface Props {
   onOpenFleets?: () => void;
   onOpenParty?: () => void;
   onOpenSkills?: () => void;
+  onOpenChangelog?: () => void;
+  onOpenCredits?: () => void;
   ap: number;
   sc: number;
   vt?: number;
@@ -64,7 +66,7 @@ const GAME_MENU = [
 
 export function TopBar({ 
   onOpenSettings, onOpenProfile, onOpenMap, onOpenArticles, 
-  onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills,
+  onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills, onOpenChangelog, onOpenCredits,
   ap, sc, vt = 0, playerName, playerLevel, playerXP, xpToNextLevel, playerAvatar,
   fogOfWar, setFogOfWar, instantJump, setInstantJump,
   playerSystemName, playerSystemId, travel, arrival, currentTime, galaxy, onRegenerate, onReset, onSetAp, onPlayClick, isGameReady = true
@@ -358,9 +360,32 @@ export function TopBar({
           </nav>
           
           {/* Footer matching main footer height */}
-          <div className="h-8 border-t border-primary/20 flex items-center justify-center bg-primary/5 shrink-0 px-4">
-            <span className="font-mono-hud text-[8px] uppercase tracking-[0.25em] text-primary/40">
-              Starbound Hegemony OS v1.0.4
+          <div className="h-14 border-t border-primary/20 flex flex-col items-center justify-center bg-primary/5 shrink-0 px-4 py-2 gap-1">
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => {
+                  setMenuOpen(false);
+                  onPlayClick?.();
+                  onOpenChangelog?.();
+                }}
+                className="font-mono-hud text-[8px] uppercase tracking-[0.25em] text-primary/60 hover:text-primary transition-colors"
+              >
+                Changelog
+              </button>
+              <span className="text-primary/20">•</span>
+              <button 
+                onClick={() => {
+                  setMenuOpen(false);
+                  onPlayClick?.();
+                  onOpenCredits?.();
+                }}
+                className="font-mono-hud text-[8px] uppercase tracking-[0.25em] text-primary/60 hover:text-primary transition-colors"
+              >
+                Credits
+              </button>
+            </div>
+            <span className="font-mono-hud text-[7px] uppercase tracking-[0.25em] text-primary/30">
+              Starbound Hegemony OS v0.1.21
             </span>
           </div>
         </SheetContent>

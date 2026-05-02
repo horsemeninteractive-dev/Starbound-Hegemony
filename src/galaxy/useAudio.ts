@@ -87,10 +87,35 @@ export function useAudio(enabled: boolean, musicVolume: number, sfxVolume: numbe
     window.addEventListener("click", handleInteraction);
     window.addEventListener("keydown", handleInteraction);
 
+    // Global focus handling: mute audio when tab is hidden or minimized
+    const handleVisibilityChange = () => {
+      const context = THREE.AudioContext.getContext();
+      if (document.hidden) {
+        if (context.state === "running") {
+          context.suspend();
+        }
+        if (ambientRef.current) {
+          ambientRef.current.pause();
+        }
+      } else if (enabled) {
+        // Re-enable if the user returns and audio is enabled
+        if (context.state === "suspended") {
+          context.resume();
+        }
+        // Note: Ambient might still be blocked by autoplay until a new interaction, 
+        // but typically resume() works if the session was already active.
+        if (ambientRef.current && ambientRef.current.paused) {
+          ambientRef.current.play().catch(() => {});
+        }
+      }
+    };
+    window.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
       ambientRef.current?.pause();
       window.removeEventListener("click", handleInteraction);
       window.removeEventListener("keydown", handleInteraction);
+      window.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [enabled, musicVolume]);
 
@@ -107,6 +132,7 @@ export function useAudio(enabled: boolean, musicVolume: number, sfxVolume: numbe
   const playExpand = useCallback(() => {
     const sfx = getSfx("expand");
     if (sfx) {
+      sfx.volume = sfxVolume * 0.5;
       sfx.playbackRate = 1.2;
       sfx.play().catch(() => {});
     }
@@ -115,6 +141,7 @@ export function useAudio(enabled: boolean, musicVolume: number, sfxVolume: numbe
   const playCollapse = useCallback(() => {
     const sfx = getSfx("collapse");
     if (sfx) {
+      sfx.volume = sfxVolume * 0.5;
       sfx.playbackRate = 0.8;
       sfx.play().catch(() => {});
     }

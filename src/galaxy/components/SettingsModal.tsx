@@ -2,34 +2,34 @@ import { X, Maximize, Minimize, Volume2, VolumeX, Music, Zap, Radio } from "luci
 import { useState, useEffect } from "react";
 
 interface Props {
-  isOpen: boolean;
-  onClose: () => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   quality: "low" | "medium" | "high";
-  setQuality: (q: "low" | "medium" | "high") => void;
+  onQualityChange: (q: "low" | "medium" | "high") => void;
   audioEnabled: boolean;
-  setAudioEnabled: (v: boolean) => void;
+  onAudioEnabledChange: (v: boolean) => void;
   musicVolume: number;
-  setMusicVolume: (v: number) => void;
+  onMusicVolumeChange: (v: number) => void;
   sfxVolume: number;
-  setSfxVolume: (v: number) => void;
+  onSfxVolumeChange: (v: number) => void;
   fxVolume: number;
-  setFxVolume: (v: number) => void;
+  onFxVolumeChange: (v: number) => void;
   onPlayClick?: () => void;
 }
 
 export function SettingsModal({ 
-  isOpen, 
-  onClose, 
+  open, 
+  onOpenChange, 
   quality, 
-  setQuality,
+  onQualityChange,
   audioEnabled,
-  setAudioEnabled,
+  onAudioEnabledChange,
   musicVolume,
-  setMusicVolume,
+  onMusicVolumeChange,
   sfxVolume,
-  setSfxVolume,
+  onSfxVolumeChange,
   fxVolume,
-  setFxVolume,
+  onFxVolumeChange,
   onPlayClick
 }: Props) {
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
@@ -50,7 +50,7 @@ export function SettingsModal({
     }
   };
 
-  if (!isOpen) return null;
+  if (!open) return null;
 
   // Per-channel muted state: volume === 0 acts as the muted indicator
   // We track a "pre-mute" value to restore when toggling back on
@@ -60,7 +60,7 @@ export function SettingsModal({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" onClick={() => onOpenChange(false)} />
       
       <div className="hud-panel hud-corner w-full max-w-[420px] animate-fade-in relative">
         <div className="flex items-center justify-between px-4 py-3 border-b border-primary/20">
@@ -69,7 +69,7 @@ export function SettingsModal({
           </div>
           <button 
             onClick={() => {
-              onClose();
+              onOpenChange(false);
               onPlayClick?.();
             }} 
             className="text-muted-foreground hover:text-primary transition"
@@ -90,7 +90,7 @@ export function SettingsModal({
                 <button
                   key={q}
                   onClick={() => {
-                    setQuality(q);
+                    onQualityChange(q);
                     onPlayClick?.();
                   }}
                   className={`flex flex-col items-center gap-1 p-2 border transition ${
@@ -120,7 +120,7 @@ export function SettingsModal({
               </div>
               <button 
                 onClick={() => {
-                  setAudioEnabled(!audioEnabled);
+                  onAudioEnabledChange(!audioEnabled);
                   onPlayClick?.();
                 }}
                 className={`p-1 rounded transition-colors ${audioEnabled ? 'text-primary' : 'text-muted-foreground'}`}
@@ -135,10 +135,10 @@ export function SettingsModal({
                 icon={<Music size={12} className="opacity-60" />}
                 label="Ambient Music"
                 volume={musicVolume}
-                setVolume={setMusicVolume}
+                setVolume={onMusicVolumeChange}
                 isMuted={isMusicMuted}
                 masterDisabled={!audioEnabled}
-                onToggleMute={() => setMusicVolume(isMusicMuted ? 0.4 : 0)}
+                onToggleMute={() => onMusicVolumeChange(isMusicMuted ? 0.4 : 0)}
                 onPlayClick={onPlayClick}
               />
 
@@ -147,10 +147,10 @@ export function SettingsModal({
                 icon={<Zap size={12} className="opacity-60" />}
                 label="HUD Feedback"
                 volume={sfxVolume}
-                setVolume={setSfxVolume}
+                setVolume={onSfxVolumeChange}
                 isMuted={isSfxMuted}
                 masterDisabled={!audioEnabled}
-                onToggleMute={() => setSfxVolume(isSfxMuted ? 0.6 : 0)}
+                onToggleMute={() => onSfxVolumeChange(isSfxMuted ? 0.6 : 0)}
                 onPlayClick={onPlayClick}
               />
 
@@ -160,10 +160,10 @@ export function SettingsModal({
                 label="FX Audio"
                 sublabel="Stars · Planets · Ships · Gates"
                 volume={fxVolume}
-                setVolume={setFxVolume}
+                setVolume={onFxVolumeChange}
                 isMuted={isFxMuted}
                 masterDisabled={!audioEnabled}
-                onToggleMute={() => setFxVolume(isFxMuted ? 0.5 : 0)}
+                onToggleMute={() => onFxVolumeChange(isFxMuted ? 0.5 : 0)}
                 onPlayClick={onPlayClick}
               />
             </div>
@@ -197,7 +197,7 @@ export function SettingsModal({
 
           <div className="pt-4 border-t border-primary/10">
             <div className="font-mono-hud text-[8px] text-center text-muted-foreground/50 uppercase tracking-widest">
-              Starbound Hegemony · Build v0.4.2-sb
+              Starbound Hegemony · Build v0.1.21-sb
             </div>
           </div>
         </div>

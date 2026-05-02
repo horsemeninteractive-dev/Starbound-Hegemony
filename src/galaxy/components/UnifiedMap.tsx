@@ -170,7 +170,7 @@ function CelestialAudio({ type, subtype, starType, scale, listener, quality }: {
         const ctx = node.context;
         node.play();
         if (node.gain) {
-          const maxVol = type === "star" ? 0.7 : type === "gas_giant" ? 0.35 : 0.2;
+          const maxVol = type === "star" ? 0.7 : (type === "gas_giant" || type === "terrestrial") ? 0.45 : type === "moon" ? 0.35 : type === "gate" ? 0.3 : 0.2;
           node.gain.gain.setTargetAtTime(maxVol, ctx.currentTime, 0.1);
         }
         isPlayingRef.current = true;
@@ -191,7 +191,9 @@ function CelestialAudio({ type, subtype, starType, scale, listener, quality }: {
     const dist = state.camera.position.distanceTo(worldPos);
 
     // 1. Distance Culling - More aggressive than visuals
-    const maxDist = quality === "low" ? 180 : (quality === "medium" ? 250 : 350);
+    const baseMaxDist = quality === "low" ? 180 : (quality === "medium" ? 250 : 350);
+    // Jumpgates have a larger acoustic footprint than planets, but reduced from previous overshot values
+    const maxDist = type === "gate" ? baseMaxDist * 2.0 : baseMaxDist;
     let shouldBeActive = dist < maxDist;
 
     // 2. Frustum Culling (only check if near enough to matter)
@@ -221,8 +223,13 @@ function CelestialAudio({ type, subtype, starType, scale, listener, quality }: {
 
     const buffer = createCelestialBuffer(ctx, type, subtype, starType);
     node.setBuffer(buffer);
-    node.setRefDistance(scale * 2.5);
-    node.setRolloffFactor(1.5); 
+    
+    // Jumpgates should be heard from further away, but dialed back for clarity
+    const refDist = type === "gate" ? scale * 15 : scale * 2.5;
+    const rolloff = type === "gate" ? 1.0 : 1.5;
+
+    node.setRefDistance(refDist);
+    node.setRolloffFactor(rolloff); 
     node.setDistanceModel('exponential');
     node.setLoop(true);
     node.offset = Math.random() * 2.0;
@@ -1901,6 +1908,39 @@ function JumpGateMarkers({ system, galaxy, onSelect, filters, listener, quality 
   );
 }
 
+function WarpBubble({ active, scale = 1 }: { active: boolean, scale?: number }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const material = useMemo(() => new THREE.MeshStandardMaterial({
+    color: "#ff00ff",
+    transparent: true,
+    opacity: 0,
+    metalness: 1,
+    roughness: 0,
+    emissive: "#ff00ff",
+    emissiveIntensity: 2.0,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending
+  }), []);
+
+  useFrame((state) => {
+    if (!meshRef.current) return;
+    const targetOpacity = active ? 0.15 : 0;
+    material.opacity = THREE.MathUtils.lerp(material.opacity, targetOpacity, 0.1);
+    if (active) {
+      const pulse = Math.sin(state.clock.elapsedTime * 10.0) * 0.05;
+      meshRef.current.scale.setScalar(scale * (1.0 + pulse));
+    }
+  });
+
+  if (!active && material.opacity < 0.01) return null;
+  return (
+    <mesh ref={meshRef}>
+      <sphereGeometry args={[0.5, 32, 32]} />
+      <primitive object={material} attach="material" />
+    </mesh>
+  );
+}
+
 function getGateLocalPosition(system: StarSystem, targetSystemId: string) {
   if (!system || !system.gates) return new THREE.Vector3(15, 0, 0);
   const outer = getSystemGateRadius(system);
@@ -2138,6 +2178,13 @@ function PlayerFleetVisual({ galaxy, playerSystemId, playerBodyId = "star", view
           }
           engineIntensity = 3.0 + Math.random() * 1.0;
           scale = view === 'galaxy' ? 4.0 : 0; 
+
+          // During FTL transit, force orientation immediately towards target
+          const targetSysPos = new THREE.Vector3(...targetSys.pos);
+          const sourceSysPos = new THREE.Vector3(...sourceSys.pos);
+          const dir = targetSysPos.clone().sub(sourceSysPos).normalize();
+          const targetQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+          groupRef.current.quaternion.copy(targetQuat);
         } else {
           scale = 0;
         }
@@ -2175,9 +2222,14 @@ function PlayerFleetVisual({ galaxy, playerSystemId, playerBodyId = "star", view
           }
           scale = p;
           flashScale = (1.0 - p) * 10;
-          flashOpacity = 1.0 - p;
+          flashOpacity = (1.0 - p);
           engineIntensity = 4.0 * (1.0 + Math.random() * 0.2);
           intensityRef.current = engineIntensity;
+
+          // Force orientation towards the star BEFORE rematerializing
+          const toStar = targetIdlePos.clone().sub(gatePos).normalize();
+          const targetQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), toStar);
+          groupRef.current.quaternion.copy(targetQuat);
         } else {
           hasMattedRef.current = false;
           const p = (elapsed - matTime) / Math.max(1, transitTime);
@@ -2284,9 +2336,14 @@ function PlayerFleetVisual({ galaxy, playerSystemId, playerBodyId = "star", view
     }
   });
 
+  const currentTime = Date.now();
+  const isFTL = travel?.type === "inter" && travel.startTime < currentTime && travel.endTime > currentTime;
+  const engineColor = isFTL ? "#ff00ff" : "#00ffff"; // Magenta during FTL, Cyan for Sub-light
+
   return (
     <group>
       <group ref={groupRef}>
+        <WarpBubble active={isFTL} />
         {listener && (
           <>
             <positionalAudio ref={setJumpRef} args={[listener]} />
@@ -2299,7 +2356,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, playerBodyId = "star", view
           <ModularShip 
             config={config} 
             engineIntensityRef={intensityRef} 
-            engineColor={config.accentColor} 
+            engineColor={engineColor} 
           />
         )}
 
