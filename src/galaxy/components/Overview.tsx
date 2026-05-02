@@ -1,5 +1,6 @@
 import type { Galaxy, StarSystem, Body } from "@/galaxy/types";
 import { STAR_META, CONTEST_META, ECON_META, BODY_META } from "@/galaxy/meta";
+import { Zap } from "lucide-react";
 
 /* ======================= GALAXY OVERVIEW ======================= */
 export function GalaxyOverview({ galaxy, hideHeader }: { galaxy: Galaxy; hideHeader?: boolean }) {
@@ -22,7 +23,7 @@ export function GalaxyOverview({ galaxy, hideHeader }: { galaxy: Galaxy; hideHea
 }
 
 /* ======================= SYSTEM OVERVIEW ======================= */
-export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, travel, arrival, initiateJump, getJumpCost, currentTime, isExplored, hideHeader, onPlayClick, onSelectEmpire }: {
+export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, travel, arrival, initiateJump, getJumpCost, currentTime, isExplored, hideHeader, hideActions, onPlayClick, onSelectEmpire, onEnterSystem }: {
   system: StarSystem;
   galaxy: Galaxy;
   onSelectBody: (id: string) => void;
@@ -34,8 +35,10 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, t
   currentTime: number;
   isExplored: boolean;
   hideHeader?: boolean;
+  hideActions?: boolean;
   onPlayClick?: () => void;
   onSelectEmpire?: (id: string) => void;
+  onEnterSystem?: () => void;
 }) {
   const explored = isExplored || system.id === "sys-center";
   const meta = STAR_META[system.starType];
@@ -56,6 +59,19 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, t
 
   return (
     <Panel title={system.name} subtitle={sector?.name ?? "Unknown Sector"} hideHeader={hideHeader}>
+      {!hideActions && onEnterSystem && (
+        <button
+          onClick={() => {
+            onEnterSystem();
+            onPlayClick?.();
+          }}
+          className="w-full mb-4 py-3 bg-primary text-background font-display text-[10px] font-bold uppercase tracking-[0.2em] rounded border border-primary/40 hover:bg-primary/80 transition-all flex items-center justify-center gap-2 group"
+        >
+          <Zap size={14} fill="currentColor" className="group-hover:scale-110 transition-transform" />
+          Enter System
+        </button>
+      )}
+
       {isCurrent && (
         <div className="mb-4 bg-primary/10 border border-primary/20 px-3 py-2 rounded flex items-center justify-between">
           <span className="text-[10px] font-bold text-primary">CURRENT LOCATION</span>
@@ -84,7 +100,7 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, t
       <Row k="Description" v={explored ? meta.description : "???"} small />
       <Row k="Temperature" v={explored ? meta.temp : "???"} small />
       
-      {!isCurrent && !travel && isAdjacent && (
+      {!hideActions && !isCurrent && !travel && isAdjacent && (
         <button 
           onClick={() => {
             onPlayClick?.();

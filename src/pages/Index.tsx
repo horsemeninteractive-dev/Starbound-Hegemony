@@ -83,15 +83,21 @@ const Index = () => {
     setPlayerName, setPlayerAvatar, setOnboardingCompleted
   } = app;
 
-  const handleOpenSystem = useCallback(withLoading((id: string) => {
+  const handleSelectSystem = useCallback(withLoading((id: string) => {
     playTransition();
-    openSystem(id);
-  }), [withLoading, playTransition, openSystem]);
+    app.selectSystem(id);
+  }), [withLoading, playTransition, app.selectSystem]);
+
+  const handleEnterSystem = useCallback(withLoading((id: string) => {
+    playTransition();
+    app.openSystem(id);
+  }), [withLoading, playTransition, app.openSystem]);
 
   const handleBackToGalaxy = useCallback(withLoading(() => {
     playTransition();
-    backToGalaxy();
-  }), [withLoading, playTransition, backToGalaxy]);
+    app.backToGalaxy();
+    app.selectSystem(null); // Clear selection when going back to full galaxy view
+  }), [withLoading, playTransition, app.backToGalaxy, app.selectSystem]);
 
   const handleBackToSystem = useCallback(withLoading(() => {
     playTransition();
@@ -221,7 +227,7 @@ const Index = () => {
                     system={app.system}
                     body={app.body}
                     filters={app.filters}
-                    onSelectSystem={handleOpenSystem}
+                    onSelectSystem={handleSelectSystem}
                     onSelectBody={handleSystemBodyClick}
                     onHoverSystem={app.setHoverSystemId}
                     hoverSystemId={app.hoverSystemId}
@@ -285,7 +291,27 @@ const Index = () => {
 
             <aside className="hidden sm:flex w-[380px] h-full flex-col hud-panel border-l border-primary/20 z-40 animate-in slide-in-from-right duration-500">
               <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-                {app.view === "galaxy" && <GalaxyOverview galaxy={app.galaxy} />}
+                {app.view === "galaxy" && (
+                  app.system ? (
+                    <SystemOverview 
+                      system={app.system} 
+                      galaxy={app.galaxy} 
+                      onSelectBody={handleSystemBodyClick}
+                      playerSystemId={app.playerSystemId}
+                      travel={app.travel}
+                      arrival={app.arrival}
+                      initiateJump={app.initiateJump}
+                      getJumpCost={app.getJumpCost}
+                      currentTime={app.currentTime}
+                      isExplored={!app.fogOfWar || app.exploredSystemIds.has(app.system.id)}
+                      onPlayClick={playClick}
+                      onSelectEmpire={handleSelectEmpire}
+                      onEnterSystem={() => handleEnterSystem(app.system!.id)}
+                    />
+                  ) : (
+                    <GalaxyOverview galaxy={app.galaxy} />
+                  )
+                )}
                 {app.view === "system" && app.system && (
                   <SystemOverview 
                     system={app.system} 
@@ -821,6 +847,7 @@ const Index = () => {
           expanded={isMobilePanelExpanded} 
           setExpanded={setIsMobilePanelExpanded} 
           onSelectEmpire={handleSelectEmpire}
+          onEnterSystem={() => handleEnterSystem(app.system?.id || "")}
         />
       )}
     </motion.div>
@@ -1008,7 +1035,8 @@ function MobileHUD({
   onPlayCollapse,
   expanded, 
   setExpanded,
-  onSelectEmpire
+  onSelectEmpire,
+  onEnterSystem
 }: { 
   app: GalaxyApp; 
   onSelectBody: (id: string) => void; 
@@ -1020,6 +1048,7 @@ function MobileHUD({
   expanded: boolean; 
   setExpanded: (v: boolean) => void;
   onSelectEmpire: (id: string) => void;
+  onEnterSystem: () => void;
 }) {
   useEffect(() => {
     setExpanded(false);
@@ -1045,6 +1074,8 @@ function MobileHUD({
                  app.playerSystemId !== app.system.id && 
                  app.galaxy.systems.find((s) => s.id === app.playerSystemId)?.gates.some((g) => g.targetSystemId === app.system.id);
 
+  const canEnterSystem = app.view === "galaxy" && app.system !== null;
+
   return (
     <div className="sm:hidden fixed inset-x-2 bottom-9 z-30 pointer-events-auto">
       <div className="hud-panel hud-corner overflow-hidden flex flex-col shadow-2xl shadow-primary/10">
@@ -1056,39 +1087,82 @@ function MobileHUD({
               if (next) onPlayExpand();
               else onPlayCollapse();
             }}
-            className="flex-1 flex items-center gap-2 px-3 py-2 text-left hover:bg-primary/5 transition min-w-0"
+            className="flex-1 flex flex-col justify-center px-3 py-2 text-left hover:bg-primary/5 transition min-w-0"
             aria-label={expanded ? "Collapse panel" : "Expand panel"}
           >
-            <div className="flex-1 min-w-0">
-              <div className="font-mono-hud text-[9px] uppercase tracking-[0.3em] text-primary/70 truncate">
-                {subtitle}
-              </div>
-              <div className="font-display text-sm uppercase tracking-[0.15em] text-primary text-glow truncate">
-                {title}
-              </div>
+            <div className="font-mono-hud text-[9px] uppercase tracking-[0.3em] text-primary/70 truncate w-full">
+              {subtitle}
             </div>
-            <span className="shrink-0 text-primary border border-primary/40 rounded p-1">
-              {expanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-            </span>
+            <div className="font-display text-sm uppercase tracking-[0.15em] text-primary text-glow truncate w-full">
+              {title}
+            </div>
           </button>
           
+          {canEnterSystem && (
+            <button
+              onClick={() => {
+                onEnterSystem();
+                onPlayClick();
+              }}
+              className="shrink-0 flex items-center gap-1.5 bg-primary/20 text-primary border border-primary/50 px-3 py-1.5 rounded font-mono-hud font-bold text-[9px] tracking-widest hover:bg-primary/30 active:scale-95 transition-all"
+            >
+              <Target size={14} />
+              ENTER
+            </button>
+          )}
+
           {canJump && (
             <button
               onClick={() => {
-                app.initiateJump(app.system.id);
+                app.initiateJump(app.system!.id);
                 onPlayClick();
               }}
-              className="shrink-0 flex items-center gap-2 bg-primary text-background px-3 py-1.5 rounded font-mono-hud font-bold text-[10px] tracking-widest hover:scale-105 active:scale-95 transition-all"
+              className="shrink-0 flex items-center gap-1.5 bg-primary text-background border border-primary px-3 py-1.5 rounded font-mono-hud font-bold text-[9px] tracking-widest hover:bg-primary/80 active:scale-95 transition-all"
             >
-              <Zap size={14} fill="currentColor" />
+              <Rocket size={14} fill="currentColor" />
               JUMP
             </button>
           )}
+
+          <button
+            onClick={() => {
+              const next = !expanded;
+              setExpanded(next);
+              if (next) onPlayExpand();
+              else onPlayCollapse();
+            }}
+            className="shrink-0 text-primary border border-primary/40 rounded p-1 hover:bg-primary/10 transition-colors"
+            aria-label={expanded ? "Collapse panel" : "Expand panel"}
+          >
+            {expanded ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+          </button>
         </div>
 
         {expanded && (
           <div className="border-t border-primary/20 max-h-[40vh] overflow-y-auto p-2 animate-fade-in custom-scrollbar">
-            {app.view === "galaxy" && <GalaxyOverview galaxy={app.galaxy} hideHeader={true} />}
+            {app.view === "galaxy" && (
+              app.system ? (
+                <SystemOverview
+                  system={app.system}
+                  galaxy={app.galaxy}
+                  onSelectBody={onSelectBody}
+                  playerSystemId={app.playerSystemId}
+                  travel={app.travel}
+                  arrival={app.arrival}
+                  initiateJump={app.initiateJump}
+                  getJumpCost={app.getJumpCost}
+                  currentTime={app.currentTime}
+                  isExplored={!app.fogOfWar || app.exploredSystemIds.has(app.system.id)}
+                  hideHeader={true}
+                  hideActions={true}
+                  onPlayClick={onPlayClick}
+                  onSelectEmpire={onSelectEmpire}
+                  onEnterSystem={onEnterSystem}
+                />
+              ) : (
+                <GalaxyOverview galaxy={app.galaxy} hideHeader={true} />
+              )
+            )}
             {app.view === "system" && app.system && (
               <SystemOverview
                 system={app.system}
@@ -1102,6 +1176,7 @@ function MobileHUD({
                 currentTime={app.currentTime}
                 isExplored={!app.fogOfWar || app.exploredSystemIds.has(app.system.id)}
                 hideHeader={true}
+                hideActions={true}
                 onPlayClick={onPlayClick}
                 onSelectEmpire={onSelectEmpire}
               />
@@ -1224,11 +1299,17 @@ function ProfileView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: () => 
           <div className="max-w-4xl mx-auto">
             {activeTab === "Overview" && (
               <div className="space-y-6 sm:space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                {/* Detailed Stats Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  <StatCard label="Total Net Worth" value={Math.floor(app.sc).toLocaleString()} unit="SC" icon={Coins} color="warning" />
-                  <StatCard label="Systems Discovered" value={app.exploredSystemIds.size} unit="SYS" icon={Globe} color="success" />
+                {/* Currency Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <StatCard label="Action Potential" value={Math.floor(app.ap)} unit="AP" icon={Zap} color="primary" />
+                  <StatCard label="Total Net Worth" value={Math.floor(app.sc).toLocaleString()} unit="SC" icon={Coins} color="warning" />
+                  <StatCard label="Void Tokens" value={0} unit="VT" icon={Hexagon} color="purple" />
+                </div>
+
+                {/* Exploration Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <StatCard label="Systems Discovered" value={app.exploredSystemIds.size} unit="SYS" icon={Globe} color="success" />
+                  <StatCard label="Active Fleets" value={14} unit="FLT" icon={Rocket} color="primary" />
                 </div>
 
                 {/* Status Snapshot */}
@@ -1568,8 +1649,8 @@ function CouncilHemicycle({ empire }: { empire: Empire }) {
             <circle 
               key={seat.key}
               cx={x} cy={y} r="3"
-              fill={isOccupied ? seat.color : '#333'}
-              className={`${isOccupied ? 'cursor-help hover:r-[4] hover:brightness-125' : 'opacity-20'} transition-all`}
+              fill={isOccupied ? seat.color : '#444'}
+              className={`${isOccupied ? 'cursor-help hover:r-[4] hover:brightness-125' : 'opacity-40'} transition-all`}
               onMouseEnter={() => isOccupied && setHoveredSeat({ 
                 name: seat.official!.name, 
                 party: seat.official!.party, 
@@ -1598,15 +1679,15 @@ function CouncilHemicycle({ empire }: { empire: Empire }) {
             const seatIndex = prevSeats + rightToLeftIndex;
             const seat = council.seats[seatIndex];
             const faction = council.factions.find(f => f.id === seat?.factionId);
-            const color = faction?.color || '#333';
             const isOccupied = !!seat?.occupantName;
+            const color = isOccupied ? (faction?.color || '#333') : '#444';
 
             return (
               <circle 
                 key={`${rowIndex}-${i}`}
                 cx={x} cy={y} r="2.2"
                 fill={color}
-                className={`transition-all duration-300 ${isOccupied ? 'cursor-help hover:r-[3.2]' : 'opacity-20'}`}
+                className={`transition-all duration-300 ${isOccupied ? 'cursor-help hover:r-[3.2]' : 'opacity-40'}`}
                 onMouseEnter={() => isOccupied && setHoveredSeat({ 
                   name: seat.occupantName!, 
                   party: faction?.name || "Independent", 
@@ -1898,12 +1979,13 @@ function EmpireView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: () => v
   );
 }
 
-function StatCard({ label, value, unit, icon: Icon, color = "primary" }: { label: string; value: string | number; unit: string; icon: React.ElementType; color?: "primary" | "warning" | "success" | "destructive" }) {
+function StatCard({ label, value, unit, icon: Icon, color = "primary" }: { label: string; value: string | number; unit: string; icon: React.ElementType; color?: "primary" | "warning" | "success" | "destructive" | "purple" }) {
   const colorMap: Record<string, string> = {
     primary: "border-l-primary bg-primary/5 text-primary",
     warning: "border-l-warning bg-warning/5 text-warning",
     success: "border-l-success bg-success/5 text-success",
     destructive: "border-l-destructive bg-destructive/5 text-destructive",
+    purple: "border-l-purple-500 bg-purple-500/5 text-purple-400",
   };
   const currentColors = colorMap[color] || colorMap.primary;
   return (

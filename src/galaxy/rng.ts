@@ -34,27 +34,33 @@ const SECTOR_PREFIXES = [
   "Tycho", "Galileo", "Vega", "Rigel", "Altair", "Centauri", "Sirius", "Procyon",
   "Mensa", "Pyxis", "Aquila", "Caelum", "Dorado", "Eridanus", "Fornax", "Gemini",
   "Hercules", "Indus", "Lacerta", "Mensa", "Norma", "Octans", "Pavo", "Reticulum",
+  "Scutum", "Taurus", "Ursa", "Vulpecula", "Antlia", "Chamaeleon", "Circinus", "Columba",
+  "Horologium", "Monoceros", "Musca", "Pictor", "Volans", "Aries", "Cancer"
 ];
 
-const SECTOR_SUFFIXES = ["Reach", "Expanse", "Marches", "Verge", "Drift", "Cluster", "Belt", "Frontier", "Sprawl", "Dominion"];
+const SECTOR_SUFFIXES = ["Reach", "Expanse", "Marches", "Verge", "Drift", "Cluster", "Belt", "Frontier", "Sprawl", "Dominion", "Void", "Abyss", "Halo", "Crown", "Narrows", "Shoals", "Depths"];
 
 const SYSTEM_PROPER = [
   "Aethel", "Valthor", "Kryon", "Zephyra", "Thalmos", "Oris", "Belenos", "Cynos", "Draken", "Elowen",
   "Fenris", "Galar", "Hesperis", "Ioran", "Kaelum", "Luvia", "Meryn", "Noxis", "Olyndia", "Porthos",
   "Quilla", "Rhovan", "Sylvar", "Tyrus", "Ulric", "Veyla", "Wynter", "Xora", "Ylva", "Zorion",
-  "Aethelgard", "Volsung", "Miriad", "Forgeia", "Glassen", "Emberis", "Hollown", "Tidaris", "Crownis", "Ashen"
+  "Aethelgard", "Volsung", "Miriad", "Forgeia", "Glassen", "Emberis", "Hollown", "Tidaris", "Crownis", "Ashen",
+  "Aurelia", "Balthazar", "Caspian", "Demetrius", "Evadne", "Freyja", "Gideon", "Hadrian", "Isolde", "Jericho",
+  "Kyrie", "Lysander", "Morgana", "Nicasia", "Oberon", "Persephone", "Quentin", "Roderick", "Seraphina", "Tristan"
 ];
 
-const SYSTEM_CATALOGS = ["KOR", "XEN", "VAL", "DRA", "NEX", "PHI", "RHO", "SIG", "VEX", "ZAR"];
+const SYSTEM_CATALOGS = ["KOR", "XEN", "VAL", "DRA", "NEX", "PHI", "RHO", "SIG", "VEX", "ZAR", "OME", "ALP", "BET", "GAM", "DEL", "EPS", "ZET", "ETA", "THET", "IOT"];
 
 const STATION_NAMES = [
   "Citadel", "Anchor", "Nexus", "Freeport", "Watchtower", "Sanctuary", "Vanguard", "Sentinel",
-  "Terminal", "Outpost", "Bastion", "Garrison", "Spire", "Deep Space 9", "Babylon", "The Sprawl"
+  "Terminal", "Outpost", "Bastion", "Garrison", "Spire", "Deep Space 9", "Babylon", "The Sprawl",
+  "Port Authority", "Hub", "Gateway", "Checkpoint", "Depot", "Array", "Platform", "Observatory"
 ];
 
 const PLANET_ROOTS = [
   "Aether", "Volans", "Mire", "Forge", "Glass", "Ember", "Hollow", "Tide", "Crown", "Ash",
   "Iron", "Salt", "Veil", "Shard", "Echo", "Drift", "Spire", "Dune", "Moss", "Rift",
+  "Basalt", "Quartz", "Granite", "Marble", "Slate", "Obsidian", "Pumice", "Shale", "Tuff", "Gneiss"
 ];
 
 export const sectorName = (rng: Rng) =>

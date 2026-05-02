@@ -45,7 +45,8 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
       uQuality: { value: 2.0 },
       uTerrainSeed: { value: 0.0 },
       uGeographyType: { value: 0.0 }, // 0: continental, 1: pangaea, 2: islands
-      uGrayscale: { value: 0.0 }
+      uGrayscale: { value: 0.0 },
+      uHue: { value: 0.0 }
     };
   }, []); // Stable reference
 
@@ -67,6 +68,7 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
     uniforms.uTerrainSeed.value = terrainSeed || 0.0;
     uniforms.uGeographyType.value = geographyType === "pangaea" ? 1.0 : geographyType === "islands" ? 2.0 : 0.0;
     uniforms.uGrayscale.value = grayscale ? 1.0 : 0.0;
+    uniforms.uHue.value = h;
   }, [color, hue, landColor, seaColor, parentSize, showWeather, showCityLights, isWeather, quality, terrainSeed, geographyType, grayscale, uniforms]);
 
   const subtypeVal = useMemo(() => {
@@ -178,6 +180,14 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
         uniform float uTerrainSeed;
         uniform float uGeographyType;
         uniform float uGrayscale;
+        uniform float uHue;
+
+        vec3 hueToRgb(float hue) {
+            float R = abs(fract(hue) * 6.0 - 3.0) - 1.0;
+            float G = 2.0 - abs(fract(hue) * 6.0 - 2.0);
+            float B = 2.0 - abs(fract(hue) * 6.0 - 4.0);
+            return clamp(vec3(R, G, B), 0.0, 1.0);
+        }
 
         // --- NOISE FUNCTIONS ---
         vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -353,21 +363,25 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
           // 1: Desert, 2: Arid, 3: Savanna, 17: Barren
           if (st == 1 || st == 2 || st == 3 || st == 17) {
             vec3 desertP = normalize(vLocalPosition);
-            float sand = fbm(desertP * 6.0, 5);
-            float dunes = fbm(desertP * 12.0, 3) * 0.5 + 0.5;
+            float sand = fbm(desertP * (6.0 + fract(uTerrainSeed)), 5);
+            float dunes = fbm(desertP * (12.0 + fract(uTerrainSeed) * 4.0), 3) * 0.5 + 0.5;
+            vec3 pTint = hueToRgb(uHue);
+            float hueVarR = pTint.r;
+            float hueVarG = pTint.g;
             
-            vec3 baseDesert = mix(vec3(0.55, 0.32, 0.12), vec3(0.88, 0.72, 0.45), uColor.r * 0.5 + 0.3);
-            vec3 darkRock = mix(vec3(0.3, 0.18, 0.08), vec3(0.5, 0.38, 0.20), uColor.g * 0.4);
+            vec3 baseDesert = mix(vec3(0.55, 0.32, 0.12), vec3(0.88, 0.72, 0.45), hueVarR * 0.5 + 0.3);
+            vec3 darkRock = mix(vec3(0.3, 0.18, 0.08), vec3(0.5, 0.38, 0.20), hueVarG * 0.4);
             
             if (st == 2) { // Arid: More browns, sparse green
-               baseDesert = mix(vec3(0.4, 0.3, 0.2), vec3(0.6, 0.5, 0.3), uColor.r);
-               darkRock = mix(vec3(0.2, 0.2, 0.1), vec3(0.3, 0.3, 0.2), uColor.g);
+               baseDesert = mix(vec3(0.4, 0.3, 0.2), vec3(0.6, 0.5, 0.3), hueVarR);
+               darkRock = mix(vec3(0.2, 0.2, 0.1), vec3(0.3, 0.3, 0.2), hueVarG);
                float sparseGreen = smoothstep(0.7, 0.9, fbm(desertP * 10.0, 4));
                baseDesert = mix(baseDesert, vec3(0.3, 0.4, 0.2), sparseGreen);
             } else if (st == 3) { // Savanna: Yellow/Orange plains
-               baseDesert = mix(vec3(0.6, 0.5, 0.2), vec3(0.7, 0.6, 0.3), uColor.r);
+               baseDesert = mix(vec3(0.6, 0.5, 0.2), vec3(0.7, 0.6, 0.3), hueVarR);
             } else if (st == 17) { // Barren: Gray/Brown lifeless
-               baseDesert = mix(vec3(0.4, 0.35, 0.35), vec3(0.5, 0.45, 0.45), uColor.r);
+               baseDesert = mix(vec3(0.4, 0.35, 0.35), pTint * 0.8, 0.2);
+               baseDesert = mix(baseDesert, vec3(0.5, 0.45, 0.45), hueVarR);
             }
             
             surfaceColor = mix(darkRock, baseDesert, sand);
@@ -382,7 +396,7 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
               float dust = fbm(desertP * 3.0 + uTime * 0.08, 3) * 0.5 + 0.5;
               surfaceColor = mix(surfaceColor, baseDesert * 1.1, dust * 0.5);
             }
-            atmoColor = mix(vec3(1.0, 0.8, 0.5), vec3(0.9, 0.6, 0.3), uColor.g);
+            atmoColor = mix(vec3(1.0, 0.8, 0.5), vec3(0.9, 0.6, 0.3), hueVarG);
             atmoDensity = st == 17 ? 0.0 : 1.2;
             roughness = 0.85;
 
@@ -461,53 +475,58 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
           // 5: Ocean
           } else if (st == 5) {
             vec3 oceanP = normalize(vLocalPosition);
-            float waves = fbm(oceanP * 5.0 + uTime * 0.04, 5) * 0.5 + 0.5;
-            vec3 abyssal = mix(vec3(0.01, 0.04, 0.12), vec3(0.02, 0.08, 0.20), uColor.b * 0.5 + 0.3);
-            vec3 shallows = mix(vec3(0.05, 0.25, 0.45), vec3(0.10, 0.40, 0.65), uColor.b * 0.4);
+            float waves = fbm(oceanP * (5.0 + fract(uTerrainSeed)*2.0) + uTime * 0.04, 5) * 0.5 + 0.5;
+            vec3 pTint = hueToRgb(uHue);
+            vec3 abyssal = mix(vec3(0.01, 0.04, 0.12), pTint * 0.3, 0.4);
+            vec3 shallows = mix(vec3(0.05, 0.25, 0.45), pTint * 0.6, 0.4);
             surfaceColor = mix(abyssal, shallows, waves);
             surfaceColor = mix(surfaceColor, vec3(0.80, 0.90, 0.95), smoothstep(0.78, 0.92, waves) * 0.4);
             oceanMask = 1.0; roughness = 0.05;
-            atmoColor = mix(vec3(0.4, 0.7, 1.0), vec3(0.3, 0.5, 0.9), uColor.b);
+            atmoColor = mix(vec3(0.4, 0.7, 1.0), pTint, 0.3);
             atmoDensity = 1.1;
             if (uShowWeather > 0.5) {
-              float clouds = smoothstep(0.55, 0.8, fbm(oceanP * 4.0 + uTime*0.03, 4));
-              surfaceColor = mix(surfaceColor, vec3(0.95, 0.98, 1.0), clouds * 0.85);
+              float clouds = smoothstep(0.55, 0.8, fbm(oceanP * (4.0 + fract(uTerrainSeed)) + uTime*0.03, 4));
+              surfaceColor = mix(surfaceColor, mix(vec3(0.95, 0.98, 1.0), pTint, 0.1), clouds * 0.85);
             }
             if (uShowCityLights > 0.5) {
               // Floating cities
-              cityGlow = vec3(1.0, 0.8, 0.5) * smoothstep(0.85, 0.9, fbm(oceanP * 12.0, 3)) * 3.0;
+              cityGlow = mix(vec3(1.0, 0.8, 0.5), pTint, 0.3) * smoothstep(0.85, 0.9, fbm(oceanP * 12.0, 3)) * 3.0;
               cityGlow *= (1.0 - smoothstep(0.55, 0.8, fbm(oceanP * 4.0 + uTime*0.03, 4)) * 0.85);
             }
 
           // 7: Arctic, 8: Alpine, 9: Tundra, 19: Frozen
           } else if (st == 7 || st == 8 || st == 9 || st == 19) {
              vec3 iceP = normalize(vLocalPosition);
-             vec3 tint = mix(vec3(1.0, 1.0, 1.0), uColor * 1.4, 0.25);
+             vec3 pTint = hueToRgb(uHue);
+             vec3 tint = mix(vec3(1.0, 1.0, 1.0), pTint, 0.3);
              
-             float coarseCracks = fbm(iceP * 8.0, 4) * 0.5 + 0.5;
-             float microDetail  = fbm(iceP * 48.0, 3) * 0.5 + 0.5;
+             float coarseCracks = fbm(iceP * (8.0 + fract(uTerrainSeed) * 2.0), 4) * 0.5 + 0.5;
+             float microDetail  = fbm(iceP * (48.0 + fract(uTerrainSeed) * 10.0), 3) * 0.5 + 0.5;
              float polar = smoothstep(0.5, 0.9, abs(iceP.y));
              
              if (st == 19) { // Pure frozen
-               surfaceColor = mix(vec3(0.4, 0.5, 0.7), mix(vec3(0.8, 0.9, 1.0), tint, 0.2), smoothstep(0.48, 0.52, coarseCracks));
+               surfaceColor = mix(vec3(0.4, 0.5, 0.7), mix(vec3(0.8, 0.9, 1.0), tint, 0.4), smoothstep(0.48, 0.52, coarseCracks));
                surfaceColor = mix(surfaceColor, vec3(0.96, 0.97, 1.00), polar * 0.8);
                roughness = 0.1;
              } else if (st == 7) { // Arctic: Deep oceans + glaciers
                float iceMask = smoothstep(0.4, 0.6, h + polar * 0.4);
-               vec3 sea = mix(vec3(0.05, 0.1, 0.2), vec3(0.1, 0.3, 0.5), coarseCracks);
-               vec3 glacier = mix(vec3(0.7, 0.8, 0.9), vec3(0.9, 0.95, 1.0), microDetail);
+               vec3 sea = mix(vec3(0.05, 0.1, 0.2), pTint * 0.4, 0.3);
+               sea = mix(sea, vec3(0.1, 0.3, 0.5), coarseCracks);
+               vec3 glacier = mix(vec3(0.7, 0.8, 0.9), tint, microDetail);
                surfaceColor = mix(sea, glacier, iceMask);
                roughness = mix(0.1, 0.6, iceMask);
              } else if (st == 8) { // Alpine: Mountains + snow
                float mountain = smoothstep(0.4, 0.8, h);
-               vec3 rock = mix(vec3(0.3, 0.3, 0.35), vec3(0.4, 0.4, 0.45), coarseCracks);
-               vec3 snow = vec3(0.9, 0.95, 1.0);
+               vec3 rockBase = mix(vec3(0.3, 0.3, 0.35), pTint, 0.2);
+               vec3 rock = mix(rockBase, rockBase * 1.3, coarseCracks);
+               vec3 snow = mix(vec3(0.9, 0.95, 1.0), tint, 0.5);
                float snowMask = smoothstep(0.6, 0.9, h + polar * 0.5);
                surfaceColor = mix(rock, snow, snowMask);
                roughness = 0.8;
              } else if (st == 9) { // Tundra: Permafrost + brown grass
-               vec3 soil = mix(vec3(0.4, 0.3, 0.2), vec3(0.3, 0.35, 0.3), coarseCracks);
-               vec3 frost = vec3(0.85, 0.9, 0.95);
+               vec3 soilBase = mix(vec3(0.4, 0.3, 0.2), pTint, 0.25);
+               vec3 soil = mix(soilBase, soilBase * 0.8, coarseCracks);
+               vec3 frost = mix(vec3(0.85, 0.9, 0.95), tint, 0.5);
                float frostMask = smoothstep(0.4, 0.7, h * 0.5 + polar * 0.8 + microDetail * 0.2);
                surfaceColor = mix(soil, frost, frostMask);
                roughness = 0.8;
@@ -522,13 +541,14 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
                surfaceColor = mix(surfaceColor, vec3(1.0, 1.0, 1.0), snow * 0.7);
              }
              
-             atmoColor = vec3(0.75, 0.90, 1.0);
+             atmoColor = mix(vec3(0.75, 0.90, 1.0), pTint, 0.2);
              atmoDensity = 0.3;
 
           // 11: Tomb, 12: Relic, 13: Ecumenopolis, 35: Super Earth
           } else if (st == 11 || st == 12 || st == 13 || st == 35) {
             float coast = smoothstep(0.40, 0.46, h);
             float mountain = smoothstep(0.60, 0.90, h);
+            vec3 pTint = hueToRgb(uHue);
             
             if (st == 35) {
               vec3 abyssal = uSeaColor * 0.4;
@@ -541,50 +561,58 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
               }
               if (uShowWeather > 0.5) {
                 float clouds = smoothstep(0.5, 0.85, fbm(p * 3.5 + uTime * 0.04, 3));
-                surfaceColor = mix(surfaceColor, vec3(0.9, 0.95, 1.0), clouds * 0.6);
+                surfaceColor = mix(surfaceColor, mix(vec3(0.9, 0.95, 1.0), pTint, 0.15), clouds * 0.6);
                 cityGlow *= (1.0 - clouds);
               }
               atmoColor = uColor; atmoDensity = 0.95;
             } else if (st == 13) { // Ecumenopolis
-              float grid = step(0.9, fract(vUv.x * 60.0)) + step(0.9, fract(vUv.y * 60.0));
+              float grid = step(0.9, fract(vUv.x * (60.0 + fract(uTerrainSeed)*20.0))) + step(0.9, fract(vUv.y * (60.0 + fract(uTerrainSeed)*20.0)));
               float districts = fbm(p * 15.0, 4);
-              surfaceColor = mix(vec3(0.2, 0.2, 0.25), vec3(0.4, 0.4, 0.45), districts);
+              vec3 ecuBase = mix(vec3(0.2, 0.2, 0.25), pTint * 0.4, 0.3);
+              vec3 ecuHigh = mix(vec3(0.4, 0.4, 0.45), pTint * 0.6, 0.3);
+              surfaceColor = mix(ecuBase, ecuHigh, districts);
               surfaceColor = mix(surfaceColor, vec3(0.1, 0.1, 0.1), grid * 0.5);
               if (uShowCityLights > 0.5) {
                  float lightMask = smoothstep(0.3, 0.7, districts) + grid * 0.5;
-                 cityGlow = vec3(1.0, 0.8, 0.5) * lightMask * 5.0;
+                 cityGlow = mix(vec3(1.0, 0.8, 0.5), pTint, 0.5) * lightMask * 5.0;
               }
-              atmoColor = vec3(0.8, 0.6, 0.4); atmoDensity = 0.6; roughness = 0.4;
+              atmoColor = mix(vec3(0.8, 0.6, 0.4), pTint, 0.4); atmoDensity = 0.6; roughness = 0.4;
             } else if (st == 12) { // Relic
-              float ruins = fbm(p * 20.0, 5);
-              surfaceColor = mix(vec3(0.3, 0.3, 0.25), vec3(0.5, 0.5, 0.45), ruins);
-              if (uShowCityLights > 0.5) cityGlow = vec3(0.5, 0.8, 1.0) * smoothstep(0.8, 0.95, ruins) * 2.0; // faint ancient power
-              atmoColor = vec3(0.5, 0.5, 0.5); atmoDensity = 0.4; roughness = 0.7;
+              float ruins = fbm(p * (20.0 + fract(uTerrainSeed)*10.0), 5);
+              vec3 relicBase = mix(vec3(0.3, 0.3, 0.25), pTint * 0.5, 0.4);
+              vec3 relicHigh = mix(vec3(0.5, 0.5, 0.45), pTint * 0.7, 0.4);
+              surfaceColor = mix(relicBase, relicHigh, ruins);
+              if (uShowCityLights > 0.5) cityGlow = mix(vec3(0.5, 0.8, 1.0), pTint, 0.6) * smoothstep(0.8, 0.95, ruins) * 2.0; // faint ancient power
+              atmoColor = mix(vec3(0.5, 0.5, 0.5), pTint, 0.3); atmoDensity = 0.4; roughness = 0.7;
             } else if (st == 11) { // Tomb
-              float ash = fbm(p * 10.0, 4);
-              float craters = pow(max(0.0, snoise(p * 5.0)), 4.0);
-              surfaceColor = mix(vec3(0.2, 0.2, 0.2), vec3(0.4, 0.4, 0.35), ash);
+              float ash = fbm(p * (10.0 + fract(uTerrainSeed)*5.0), 4);
+              float craters = pow(max(0.0, snoise(p * (5.0 + fract(uTerrainSeed)*2.0))), 4.0);
+              vec3 tombBase = mix(vec3(0.2, 0.2, 0.2), pTint * 0.3, 0.4);
+              vec3 tombHigh = mix(vec3(0.4, 0.4, 0.35), pTint * 0.5, 0.4);
+              surfaceColor = mix(tombBase, tombHigh, ash);
               surfaceColor -= craters * 0.5; // dark craters
-              if (uShowCityLights > 0.5) cityGlow = craters * 4.0 * vec3(0.2, 1.0, 0.2); // Radioactive glow
-              atmoColor = vec3(0.4, 0.5, 0.3); atmoDensity = 0.8; roughness = 0.9;
+              if (uShowCityLights > 0.5) cityGlow = craters * 4.0 * mix(vec3(0.2, 1.0, 0.2), pTint, 0.7); // Radioactive glow
+              atmoColor = mix(vec3(0.4, 0.5, 0.3), pTint, 0.4); atmoDensity = 0.8; roughness = 0.9;
             }
 
           // 14: Hive, 25: Infested
           } else if (st == 14 || st == 25) {
-            float organic = fbm(p * 5.0, 5) * 0.5 + 0.5;
-            float tendrils = step(0.78, fbm(p * 18.0 + uTime * 0.01, 4) * 0.5 + 0.5);
+            float organic = fbm(p * (5.0 + fract(uTerrainSeed)), 5) * 0.5 + 0.5;
+            float tendrils = step(0.78, fbm(p * (18.0 + fract(uTerrainSeed) * 5.0) + uTime * 0.01, 4) * 0.5 + 0.5);
             float pulses   = fbm(p * 8.0 + uTime * 0.06, 3) * 0.5 + 0.5;
-            vec3 biomass = st == 14 ? mix(vec3(0.05, 0.08, 0.04), vec3(0.12, 0.20, 0.08), organic) 
-                                    : mix(vec3(0.15, 0.02, 0.02), vec3(0.25, 0.05, 0.05), organic); // Red for infested
-            vec3 bioGlow = st == 14 ? mix(vec3(0.1, 0.8, 0.3), vec3(0.5, 0.2, 0.8), pulses)
-                                    : mix(vec3(1.0, 0.2, 0.0), vec3(0.8, 0.0, 0.2), pulses);
+            vec3 pTint = hueToRgb(uHue);
+            vec3 hiveBase = st == 14 ? mix(vec3(0.05, 0.08, 0.04), pTint * 0.2, 0.5) : mix(vec3(0.15, 0.02, 0.02), pTint * 0.3, 0.5);
+            vec3 hiveHigh = st == 14 ? mix(vec3(0.12, 0.20, 0.08), pTint * 0.5, 0.5) : mix(vec3(0.25, 0.05, 0.05), pTint * 0.6, 0.5);
+            vec3 biomass = mix(hiveBase, hiveHigh, organic);
+            vec3 bioGlow = mix(st == 14 ? vec3(0.1, 0.8, 0.3) : vec3(1.0, 0.2, 0.0), pTint, 0.5);
+            bioGlow = mix(bioGlow, st == 14 ? vec3(0.5, 0.2, 0.8) : vec3(0.8, 0.0, 0.2), pulses);
             surfaceColor  = mix(biomass, bioGlow * 0.4, tendrils * 0.5);
-            if (uShowCityLights > 0.5) cityGlow = vec3(1.0, 0.3, 0.1) * tendrils * pulses * 3.5;
+            if (uShowCityLights > 0.5) cityGlow = bioGlow * tendrils * pulses * 3.5;
             if (uShowWeather > 0.5) {
               float spores = smoothstep(0.6, 0.9, fbm(p * 6.0 + uTime * 0.04, 3));
-              surfaceColor = mix(surfaceColor, st == 14 ? vec3(0.4, 0.8, 0.3) : vec3(0.8, 0.2, 0.1), spores * 0.5);
+              surfaceColor = mix(surfaceColor, mix(st == 14 ? vec3(0.4, 0.8, 0.3) : vec3(0.8, 0.2, 0.1), pTint, 0.5), spores * 0.5);
             }
-            atmoColor = st == 14 ? vec3(0.2, 0.6, 0.2) : vec3(0.6, 0.1, 0.1);
+            atmoColor = mix(st == 14 ? vec3(0.2, 0.6, 0.2) : vec3(0.6, 0.1, 0.1), pTint, 0.3);
             atmoDensity = 1.1; roughness = 0.99;
 
           // 15: Machine, 16: Nanite
@@ -611,45 +639,52 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
 
           // 18: Toxic, 20: Molten, 21: Shrouded, 33: Carbon
           } else if (st == 18 || st == 20 || st == 21 || st == 33) {
-            float crust = fbm(p * 4.0 + uTime * 0.05, 5);
+            float crust = fbm(p * (4.0 + fract(uTerrainSeed) * 2.0) + uTime * 0.05, 5);
+            vec3 pTint = hueToRgb(uHue);
+            
             if (st == 20) { // Molten
-              surfaceColor = mix(vec3(0.1, 0.02, 0.0), vec3(1.0, 0.4, 0.0), smoothstep(0.5, 0.7, crust));
-              cityGlow = vec3(1.0, 0.4, 0.0) * smoothstep(0.6, 0.8, crust) * 2.5; // Lava glow
-              atmoColor = vec3(1.0, 0.4, 0.1); atmoDensity = 1.5; roughness = 0.9;
+              vec3 lavaHue = mix(vec3(1.0, 0.4, 0.0), pTint, 0.35);
+              surfaceColor = mix(vec3(0.1, 0.02, 0.0), lavaHue, smoothstep(0.5, 0.7, crust));
+              cityGlow = lavaHue * smoothstep(0.6, 0.8, crust) * 2.5; // Lava glow
+              atmoColor = mix(vec3(1.0, 0.4, 0.1), lavaHue, 0.5); atmoDensity = 1.5; roughness = 0.9;
             } else if (st == 18) { // Toxic
-              surfaceColor = mix(vec3(0.2, 0.3, 0.1), vec3(0.4, 0.6, 0.2), crust);
-              atmoColor = vec3(0.6, 0.8, 0.2); atmoDensity = 2.0; roughness = 0.5; // Thick acid fog
-              if (uShowWeather > 0.5) surfaceColor = mix(surfaceColor, vec3(0.5, 0.7, 0.3), fbm(p * 2.0 + uTime*0.02, 3));
+              vec3 toxicHue = mix(vec3(0.4, 0.6, 0.2), pTint, 0.6); // Unique toxic color
+              surfaceColor = mix(toxicHue * 0.3, toxicHue, crust);
+              atmoColor = toxicHue * 1.2; atmoDensity = 2.0; roughness = 0.5; // Thick acid fog
+              if (uShowWeather > 0.5) surfaceColor = mix(surfaceColor, toxicHue * 1.4, fbm(p * 2.0 + uTime*0.02, 3));
             } else if (st == 21) { // Shrouded
-              surfaceColor = mix(vec3(0.05, 0.02, 0.1), vec3(0.2, 0.05, 0.3), crust);
+              vec3 shroudHue = mix(vec3(0.6, 0.2, 0.8), pTint, 0.5);
+              surfaceColor = mix(shroudHue * 0.1, shroudHue * 0.3, crust);
               if (uShowWeather > 0.5) {
                 float psionic = smoothstep(0.65, 0.95, fbm(p * 4.0 + uTime * 0.03, 4));
-                surfaceColor = mix(surfaceColor, vec3(0.6, 0.2, 0.8), psionic * 0.6);
+                surfaceColor = mix(surfaceColor, shroudHue, psionic * 0.6);
               }
-              cityGlow = smoothstep(0.7, 0.9, crust) * vec3(0.8, 0.2, 1.0) * 2.0; // Psionic energy
-              atmoColor = vec3(0.4, 0.1, 0.6); atmoDensity = 1.8; roughness = 0.9;
+              cityGlow = smoothstep(0.7, 0.9, crust) * shroudHue * 2.0; // Psionic energy
+              atmoColor = shroudHue * 0.8; atmoDensity = 1.8; roughness = 0.9;
             } else if (st == 33) { // Carbon
+              vec3 magmaHue = mix(vec3(1.0, 0.4, 0.0), pTint, 0.25);
               float magmaSeams = step(0.72, fbm(p * 15.0 + uTime * 0.03, 4) * 0.5 + 0.5);
-              surfaceColor = mix(mix(vec3(0.06, 0.06, 0.07), vec3(0.18, 0.17, 0.16), crust), vec3(1.0, 0.4, 0.0), magmaSeams * 0.6);
-              cityGlow = vec3(1.0, 0.4, 0.0) * magmaSeams * 1.8;
-              atmoColor = vec3(0.7, 0.4, 0.15); atmoDensity = 0.9; roughness = 0.97;
+              surfaceColor = mix(mix(vec3(0.06, 0.06, 0.07), vec3(0.18, 0.17, 0.16), crust), magmaHue, magmaSeams * 0.6);
+              cityGlow = magmaHue * magmaSeams * 1.8;
+              atmoColor = mix(vec3(0.7, 0.4, 0.15), magmaHue, 0.3); atmoDensity = 0.9; roughness = 0.97;
             }
 
           // 26, 27, 28: Gas Giants
           } else if (st >= 26 && st <= 28) {
             float lat = vLocalPosition.y / length(vLocalPosition);
-            float warp = snoise(p * 0.8 + uTime * 0.02);
-            float bands = sin(lat * 15.0 + warp * 4.0) * 0.5 + 0.5;
-            float fine = sin(lat * 40.0 - warp * 2.0) * 0.5 + 0.5;
+            float warp = snoise(p * (0.8 + fract(uTerrainSeed)) + uTime * 0.02);
+            float bands = sin(lat * (15.0 + fract(uTerrainSeed)*10.0) + warp * 4.0) * 0.5 + 0.5;
+            float fine = sin(lat * (40.0 + fract(uTerrainSeed)*20.0) - warp * 2.0) * 0.5 + 0.5;
             
-            vec3 baseA = uColor * 0.6; vec3 baseB = uColor * 1.4;
-            if (st == 27) { baseA = vec3(0.8, 0.3, 0.1); baseB = vec3(1.0, 0.6, 0.2); } // Hot
-            else if (st == 28) { baseA = vec3(0.2, 0.5, 0.8); baseB = vec3(0.6, 0.8, 1.0); } // Cold
+            vec3 pTint = hueToRgb(uHue);
+            vec3 baseA = pTint * 0.6; vec3 baseB = pTint * 1.4;
+            if (st == 27) { baseA = mix(vec3(0.8, 0.3, 0.1), pTint, 0.5); baseB = mix(vec3(1.0, 0.6, 0.2), pTint, 0.5); } // Hot
+            else if (st == 28) { baseA = mix(vec3(0.2, 0.5, 0.8), pTint, 0.5); baseB = mix(vec3(0.6, 0.8, 1.0), pTint, 0.5); } // Cold
             
             surfaceColor = mix(baseA, baseB, mix(bands, fine, 0.3));
             
             if (uShowWeather > 0.5) {
-              vec3 stormPos = normalize(vec3(1.0, -0.2, 0.5));
+              vec3 stormPos = normalize(vec3(fract(uTerrainSeed), fract(uTerrainSeed*1.5) - 0.5, fract(uTerrainSeed*2.0)));
               float stormDist = distance(normalize(vLocalPosition), stormPos);
               if (stormDist < 0.4) {
                 float swirl = atan(vLocalPosition.z, vLocalPosition.x) * 3.0;
@@ -663,12 +698,16 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
 
           // 22: Broken, 23: Shattered, 31: Asteroid
           } else if (st == 22 || st == 23 || st == 31) {
-             float rock = fbm(p * 12.0, 5);
-             surfaceColor = mix(vec3(0.3, 0.28, 0.26), vec3(0.5, 0.48, 0.45), rock);
+             float rock = fbm(p * (12.0 + fract(uTerrainSeed)*4.0), 5);
+             vec3 pTint = hueToRgb(uHue);
+             vec3 baseRock = mix(vec3(0.3, 0.28, 0.26), pTint, 0.2);
+             vec3 highRock = mix(vec3(0.5, 0.48, 0.45), pTint, 0.2);
+             surfaceColor = mix(baseRock, highRock, rock);
              if (st == 22) { // Broken (glowing core fissures)
-                float fissures = smoothstep(0.7, 0.8, fbm(p * 4.0, 3));
-                surfaceColor = mix(surfaceColor, vec3(1.0, 0.3, 0.0), fissures);
-                cityGlow = vec3(1.0, 0.3, 0.0) * fissures * 3.0; // Exposed core glow
+                float fissures = smoothstep(0.7, 0.8, fbm(p * (4.0 + fract(uTerrainSeed)*2.0), 3));
+                vec3 coreGlow = mix(vec3(1.0, 0.3, 0.0), pTint, 0.4);
+                surfaceColor = mix(surfaceColor, coreGlow, fissures);
+                cityGlow = coreGlow * fissures * 3.0; // Exposed core glow
              }
              atmoDensity = 0.0; roughness = 0.95;
 
@@ -680,17 +719,21 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
              atmoDensity = 0.0; roughness = 0.4;
           // 29, 30: Moons, 34: Rogue
           } else {
-             float rockBase = fbm(p * 4.0, 5);
-             float craters = pow(max(0.0, snoise(p * 8.0)), 3.0) * 0.4;
+             float rockBase = fbm(p * (4.0 + fract(uTerrainSeed) * 2.0), 5);
+             float craters = pow(max(0.0, snoise(p * (8.0 + fract(uTerrainSeed)))), 3.0) * 0.4;
+             vec3 pTint = hueToRgb(uHue);
+             
              if (st == 34) { // Rogue
+               vec3 rogueHue = mix(vec3(0.3, 0.1, 0.6), pTint, 0.5);
                vec3 baseCrust = mix(vec3(0.04, 0.04, 0.06), vec3(0.10, 0.10, 0.14), rockBase);
-               vec3 internalGlow = mix(vec3(0.15, 0.05, 0.25), vec3(0.05, 0.05, 0.30), rockBase);
+               vec3 internalGlow = mix(rogueHue * 0.5, rogueHue * 0.2, rockBase);
                surfaceColor = mix(baseCrust, internalGlow, smoothstep(0.6, 0.9, rockBase) * 0.5);
                float veins = step(0.82, fbm(p * 20.0, 4) * 0.5 + 0.5);
-               surfaceColor = mix(surfaceColor, vec3(0.3, 0.1, 0.6), veins * 0.4);
-               cityGlow = vec3(0.3, 0.1, 0.6) * veins * 0.6; atmoColor = vec3(0.3, 0.1, 0.5); atmoDensity = 0.05;
+               surfaceColor = mix(surfaceColor, rogueHue, veins * 0.4);
+               cityGlow = rogueHue * veins * 0.6; atmoColor = rogueHue * 0.8; atmoDensity = 0.05;
              } else {
-               surfaceColor = mix(vec3(0.25, 0.26, 0.28), vec3(0.45, 0.46, 0.48), rockBase);
+               vec3 moonHue = mix(vec3(0.35, 0.36, 0.38), pTint, 0.3);
+               surfaceColor = mix(moonHue * 0.7, moonHue * 1.3, rockBase);
                surfaceColor -= craters;
                atmoDensity = 0.0;
              }

@@ -465,6 +465,11 @@ export function useGalaxyApp(initialSeed = 20260423) {
     setView("system");
   }, []);
 
+  const selectSystem = useCallback((id: string | null) => {
+    setSystemId(id);
+    setBodyId(null);
+  }, []);
+
   const openBody = useCallback((id: string) => {
     setBodyId(id);
     setView("body");
@@ -530,6 +535,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
     setSelectedEmpireId,
     xpToNextLevel: playerLevel * 1000,
     openSystem,
+    selectSystem,
     openBody,
     openShip,
     backToGalaxy,

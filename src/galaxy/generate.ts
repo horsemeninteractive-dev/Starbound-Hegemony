@@ -26,41 +26,64 @@ const EMPIRE_PREFIXES = [
   "Sovereign", "Celestial", "Interstellar", "Galactic", "Solar", "Lunar", 
   "Stellar", "Cosmic", "Astral", "Eternal", "Iron", "Gold", "Void",
   "Shadow", "Crystal", "Nebula", "Star", "Core", "Rim", "Nexus", "Techno",
-  "Xenon", "Prime", "Ancient", "Vanguard", "Sentinel", "Scion"
+  "Xenon", "Prime", "Ancient", "Vanguard", "Sentinel", "Scion", "Nova", "Luminous",
+  "Ebon", "Crimson", "Azure", "Verdant", "Gilded", "Obsidian", "Radiant", "Boundless",
+  "Primeval", "Aurelian", "Valiant", "Arcane", "Cyber", "Synthetic", "Organic", "Psionic",
+  "Temporal", "Dimensional", "Aetherial", "Astral", "Void-Born", "Star-Forged"
 ];
 const EMPIRE_NOUNS = [
   "Hegemony", "Republic", "Empire", "Alliance", "Federation", "Union", "League",
   "Directorate", "Concordat", "Syndicate", "Combine", "Corp", "Cartel",
   "Pact", "Covenant", "Dominion", "Kingdom", "Sovereignty", "Council", "Assembly",
   "Collective", "Swarm", "Consensus", "Authority", "Throne", "State", "Coalition",
-  "Nexus", "The Sprawl", "The Hub", "Terminal", "Garrison", "Bastion", "Spire", "Sanctorum", "Foundry"
+  "Nexus", "The Sprawl", "The Hub", "Terminal", "Garrison", "Bastion", "Spire", "Sanctorum", "Foundry",
+  "Enclave", "Protectorate", "Commonwealth", "Consulate", "Presidency", "Khanate", "Shogunate",
+  "Directorate", "Conglomerate", "Trust", "Accord", "Legion", "Phalanx", "Front"
 ];
 
 const BODY_PROPER = [
   "Aethel Prime", "Valon", "Miris", "Emberis", "Vitris", "Ignis", "Umbra", "Undis", "Coron", "Cinis",
   "Ferrus", "Salis", "Velum", "Fragmen", "Echo", "Vagari", "Spira", "Duna", "Muscus", "Rima",
   "Aureus", "Argent", "Cuprum", "Plumbum", "Stannum", "Hydrar", "Galena", "Pyrite", "Azurite", "Malac",
-  "Boreas", "Zephyr", "Notos", "Euros", "Aeolos", "Aether", "Hemera", "Nyx", "Erebos", "Tartarus"
+  "Boreas", "Zephyr", "Notos", "Euros", "Aeolos", "Aether", "Hemera", "Nyx", "Erebos", "Tartarus",
+  "Hyperion", "Iapetus", "Enceladus", "Tethys", "Dione", "Rhea", "Titan", "Mimas", "Phoebe", "Janus",
+  "Europa", "Ganymede", "Callisto", "Io", "Amalthea", "Himalia", "Elara", "Pasiphae", "Sinope", "Lysithea",
+  "Phobos", "Deimos", "Charon", "Nix", "Hydra", "Kerberos", "Styx", "Triton", "Nereid", "Proteus"
 ];
 
 const OFFICIAL_NAMES = [
   "Elias Thorne", "Vance Kaelen", "Lyra Vance", "Soren Voss", "Kira Dax", 
   "Julian Bashir", "Kathryn Janeway", "Jean-Luc Picard", "Benjamin Sisko", "James Kirk",
-  "T'Pring", "Sarek", "Amanda Grayson", "Spock", "Pavel Chekov", "Nyota Uhura"
+  "T'Pring", "Sarek", "Amanda Grayson", "Spock", "Pavel Chekov", "Nyota Uhura",
+  "Hikaru Sulu", "Leonard McCoy", "Montgomery Scott", "Christine Chapel", "Janice Rand",
+  "Christopher Pike", "Number One", "T'Pol", "Charles Tucker", "Malcolm Reed",
+  "Travis Mayweather", "Hoshi Sato", "Phlox", "Jonathan Archer", "Michael Burnham",
+  "Saru", "Paul Stamets", "Sylvia Tilly", "Hugh Culber", "Ash Tyler", "Gabriel Lorca",
+  "Philippa Georgiou", "Christopher Rios", "Raffi Musiker", "Agnes Jurati", "Elnor",
+  "Soji Asha", "Laris", "Zhaban", "Seven of Nine", "Icheb", "Naomi Wildman",
+  "Kes", "Neelix", "Tuvok", "B'Elanna Torres", "Tom Paris", "Harry Kim", "The Doctor",
+  "William Riker", "Deanna Troi", "Data", "Geordi La Forge", "Worf", "Beverly Crusher",
+  "Wesley Crusher", "Guinan", "Ro Laren", "Reginald Barclay", "Miles O'Brien", "Keiko O'Brien",
+  "Nog", "Quark", "Rom", "Leeta", "Ezri Dax", "Jadzia Dax", "Garak", "Gul Dukat", "Weyoun",
+  "Female Changeling", "Martok", "Gowron", "Lursa", "B'Etor", "Kahless", "Morn", "Vic Fontaine"
 ];
 
 const ROLES = [
   "Minister of Finance", "High Admiral", "Chancellor of Science", "Exarch of Trade", "Archivist of Knowledge",
-  "Overseer of Industry", "Director of Intelligence", "Magistrate of Justice"
+  "Overseer of Industry", "Director of Intelligence", "Magistrate of Justice", "Commissioner of Energy",
+  "Secretary of Defense", "Ambassador of Unity", "Tribune of the People", "Custos of the Archive",
+  "Prefect of Logistics", "Warden of the Rim", "Grand Vizier", "High Priest", "Chief Technocrat"
 ];
 
 const PARTIES = [
   "Techno-Feudalists", "Void-Sentinels", "Core-Unionists", "Stellar-Expansionists", "Eternalists",
-  "New Hegemony", "Universalists", "Preservationists", "Cyber-Vanguard"
+  "New Hegemony", "Universalists", "Preservationists", "Cyber-Vanguard", "Bio-Conservatives",
+  "Psionic Ascendants", "Industrialists", "Free Traders", "Isolationists", "Imperial Loyalists",
+  "Democratic Front", "Labor Union", "Green Earth", "Solarists", "Astra-Nationalists"
 ];
 
-const LOGO_SYMBOLS = ["Shield", "Zap", "Globe", "Anchor", "Cpu", "Award", "Rocket", "Star", "Flame", "Droplets", "Target", "Hexagon", "Circle", "Triangle"];
-const LOGO_PATTERNS = ["grid", "dots", "waves", "cross", "circles"];
+const LOGO_SYMBOLS = ["Shield", "Zap", "Globe", "Anchor", "Cpu", "Award", "Rocket", "Star", "Flame", "Droplets", "Target", "Hexagon", "Circle", "Triangle", "Crown", "TrendingUp", "Briefcase", "Scale", "Sword", "Fingerprint"];
+const LOGO_PATTERNS = ["grid", "dots", "waves", "cross", "circles", "stripes", "diamonds", "radial"];
 
 const GOVERNMENT_TYPES: GovernmentType[] = [
   "Parliamentary republic",
@@ -107,27 +130,52 @@ function buildEmpires(rng: Rng): Empire[] {
       });
     }
 
-    const seats = [];
-    const occupiedCount = Math.floor(totalSeats * (rng() < 0.75 ? 1.0 : (0.4 + rng() * 0.5)));
-    
-    let factionIdx = 0;
-    let factionCountTracker = 0;
-    for (let s = 0; s < totalSeats; s++) {
-      if (factionCountTracker >= factions[factionIdx].count && factionIdx < factions.length - 1) {
-        factionIdx++;
-        factionCountTracker = 0;
-      }
-      
-      const isOccupied = s < occupiedCount;
-      seats.push({ 
-        id: s, 
-        factionId: factions[factionIdx].id,
-        occupantName: isOccupied ? pick(rng, OFFICIAL_NAMES) : undefined
-      });
-      factionCountTracker++;
-    }
-
       const occupancyRate = rng() < 0.75 ? 1.0 : (0.4 + rng() * 0.5); // 75% full, 25% partial
+      
+      // Keep track of names used in this empire's government to ensure uniqueness
+      const usedNames = new Set<string>();
+      const pickUniqueName = () => {
+        let name = pick(rng, OFFICIAL_NAMES);
+        let attempts = 0;
+        while (usedNames.has(name) && attempts < 50) {
+          name = pick(rng, OFFICIAL_NAMES);
+          attempts++;
+        }
+        usedNames.add(name);
+        return name;
+      };
+
+      const president = rng() < occupancyRate ? { name: pickUniqueName(), role: "President", party: factions[0].name } : null;
+      const vicePresident = rng() < occupancyRate ? { name: pickUniqueName(), role: "Vice President", party: factions[1]?.name || factions[0].name } : null;
+      const ministers = Array.from({ length: 4 }).map(() => {
+        return rng() < occupancyRate ? {
+          name: pickUniqueName(),
+          role: pick(rng, ROLES),
+          party: pick(rng, factions).name
+        } : null;
+      }).filter(m => m !== null) as any[];
+
+      // Seats generation
+      const seats = [];
+      const occupiedCount = Math.floor(totalSeats * (rng() < 0.75 ? 1.0 : (0.4 + rng() * 0.5)));
+      
+      let factionIdx = 0;
+      let factionCountTracker = 0;
+      for (let s = 0; s < totalSeats; s++) {
+        if (factionCountTracker >= factions[factionIdx].count && factionIdx < factions.length - 1) {
+          factionIdx++;
+          factionCountTracker = 0;
+        }
+        
+        const isOccupied = s < occupiedCount;
+        seats.push({ 
+          id: s, 
+          // If not occupied, it doesn't belong to a party
+          factionId: isOccupied ? factions[factionIdx].id : undefined,
+          occupantName: isOccupied ? pickUniqueName() : undefined
+        });
+        factionCountTracker++;
+      }
 
       empires.push({
         id: `emp-${i}`,
@@ -140,23 +188,17 @@ function buildEmpires(rng: Rng): Empire[] {
           secondaryHue: (hue + 180) % 360,
         },
         government: {
-          president: rng() < occupancyRate ? { name: pick(rng, OFFICIAL_NAMES), role: "President", party: factions[0].name } : null as any,
-          vicePresident: rng() < occupancyRate ? { name: pick(rng, OFFICIAL_NAMES), role: "Vice President", party: factions[1]?.name || factions[0].name } : null as any,
-          ministers: Array.from({ length: 4 }).map(() => {
-            return rng() < occupancyRate ? {
-              name: pick(rng, OFFICIAL_NAMES),
-              role: pick(rng, ROLES),
-              party: pick(rng, factions).name
-            } : null as any;
-          }).filter(m => m !== null),
-        council: {
-          totalSeats,
-          factions,
-          seats
-        },
-        type: pick(rng, GOVERNMENT_TYPES)
-      }
-    });
+          president: president as any,
+          vicePresident: vicePresident as any,
+          ministers: ministers,
+          council: {
+            totalSeats,
+            factions,
+            seats
+          },
+          type: pick(rng, GOVERNMENT_TYPES)
+        }
+      });
   }
   return empires;
 }
@@ -396,10 +438,10 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
     let landColor: string | undefined;
     let seaColor: string | undefined;
     if (["temperate", "continental", "tropical", "ocean", "gaia", "hive", "infested", "super_earth", "ecumenopolis", "relic"].includes(subtype)) {
-      const landHues = [120, 40, 280, 20]; // Green, Beige, Purple, Red-brown
-      const seaHues = [210, 180, 340, 260]; // Blue, Cyan, Red, Violet
-      landColor = new THREE.Color().setHSL(pick(rng, landHues) / 360, 0.4, 0.3).getStyle();
-      seaColor = new THREE.Color().setHSL(pick(rng, seaHues) / 360, 0.5, 0.4).getStyle();
+      const lHue = rng(); // Fully random land hue
+      const sHue = rng(); // Fully random sea hue
+      landColor = new THREE.Color().setHSL(lHue, rng() * 0.4 + 0.2, rng() * 0.4 + 0.1).getStyle();
+      seaColor = new THREE.Color().setHSL(sHue, rng() * 0.4 + 0.3, rng() * 0.3 + 0.1).getStyle();
     }
 
     const planet: Body = {

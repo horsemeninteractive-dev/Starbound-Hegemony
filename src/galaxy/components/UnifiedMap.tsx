@@ -59,7 +59,14 @@ const createEngineBuffer = (ctx: AudioContext) => {
 };
 
 // --- CELESTIAL AUDIO SYNTHESIS ---
+const celestialBufferCache = new Map<string, AudioBuffer>();
+
 const createCelestialBuffer = (ctx: AudioContext, type: string, subtype?: string, starType?: string) => {
+  const cacheKey = `${type}-${subtype || 'none'}-${starType || 'none'}`;
+  if (celestialBufferCache.has(cacheKey)) {
+    return celestialBufferCache.get(cacheKey)!;
+  }
+
   const duration = 2.0;
   const buffer = ctx.createBuffer(1, ctx.sampleRate * duration, ctx.sampleRate);
   const data = buffer.getChannelData(0);
@@ -120,6 +127,8 @@ const createCelestialBuffer = (ctx: AudioContext, type: string, subtype?: string
     
     data[i] = Math.max(-1, Math.min(1, s * multiplier));
   }
+  
+  celestialBufferCache.set(cacheKey, buffer);
   return buffer;
 };
 
@@ -149,7 +158,9 @@ function CelestialAudio({ type, subtype, starType, scale, listener }: { type: st
       node.setVolume(0);
       node.play();
       if (node.gain) {
-        node.gain.gain.setTargetAtTime(1.0, ctx.currentTime, 0.05);
+        // Prevent massive clipping by assigning sensible max volumes per body type
+        const maxVol = type === "star" ? 0.7 : type === "gas_giant" ? 0.35 : 0.2;
+        node.gain.gain.setTargetAtTime(maxVol, ctx.currentTime, 0.05);
       }
     } catch (e) {
       console.warn("Audio play failed:", e);
@@ -653,7 +664,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
     // Only check distance every 10 frames if not focused for huge performance gain on mobile
     if (!isFocused && frameCount.current++ % 10 !== 0) return;
 
-    const d = state.camera.position.distanceTo(sysPos);
+    const d = state.camera.position.distanceTo(effectiveStarPos);
     const safeD = Math.max(0.1, d); // Prevent division by zero
     
     const currentScale = isFocused ? baseStarScale : Math.min(10.0, Math.max(baseStarScale, safeD / 500));
@@ -881,7 +892,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
       {/* Labels - Optimized with distance culling */}
       {filters.layers.has("objectLabels") && (isNear || isFocused) && (
         <group ref={htmlGroupRef} position={[0, 0, 0]}>
-          <Html center zIndexRange={[100, 0]}>
+          <Html center zIndexRange={[100, 0]} style={{ pointerEvents: "none" }}>
             <div 
               ref={labelRef}
               className="px-2 py-1 flex items-center gap-2 bg-black/50 backdrop-blur-sm border border-white/10 rounded-sm pointer-events-none whitespace-nowrap shadow-lg transition-opacity duration-300"
@@ -1409,7 +1420,7 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
 
       {/* Body Label */}
       {view !== "galaxy" && filters.layers.has("objectLabels") && (
-        <Html position={[0, 0, 0]} center zIndexRange={[100, 0]}>
+        <Html position={[0, 0, 0]} center zIndexRange={[100, 0]} style={{ pointerEvents: "none" }}>
           <div ref={labelRef} className={`px-1.5 py-0.5 flex items-center gap-1.5 bg-black/40 backdrop-blur-[2px] border border-white/5 rounded-sm pointer-events-none whitespace-nowrap ${!isSystemExplored ? 'opacity-50 grayscale' : ''}`}>
             <span 
               className="font-mono-hud text-[7px] leading-none uppercase"
@@ -1622,6 +1633,7 @@ const SectorLabels = memo(function SectorLabels({ sectors }: { sectors: Sector[]
           position={[s.centroid[0], 2, s.centroid[2]]} 
           center 
           distanceFactor={1500}
+          style={{ pointerEvents: "none" }}
         >
           <div className="font-mono-hud text-[11px] text-primary/30 uppercase tracking-[0.5em] select-none pointer-events-none whitespace-nowrap drop-shadow-[0_0_10px_rgba(0,255,255,0.2)]">
             {s.name}

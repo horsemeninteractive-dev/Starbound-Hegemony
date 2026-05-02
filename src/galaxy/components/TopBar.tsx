@@ -2,7 +2,7 @@ import logo from "@/assets/logo.png";
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Sheet, SheetContent, SheetOverlay, SheetClose, SheetTitle } from "@/components/ui/sheet";
-import { Newspaper, Factory, Rocket, Users, User, Sparkles, Settings, X, Coins, Zap as ZapIcon, Bug } from "lucide-react";
+import { Newspaper, Factory, Rocket, Users, User, Sparkles, Settings, X, Coins, Zap as ZapIcon, Bug, Hexagon } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,6 +26,7 @@ interface Props {
   onOpenSkills?: () => void;
   ap: number;
   sc: number;
+  vt?: number;
   playerName: string;
   playerLevel: number;
   playerXP: number;
@@ -63,7 +64,7 @@ const GAME_MENU = [
 export function TopBar({ 
   onOpenSettings, onOpenProfile, onOpenMap, onOpenArticles, 
   onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills,
-  ap, sc, playerName, playerLevel, playerXP, xpToNextLevel, playerAvatar,
+  ap, sc, vt = 0, playerName, playerLevel, playerXP, xpToNextLevel, playerAvatar,
   fogOfWar, setFogOfWar, instantJump, setInstantJump,
   playerSystemName, travel, arrival, currentTime, galaxy, onRegenerate, onReset, onSetAp, onPlayClick, isGameReady = true
 }: Props) {
@@ -191,7 +192,7 @@ export function TopBar({
         <div className="flex-1" />
 
         {/* Action Points and Credits */}
-        <div className="flex flex-col sm:flex-row items-end sm:items-center gap-1 sm:gap-4 pr-1 sm:pr-4 ml-auto">
+        <div className="flex flex-row items-center gap-1 sm:gap-4 pr-1 sm:pr-4 ml-auto">
           {/* Action Points */}
           <div className="flex items-center gap-1 sm:gap-2 px-1 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-primary bg-primary/5 sm:min-w-0">
             <ZapIcon size={12} className="text-primary animate-pulse sm:w-3.5 sm:h-3.5" fill="currentColor" />
@@ -208,6 +209,17 @@ export function TopBar({
                 {sc > 1000 && window.innerWidth < 640 ? `${Math.floor(sc / 1000)}k` : Math.floor(sc).toLocaleString()}
               </span>
               <span className="hidden sm:block text-[7px] text-warning/60 uppercase tracking-widest font-mono-hud">Standard Credits</span>
+            </div>
+          </div>
+
+          {/* Void Tokens (Premium Currency) */}
+          <div className="flex items-center gap-1 sm:gap-2 px-1 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-purple-500 bg-purple-500/10 sm:min-w-0">
+            <Hexagon size={12} className="text-purple-400 sm:w-3.5 sm:h-3.5" />
+            <div className="flex flex-col leading-none">
+              <span className="text-[9px] sm:text-[11px] text-purple-400 font-bold tracking-wider">
+                {vt.toLocaleString()}
+              </span>
+              <span className="hidden sm:block text-[7px] text-purple-400/60 uppercase tracking-widest font-mono-hud">Void Tokens</span>
             </div>
           </div>
         </div>
