@@ -1,5 +1,5 @@
 import logo from "@/assets/logo.png";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Sheet, SheetContent, SheetOverlay, SheetClose, SheetTitle } from "@/components/ui/sheet";
 import { Newspaper, Factory, Rocket, Users, User, Sparkles, Settings, X, Coins, Zap as ZapIcon, Bug, Hexagon } from "lucide-react";
@@ -37,7 +37,8 @@ interface Props {
   instantJump: boolean;
   setInstantJump: (v: boolean) => void;
   playerSystemName?: string;
-  travel?: { targetId?: string; endTime: number; startTime: number } | null;
+  playerSystemId?: string;
+  travel?: { targetId?: string; endTime: number; startTime: number; type?: "inter" | "intra" } | null;
   arrival?: { fromId: string; startTime: number; duration: number } | null;
   currentTime: number;
   galaxy: Galaxy;
@@ -66,12 +67,24 @@ export function TopBar({
   onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills,
   ap, sc, vt = 0, playerName, playerLevel, playerXP, xpToNextLevel, playerAvatar,
   fogOfWar, setFogOfWar, instantJump, setInstantJump,
-  playerSystemName, travel, arrival, currentTime, galaxy, onRegenerate, onReset, onSetAp, onPlayClick, isGameReady = true
+  playerSystemName, playerSystemId, travel, arrival, currentTime, galaxy, onRegenerate, onReset, onSetAp, onPlayClick, isGameReady = true
 }: Props) {
   // Game menu state - Radix Sheet handles escape/outside-click automatically
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const destinationName = travel?.targetId ? galaxy?.systemById?.[travel.targetId]?.name : null;
+  const destinationName = useMemo(() => {
+    if (!travel?.targetId || !galaxy) return null;
+    
+    if (travel.type === "intra") {
+      const currentSys = playerSystemId ? galaxy.systemById[playerSystemId] : null;
+      if (!currentSys) return "Target Vector";
+      if (travel.targetId === "star") return currentSys.name;
+      const body = currentSys.bodies.find(b => b.id === travel.targetId);
+      return body?.name || "Target Vector";
+    }
+    
+    return galaxy.systemById[travel.targetId]?.name || "Deep Space";
+  }, [travel, galaxy, playerSystemId]);
 
   return (
     <header className="z-50 w-full bg-background/80 backdrop-blur-md border-b border-primary/20">
@@ -152,7 +165,7 @@ export function TopBar({
             <div className="flex items-center gap-1.5 sm:gap-2">
               <Compass size={10} className={`${(travel || arrival) ? "text-cyan-400 animate-spin-slow" : "text-cyan-400/60"} shrink-0`} />
               <span className="text-[8px] sm:text-[9px] font-display text-cyan-400 uppercase tracking-widest truncate">
-                {travel ? `FTL → ${destinationName}` : arrival ? `TRANSIT → STAR` : playerSystemName || "Unknown Space"}
+                {travel ? `${travel.type === "intra" ? "SLT" : "FTL"} → ${destinationName}` : arrival ? `TRANSIT → STAR` : playerSystemName || "Unknown Space"}
               </span>
             </div>
             <div className="flex items-center gap-1.5 sm:gap-2 mt-0.5 h-2.5">

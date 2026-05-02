@@ -4,7 +4,7 @@ import { useMemo, useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { generateGalaxy } from "./generate";
 import type { Galaxy, StarSystem, Body, ContestState, EconomicStatus, StarType, PlanetSubtype } from "./types";
-import { STAR_BASE_SIZE } from "./meta";
+import { STAR_META, CONTEST_META, ECON_META, BODY_META, STAR_BASE_SIZE, getOrbitalSpeed, getBodyPosition } from "./meta";
 import { ShipConfiguration, DEFAULT_SHIP_CONFIG } from "./shipPresets";
 
 export type ViewMode = "galaxy" | "system" | "body" | "ship";
@@ -48,13 +48,16 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [playerSystemId, setPlayerSystemId] = useState<string>(
     () => localStorage.getItem("playerSystemId") ?? "sys-center"
   );
+  const [playerBodyId, setPlayerBodyId] = useState<string>(
+    () => localStorage.getItem("playerBodyId") ?? "star"
+  );
   const [exploredSystemIds, setExploredSystemIds] = useState<Set<string>>(
     () => new Set(JSON.parse(localStorage.getItem("exploredIds") ?? '["sys-center"]'))
   );
   const [fogOfWar, setFogOfWarState] = useState(() => localStorage.getItem("fogOfWar") !== "false");
   const [instantJump, setInstantJumpState] = useState(() => localStorage.getItem("instantJump") === "true");
   
-  const [travel, setTravel] = useState<{ targetId: string; startTime: number; endTime: number } | null>(() => {
+  const [travel, setTravel] = useState<{ targetId: string; startTime: number; endTime: number; type?: "inter" | "intra" } | null>(() => {
     const saved = localStorage.getItem("travel");
     return saved ? JSON.parse(saved) : null;
   });
@@ -242,6 +245,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
 
   // Persist state to localStorage
   useEffect(() => { localStorage.setItem("playerSystemId", playerSystemId); }, [playerSystemId]);
+  useEffect(() => { localStorage.setItem("playerBodyId", playerBodyId); }, [playerBodyId]);
   useEffect(() => { localStorage.setItem("exploredIds", JSON.stringify([...exploredSystemIds])); }, [exploredSystemIds]);
   useEffect(() => { 
     if (view === "galaxy" || view === "system") {
@@ -423,13 +427,47 @@ export function useGalaxyApp(initialSeed = 20260423) {
     // - Sub-light departure (transit to gate + charge)
     // - FTL transit (proportional to distance)
     // - Sub-light arrival (materialize + transit to star)
-    const subLightBuffer = 25; // Increased buffer for variable local transits
-    const durationMs = instantJump ? 0 : (subLightBuffer + dist * 1.5) * 1000;
+    // FTL transit: 15s base (prep) + distance factor
+    const durationMs = instantJump ? 0 : (15 + dist * 1.2) * 1000;
     const now = Date.now();
     
     setAp(prev => prev - cost);
-    setTravel({ targetId, startTime: now, endTime: now + durationMs });
+    setTravel({ targetId, startTime: now, endTime: now + durationMs, type: "inter" });
   }, [playerSystemId, galaxy, travel, instantJump, ap, getJumpCost]);
+
+  const initiateTravelToBody = useCallback((targetBodyId: string) => {
+    if (travel) return;
+    
+    // Intra-system travel distance
+    const currentSystem = galaxy.systemById[playerSystemId];
+    if (!currentSystem) return;
+
+    const startBody = playerBodyId === "star" ? null : currentSystem.bodies.find(b => b.id === playerBodyId);
+    const targetBody = targetBodyId === "star" ? null : currentSystem.bodies.find(b => b.id === targetBodyId);
+    
+    const now = Date.now();
+    const startPos = startBody ? getBodyPosition(startBody, currentSystem.starType, now) : { x: 0, z: 0 };
+    const targetPos = targetBody ? getBodyPosition(targetBody, currentSystem.starType, now) : { x: 0, z: 0 };
+    
+    const dx = targetPos.x - startPos.x;
+    const dz = targetPos.z - startPos.z;
+    const dist = Math.sqrt(dx*dx + dz*dz);
+
+    // Intra-system travel cost: 5 AP base + 2 AP per 500 AU
+    const cost = 5 + Math.floor(dist / 250); 
+    if (ap < cost) {
+      toast.error(`Insufficient AP! Travel requires ${cost} AP`, {
+        description: "Intra-system sub-light travel requires fuel based on distance."
+      });
+      return;
+    }
+
+    // Dynamic speed (AU/ms) - Cinematic pace (15 AU/s)
+    const travelSpeed = 0.015; 
+    const durationMs = instantJump ? 0 : Math.max(5000, dist / travelSpeed);    
+    setAp(prev => prev - cost);
+    setTravel({ targetId: targetBodyId, startTime: now, endTime: now + durationMs, type: "intra" });
+  }, [travel, ap, instantJump, playerSystemId, playerBodyId, galaxy]);
 
   const [arrival, setArrival] = useState<{ fromId: string; startTime: number; duration: number } | null>(null);
 
@@ -437,18 +475,29 @@ export function useGalaxyApp(initialSeed = 20260423) {
   useEffect(() => {
     if (travel && currentTime >= travel.endTime) {
       const targetId = travel.targetId;
-      const fromId = playerSystemId;
-      setPlayerSystemId(targetId);
-      setTravel(null);
-      
-      // Set arrival sequence (approx 10s sub-light transit to star)
-      setArrival({ fromId, startTime: currentTime, duration: 10000 });
+      const travelType = travel.type ?? "inter";
 
-      setExploredSystemIds(prev => {
-        const next = new Set(prev);
-        next.add(targetId);
-        return next;
-      });
+      if (travelType === "intra") {
+        setPlayerBodyId(targetId);
+        setTravel(null);
+        toast.success("Arrival confirmed", {
+          description: `Vessel has entered orbit around ${targetId === "star" ? "the system star" : targetId}.`
+        });
+      } else {
+        const fromId = playerSystemId;
+        setPlayerSystemId(targetId);
+        setPlayerBodyId("star"); // Default to star on jump arrival
+        setTravel(null);
+        
+        // Set arrival sequence (approx 10s sub-light transit to star)
+        setArrival({ fromId, startTime: currentTime, duration: 10000 });
+
+        setExploredSystemIds(prev => {
+          const next = new Set(prev);
+          next.add(targetId);
+          return next;
+        });
+      }
     }
   }, [travel, currentTime, playerSystemId]);
 
@@ -541,10 +590,12 @@ export function useGalaxyApp(initialSeed = 20260423) {
     backToGalaxy,
     backToSystem,
     playerSystemId,
+    playerBodyId,
     travel,
     arrival,
     getJumpCost,
     initiateJump,
+    initiateTravelToBody,
     currentTime,
     exploredSystemIds,
     fogOfWar,

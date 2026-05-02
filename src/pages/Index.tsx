@@ -196,6 +196,7 @@ const Index = () => {
           instantJump={app.instantJump}
           setInstantJump={app.setInstantJump}
           playerSystemName={app.galaxy.systemById[app.playerSystemId]?.name}
+          playerSystemId={app.playerSystemId}
           travel={app.travel}
           arrival={app.arrival}
           currentTime={app.currentTime}
@@ -236,6 +237,7 @@ const Index = () => {
                     knownSystemIds={app.knownSystemIds}
                     systemMatchesFilter={app.systemMatchesFilter}
                     currentSystemId={app.playerSystemId}
+                    playerBodyId={app.playerBodyId}
                     travel={app.travel}
                     isMobilePanelExpanded={isMobilePanelExpanded}
                     graphicsQuality={graphicsQuality}
@@ -335,6 +337,11 @@ const Index = () => {
                       isExplored={!app.fogOfWar || app.exploredSystemIds.has(app.system.id)}
                       onPlayClick={playClick}
                       onSelectEmpire={handleSelectEmpire}
+                      playerSystemId={app.playerSystemId}
+                      playerBodyId={app.playerBodyId}
+                      travel={app.travel}
+                      initiateTravelToBody={app.initiateTravelToBody}
+                      currentTime={app.currentTime}
                     />
                 )}
                 {app.view === "ship" && (
@@ -1056,25 +1063,32 @@ function MobileHUD({
 
   let title = "Galaxy";
   let subtitle = `${app.galaxy.systems.length} systems · ${app.galaxy.sectors.length} sectors`;
-  if (app.view === "system" && app.system) {
-    title = app.system.name;
-    subtitle = `${app.system.bodies.length} bodies · ${app.system.starType.toUpperCase()}-class`;
+
+  if (app.view === "ship") {
+    title = "Commander's Vessel";
+    subtitle = "Flagship · Deep Space";
   } else if (app.view === "body" && app.body) {
     title = app.body.name;
     subtitle =
       app.body.population > 0
         ? `${app.body.type.replace("_", " ")} · ${app.body.population.toFixed(1)}M pop`
         : `${app.body.type.replace("_", " ")} · uninhabited`;
-  } else if (app.view === "ship") {
-    title = "Commander's Vessel";
-    subtitle = "Flagship · Deep Space";
+  } else if (app.system) {
+    title = app.system.name;
+    subtitle = `${app.system.bodies.length} bodies · ${app.system.starType.toUpperCase()}-class`;
   }
 
-  const canJump = app.view === "system" && app.system && !app.travel && 
+  const isAdjacent = app.galaxy.hyperlanes.some(h => (h.a === app.playerSystemId && h.b === app.system?.id) || (h.a === app.system?.id && h.b === app.playerSystemId));
+
+  const canJump = app.system && !app.travel && 
                  app.playerSystemId !== app.system.id && 
-                 app.galaxy.systems.find((s) => s.id === app.playerSystemId)?.gates.some((g) => g.targetSystemId === app.system.id);
+                 isAdjacent;
 
   const canEnterSystem = app.view === "galaxy" && app.system !== null;
+  const canTravel = (app.view === "system" || app.view === "body") && app.body && 
+                    app.playerSystemId === app.system?.id && 
+                    app.playerBodyId !== app.body.id && 
+                    !app.travel && !app.body.id.startsWith("ship");
 
   return (
     <div className="sm:hidden fixed inset-x-2 bottom-9 z-30 pointer-events-auto">
@@ -1093,7 +1107,8 @@ function MobileHUD({
             <div className="font-mono-hud text-[9px] uppercase tracking-[0.3em] text-primary/70 truncate w-full">
               {subtitle}
             </div>
-            <div className="font-display text-sm uppercase tracking-[0.15em] text-primary text-glow truncate w-full">
+            <div className="font-display text-sm uppercase tracking-[0.15em] text-primary text-glow truncate w-full flex items-center gap-2">
+              {app.travel?.type === "intra" && <Zap size={10} className="text-warning animate-pulse" />}
               {title}
             </div>
           </button>
@@ -1108,6 +1123,19 @@ function MobileHUD({
             >
               <Target size={14} />
               ENTER
+            </button>
+          )}
+
+          {canTravel && (
+            <button
+              onClick={() => {
+                app.initiateTravelToBody(app.body!.id);
+                onPlayClick();
+              }}
+              className="shrink-0 flex items-center gap-1.5 bg-primary/20 text-primary border border-primary/50 px-3 py-1.5 rounded font-mono-hud font-bold text-[9px] tracking-widest hover:bg-primary/30 active:scale-95 transition-all"
+            >
+              <Zap size={14} fill="currentColor" />
+              TRAVEL
             </button>
           )}
 
@@ -1182,7 +1210,18 @@ function MobileHUD({
               />
             )}
             {app.view === "body" && app.body && (
-              <BodyOverview body={app.body} galaxy={app.galaxy} hideHeader={true} onPlayClick={onPlayClick} onSelectEmpire={onSelectEmpire} />
+              <BodyOverview 
+                body={app.body} 
+                galaxy={app.galaxy} 
+                hideHeader={true} 
+                onPlayClick={onPlayClick} 
+                onSelectEmpire={onSelectEmpire}
+                playerSystemId={app.playerSystemId}
+                playerBodyId={app.playerBodyId}
+                travel={app.travel}
+                initiateTravelToBody={app.initiateTravelToBody}
+                currentTime={app.currentTime}
+              />
             )}
             {app.view === "ship" && (
               <ShipOverview
@@ -1615,15 +1654,20 @@ function CouncilHemicycle({ empire }: { empire: Empire }) {
   const START_ANGLE = Math.PI + 0.3;
   const END_ANGLE = -0.3;
 
+  const getOfficialColor = (official: any) => {
+    if (!official) return '#444';
+    return empire.government.council.factions.find(f => f.name === official.party)?.color || "var(--primary)";
+  };
+
   // Leadership Ring (6 fixed seats, potentially vacant)
   const leadershipSeats = [
-    { key: 'pres', role: "President", official: empire.government.president, color: "var(--primary)" },
-    { key: 'vp', role: "Vice President", official: empire.government.vicePresident, color: "#22d3ee" },
+    { key: 'pres', role: empire.government.type.includes("Dictator") || empire.government.type.includes("party") || empire.government.type.includes("monarchy") ? "Head of State" : "President", official: empire.government.president, color: getOfficialColor(empire.government.president) },
+    { key: 'vp', role: "Vice President", official: empire.government.vicePresident, color: getOfficialColor(empire.government.vicePresident) },
     ...Array.from({ length: 4 }).map((_, i) => ({
       key: `min-${i}`,
       role: empire.government.ministers[i]?.role || "Minister",
       official: empire.government.ministers[i] || null,
-      color: "#818cf8"
+      color: getOfficialColor(empire.government.ministers[i])
     }))
   ];
 
@@ -1829,12 +1873,24 @@ function EmpireView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: () => v
                     <div className="space-y-6">
                       <CouncilHemicycle empire={empire} />
                       <div className="flex flex-wrap justify-center gap-4">
-                        {empire.government.council.factions.map(f => (
-                          <div key={f.id} className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: f.color }} />
-                            <span className="font-mono-hud text-[8px] uppercase text-muted-foreground">{f.name} ({f.count})</span>
-                          </div>
-                        ))}
+                        {empire.government.council.factions.map(f => {
+                          const outerCount = empire.government.council.seats.filter(s => s.factionId === f.id && !!s.occupantName).length;
+                          const innerCount = [
+                            empire.government.president,
+                            empire.government.vicePresident,
+                            ...empire.government.ministers
+                          ].filter(m => m && m.party === f.name).length;
+                          const actualCount = outerCount + innerCount;
+                          
+                          if (actualCount === 0) return null;
+                          
+                          return (
+                            <div key={f.id} className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: f.color }} />
+                              <span className="font-mono-hud text-[8px] uppercase text-muted-foreground">{f.name} ({actualCount})</span>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                     
@@ -1878,15 +1934,18 @@ function EmpireView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: () => v
                   <div className="mt-12 pt-8 border-t border-primary/10">
                     <h4 className="text-[10px] font-mono-hud text-primary/40 uppercase tracking-[0.4em] mb-6">Cabinet Ministers</h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {empire.government.ministers.map((m, i) => (
-                        <div key={i} className="flex items-center gap-3 p-3 border border-primary/5 bg-white/5 rounded">
-                          <Briefcase size={14} className="text-primary/40" />
-                          <div>
-                            <div className="text-[8px] font-mono-hud text-primary/60 uppercase">{m.role}</div>
-                            <div className="text-[10px] font-display uppercase">{m.name}</div>
+                      {empire.government.ministers.map((m, i) => {
+                        const partyColor = empire.government.council.factions.find(f => f.name === m.party)?.color || "hsl(var(--primary) / 0.4)";
+                        return (
+                          <div key={i} className="flex items-center gap-3 p-3 border border-primary/5 bg-white/5 rounded">
+                            <div className="w-3 h-3 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.5)] shrink-0" style={{ backgroundColor: partyColor }} />
+                            <div className="min-w-0">
+                              <div className="text-[8px] font-mono-hud text-primary/60 uppercase truncate">{m.role}</div>
+                              <div className="text-[10px] font-display uppercase truncate">{m.name}</div>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                </div>

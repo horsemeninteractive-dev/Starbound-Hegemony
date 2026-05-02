@@ -255,13 +255,18 @@ function formatLabel(raw: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function BodyOverview({ body, galaxy, hideHeader, isExplored = true, onPlayClick, onSelectEmpire }: { 
+export function BodyOverview({ body, galaxy, hideHeader, isExplored = true, onPlayClick, onSelectEmpire, playerSystemId, playerBodyId, travel, initiateTravelToBody, currentTime }: { 
   body: Body; 
   galaxy: Galaxy; 
   hideHeader?: boolean; 
   isExplored?: boolean; 
   onPlayClick?: () => void;
   onSelectEmpire?: (id: string) => void;
+  playerSystemId: string;
+  playerBodyId: string;
+  travel: { targetId: string; startTime: number; endTime: number; type?: "inter" | "intra" } | null;
+  initiateTravelToBody: (id: string) => void;
+  currentTime: number;
 }) {
   const owner = body.ownerId ? galaxy.empires.find((e) => e.id === body.ownerId) : null;
   
@@ -274,8 +279,50 @@ export function BodyOverview({ body, galaxy, hideHeader, isExplored = true, onPl
   const isStation = body.type === "station";
   const isShip = body.type === "ship";
 
+  const isTravelingToThis = travel?.targetId === body.id && travel?.type === "intra";
+  const isInSameSystem = playerSystemId === body.systemId;
+  const isAtThisBody = playerBodyId === body.id;
+
   return (
     <Panel title={body.name} subtitle={BODY_META[body.type].label} hideHeader={hideHeader}>
+      {isTravelingToThis && travel && (
+        <div className="mb-4 bg-warning/10 border border-warning/20 px-3 py-2 rounded">
+          <div className="flex justify-between mb-1">
+            <span className="text-[10px] font-bold text-warning uppercase text-glow">Sub-Light Transit</span>
+            <span className="text-[10px] text-warning">ETA: {Math.ceil((travel.endTime - currentTime) / 1000)}s</span>
+          </div>
+          <div className="h-1 w-full bg-warning/20 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-warning animate-pulse" 
+              style={{ width: `${Math.min(100, ((currentTime - travel.startTime) / (travel.endTime - travel.startTime)) * 100)}%` }} 
+            />
+          </div>
+        </div>
+      )}
+
+      {isInSameSystem && !isAtThisBody && !travel && !isShip && (
+        <button 
+          onClick={() => {
+            onPlayClick?.();
+            initiateTravelToBody(body.id);
+          }}
+          className="w-full mb-4 bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary font-bold py-2.5 px-4 rounded text-[10px] tracking-[0.2em] transition-all flex items-center justify-between group"
+        >
+          <span className="flex items-center gap-2">
+            <Zap size={12} fill="currentColor" className="group-hover:scale-110 transition-transform" />
+            <span>INITIATE TRAVEL</span>
+          </span>
+          <span className="text-[9px] font-mono-hud text-primary/60 border-l border-primary/20 pl-2">5 AP</span>
+        </button>
+      )}
+
+      {isAtThisBody && isInSameSystem && !travel && !isShip && (
+        <div className="mb-4 bg-primary/10 border border-primary/20 px-3 py-2 rounded flex items-center justify-between">
+          <span className="text-[10px] font-bold text-primary tracking-widest uppercase">Vessel in Orbit</span>
+          <span className="text-[10px] font-bold text-primary/60">STATIONARY</span>
+        </div>
+      )}
+
       <Row k={isStar ? "Stellar Class" : "Type"} v={formatLabel(body.subtype)} />
       {!isStar && !isShip && <Row k="Orbit" v={`${body.orbit.toFixed(2)} AU`} />}
       

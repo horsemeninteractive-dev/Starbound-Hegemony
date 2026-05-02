@@ -9,7 +9,7 @@ import { SpaceBackground } from "./SpaceBackground";
 import { StarVisual } from "./StarVisual";
 import { PlanetMaterial } from "./PlanetMaterial";
 import { PlanetaryRing } from "./PlanetaryRing";
-import { STAR_LUMINOSITY, STAR_META, STAR_BASE_SIZE, getOrbitalSpeed, BODY_META } from "@/galaxy/meta";
+import { STAR_LUMINOSITY, STAR_META, STAR_BASE_SIZE, getOrbitalSpeed, BODY_META, getBodyPosition } from "@/galaxy/meta";
 import { ShipConfiguration } from "../shipPresets";
 import { ModularShip } from "./ModularShip";
 
@@ -133,12 +133,86 @@ const createCelestialBuffer = (ctx: AudioContext, type: string, subtype?: string
 };
 
 
-function CelestialAudio({ type, subtype, starType, scale, listener }: { type: string, subtype?: string, starType?: string, scale: number, listener: THREE.AudioListener | null }) {
+// Global voice tracker to prevent Web Audio overload
+let globalActiveVoices = 0;
+const MAX_GLOBAL_VOICES = 12;
+
+function CelestialAudio({ type, subtype, starType, scale, listener, quality }: { type: string, subtype?: string, starType?: string, scale: number, listener: THREE.AudioListener | null, quality: "low" | "medium" | "high" }) {
   const soundNodeRef = useRef<THREE.PositionalAudio | null>(null);
+  const isPlayingRef = useRef(false);
+  const frameCount = useRef(Math.floor(Math.random() * 20)); // Offset to spread load
+  const worldPos = useMemo(() => new THREE.Vector3(), []);
+  const frustum = useMemo(() => new THREE.Frustum(), []);
+  const projScreenMatrix = useMemo(() => new THREE.Matrix4(), []);
+
+  const stopAudio = useCallback(() => {
+    if (soundNodeRef.current && isPlayingRef.current) {
+      try {
+        const node = soundNodeRef.current;
+        if (node.gain) {
+          node.gain.gain.setTargetAtTime(0, node.context.currentTime, 0.1);
+          setTimeout(() => {
+            try { node.stop(); } catch (_) {}
+          }, 150);
+        } else {
+          node.stop();
+        }
+      } catch (_) {}
+      isPlayingRef.current = false;
+      globalActiveVoices = Math.max(0, globalActiveVoices - 1);
+    }
+  }, []);
+
+  const startAudio = useCallback(() => {
+    if (soundNodeRef.current && !isPlayingRef.current && globalActiveVoices < MAX_GLOBAL_VOICES) {
+      try {
+        const node = soundNodeRef.current;
+        const ctx = node.context;
+        node.play();
+        if (node.gain) {
+          const maxVol = type === "star" ? 0.7 : type === "gas_giant" ? 0.35 : 0.2;
+          node.gain.gain.setTargetAtTime(maxVol, ctx.currentTime, 0.1);
+        }
+        isPlayingRef.current = true;
+        globalActiveVoices++;
+      } catch (e) {
+        console.warn("Audio play failed:", e);
+      }
+    }
+  }, [type]);
+
+  useFrame((state) => {
+    frameCount.current++;
+    if (frameCount.current % 20 !== 0) return; // Throttled check
+
+    if (!soundNodeRef.current || !listener) return;
+
+    soundNodeRef.current.getWorldPosition(worldPos);
+    const dist = state.camera.position.distanceTo(worldPos);
+
+    // 1. Distance Culling - More aggressive than visuals
+    const maxDist = quality === "low" ? 180 : (quality === "medium" ? 250 : 350);
+    let shouldBeActive = dist < maxDist;
+
+    // 2. Frustum Culling (only check if near enough to matter)
+    if (shouldBeActive) {
+      projScreenMatrix.multiplyMatrices(state.camera.projectionMatrix, state.camera.matrixWorldInverse);
+      frustum.setFromProjectionMatrix(projScreenMatrix);
+      if (!frustum.containsPoint(worldPos)) {
+        shouldBeActive = false;
+      }
+    }
+
+    if (shouldBeActive && !isPlayingRef.current) {
+      startAudio();
+    } else if (!shouldBeActive && isPlayingRef.current) {
+      stopAudio();
+    }
+  });
 
   const setAudioRef = useCallback((node: THREE.PositionalAudio | null) => {
     if (soundNodeRef.current) {
-      try { soundNodeRef.current.stop(); } catch (_) {}
+      stopAudio();
     }
     soundNodeRef.current = node;
 
@@ -148,24 +222,19 @@ function CelestialAudio({ type, subtype, starType, scale, listener }: { type: st
     const buffer = createCelestialBuffer(ctx, type, subtype, starType);
     node.setBuffer(buffer);
     node.setRefDistance(scale * 2.5);
-    node.setRolloffFactor(1.5); // Smoother falloff
-    node.setDistanceModel('exponential'); // More natural spatial attenuation
+    node.setRolloffFactor(1.5); 
+    node.setDistanceModel('exponential');
     node.setLoop(true);
     node.offset = Math.random() * 2.0;
+    
+    // Don't auto-play here, let useFrame handle the proximity/frustum logic
+  }, [listener, type, subtype, starType, scale, stopAudio]);
 
-    try {
-      // Ramp volume up slowly (50ms) to prevent clicks
-      node.setVolume(0);
-      node.play();
-      if (node.gain) {
-        // Prevent massive clipping by assigning sensible max volumes per body type
-        const maxVol = type === "star" ? 0.7 : type === "gas_giant" ? 0.35 : 0.2;
-        node.gain.gain.setTargetAtTime(maxVol, ctx.currentTime, 0.05);
-      }
-    } catch (e) {
-      console.warn("Audio play failed:", e);
-    }
-  }, [listener, type, subtype, starType, scale]);
+  useEffect(() => {
+    return () => {
+      stopAudio();
+    };
+  }, [stopAudio]);
 
   if (!listener) return null;
   return <positionalAudio ref={setAudioRef} args={[listener]} />;
@@ -225,7 +294,8 @@ interface Props {
   knownSystemIds: Set<string>;
   systemMatchesFilter: (s: StarSystem) => boolean;
   currentSystemId?: string;
-  travel?: { targetId: string; startTime: number; endTime: number } | null;
+  playerBodyId?: string;
+  travel?: { targetId: string; startTime: number; endTime: number; type?: "inter" | "intra" } | null;
   isMobilePanelExpanded?: boolean;
   graphicsQuality?: "low" | "medium" | "high";
   shipConfig?: ShipConfiguration;
@@ -264,7 +334,7 @@ function MapContent({
   galaxy, view, system, body, filters, 
   onSelectSystem, onSelectBody, onHoverSystem, hoverSystemId, 
   fogOfWar, exploredSystemIds, knownSystemIds, systemMatchesFilter,
-  currentSystemId, travel, isMobilePanelExpanded, containerRef, graphicsQuality, shipConfig, fxVolume = 0.5
+  currentSystemId, playerBodyId, travel, isMobilePanelExpanded, containerRef, graphicsQuality, shipConfig, fxVolume = 0.5
 }: Props & { containerRef: React.RefObject<HTMLDivElement> }) {
   const { camera, gl } = useThree();
   const controlsRef = useRef<CameraControls>(null);
@@ -554,12 +624,13 @@ function MapContent({
 
         <PlayerFleetVisual 
           galaxy={galaxy} 
-          playerSystemId={currentSystemId} 
-          viewedSystemId={system?.id || null}
-          travel={travel}
+          playerSystemId={currentSystemId || "sys-center"} 
+          playerBodyId={playerBodyId}
+          viewedSystemId={system?.id || null} 
+          travel={travel} 
           view={view}
           controlsRef={controlsRef}
-          trackingShip={view === 'ship'}
+          trackingShip={view === "ship"}
           onSelect={() => onSelectBody("ship")}
           listener={listener}
           config={shipConfig}
@@ -737,7 +808,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
     <group position={system.pos}>
       {/* 3D Audio - Only render star sound when camera is near and system is active */}
       {isNear && (isFocused || view === "galaxy") && (
-        <CelestialAudio type="star" starType={system.starType} scale={baseStarScale} listener={listener} />
+        <CelestialAudio type="star" starType={system.starType} scale={baseStarScale} listener={listener} quality={quality} />
       )}
       <group ref={starGroupRef}>
         <StarVisual 
@@ -816,7 +887,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
               />
             )
           ))}
-          <JumpGateMarkers system={system} galaxy={galaxy} onSelect={onSelectBody} filters={filters} listener={listener} />
+          <JumpGateMarkers system={system} galaxy={galaxy} onSelect={onSelectBody} filters={filters} listener={listener} quality={quality} />
           
           {/* Stellar Temperature Zones Overlay - Smooth Gradient Shader */}
           {filters.layers.has("habitableZones") && (() => {
@@ -1180,6 +1251,7 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
         subtype={body.subtype}
         scale={visualSize} 
         listener={listener} 
+        quality={quality}
       />
       {/* Visuals Group with Axial Tilt */}
       <group rotation={axialTilt}>
@@ -1785,7 +1857,7 @@ function JumpGateVisual({ isLocked }: { isLocked: boolean }) {
   );
 }
 
-function JumpGateMarkers({ system, galaxy, onSelect, filters, listener }: { system: StarSystem; galaxy: Galaxy; onSelect: (id: string) => void; filters: FilterState; listener: THREE.AudioListener | null }) {
+function JumpGateMarkers({ system, galaxy, onSelect, filters, listener, quality }: { system: StarSystem; galaxy: Galaxy; onSelect: (id: string) => void; filters: FilterState; listener: THREE.AudioListener | null; quality: "low" | "medium" | "high" }) {
   const outer = getSystemGateRadius(system);
   return (
     <group>
@@ -1796,7 +1868,7 @@ function JumpGateMarkers({ system, galaxy, onSelect, filters, listener }: { syst
         return (
           <group key={gate.id} position={pos} rotation={[0, -angle + Math.PI / 2, 0]}>
             {/* 3D Audio for Jump Gates */}
-            <CelestialAudio type="gate" scale={3.0} listener={listener} />
+            <CelestialAudio type="gate" scale={3.0} listener={listener} quality={quality} />
             
             <JumpGateVisual isLocked={isLocked} />
             {/* Invisible Hitbox for easier selection — Billboard ensures it's always a flat disk facing the camera */}
@@ -1839,7 +1911,7 @@ function getGateLocalPosition(system: StarSystem, targetSystemId: string) {
   return new THREE.Vector3(Math.cos(angle) * outer, 0, Math.sin(angle) * outer);
 }
 
-function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, view, controlsRef, trackingShip, onSelect, listener, config }: { galaxy: Galaxy, playerSystemId: string, viewedSystemId: string | null, travel: { targetId: string; startTime: number; endTime: number } | null, view: string, controlsRef?: React.RefObject<CameraControls | null>, trackingShip?: boolean, onSelect?: () => void, listener: THREE.AudioListener | null, config?: ShipConfiguration }) {
+function PlayerFleetVisual({ galaxy, playerSystemId, playerBodyId = "star", viewedSystemId, travel, view, controlsRef, trackingShip, onSelect, listener, config }: { galaxy: Galaxy, playerSystemId: string, playerBodyId?: string, viewedSystemId: string | null, travel: { targetId: string; startTime: number; endTime: number; type?: "inter" | "intra" } | null, view: string, controlsRef?: React.RefObject<CameraControls | null>, trackingShip?: boolean, onSelect?: () => void, listener: THREE.AudioListener | null, config?: ShipConfiguration }) {
   const { camera } = useThree();
   
   const groupRef = useRef<THREE.Group>(null);
@@ -1940,18 +2012,37 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     let flashOpacity = 0;
 
     // Helper: calculate orbital position for idle states (dynamic over time)
-    const getIdlePos = (sysPos: number[], starType: string, time: number) => {
-      const seed = Math.abs(Math.sin(sysPos[0] * 12.9898 + sysPos[2] * 78.233)) * 43758.5453;
-      const baseAngle = (seed % 1) * Math.PI * 2;
-      const orbitalPeriod = 60000;
-      const timeAngle = ((time % orbitalPeriod) / orbitalPeriod) * Math.PI * 2;
-      const angle = baseAngle + timeAngle;
-      const starRadius = STAR_BASE_SIZE[starType as keyof typeof STAR_BASE_SIZE] || 2.4;
-      const orbitRadius = starRadius * 1.6;
+    const getShipTargetPos = (sys: StarSystem, targetBodyId: string, time: number) => {
+      if (targetBodyId === "star" || !targetBodyId) {
+        const seed = Math.abs(Math.sin(sys.pos[0] * 12.9898 + sys.pos[2] * 78.233)) * 43758.5453;
+        const baseAngle = (seed % 1) * Math.PI * 2;
+        const orbitalPeriod = 60000;
+        const timeAngle = ((time % orbitalPeriod) / orbitalPeriod) * Math.PI * 2;
+        const angle = baseAngle + timeAngle;
+        const starRadius = STAR_BASE_SIZE[sys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
+        const orbitRadius = starRadius * 1.6;
+        return new THREE.Vector3(
+          sys.pos[0] + Math.cos(angle) * orbitRadius,
+          sys.pos[1],
+          sys.pos[2] + Math.sin(angle) * orbitRadius
+        );
+      }
+
+      const body = sys.bodies.find(b => b.id === targetBodyId);
+      if (!body) return new THREE.Vector3(...sys.pos);
+
+      // Calculate the body's current position in the system using shared logic
+      const local = getBodyPosition(body, sys.starType, time);
+      
+      // Orbit the body itself
+      const shipOrbitRadius = body.size * 1.5 + 0.5;
+      const shipOrbitSpeed = 0.5; // Fixed speed for ship orbit
+      const shipAngle = (time * 0.001 * shipOrbitSpeed);
+
       return new THREE.Vector3(
-        sysPos[0] + Math.cos(angle) * orbitRadius,
-        sysPos[1],
-        sysPos[2] + Math.sin(angle) * orbitRadius
+        sys.pos[0] + local.x + Math.cos(shipAngle) * shipOrbitRadius,
+        sys.pos[1],
+        sys.pos[2] + local.z + Math.sin(shipAngle) * shipOrbitRadius
       );
     };
 
@@ -1960,80 +2051,96 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
     if (travel) {
       const elapsed = now - travel.startTime;
       const total = travel.endTime - travel.startTime;
-      const targetSys = galaxy.systemById[travel.targetId];
-      const startPos = getIdlePos(sourceSys.pos, sourceSys.starType, travel.startTime);
-      const gateOffset = getGateLocalPosition(sourceSys, travel.targetId);
-      const gatePos = new THREE.Vector3(...sourceSys.pos).add(gateOffset);
-      const localDist = startPos.distanceTo(gatePos);
-      const idealTransit = (localDist / SUB_LIGHT_VELOCITY) * 1000;
-      const idealCharge = 2500;
-      const idealJump = 1000;
-      const idealTotal = idealTransit + idealCharge + idealJump;
-      const scaleFactor = Math.max(0.0001, (total * 0.5) / Math.max(0.0001, idealTotal));
-      const transitTime = Math.max(0.0001, idealTransit * scaleFactor);
-      const chargeTime = Math.max(0.0001, idealCharge * scaleFactor);
-      const jumpTime = Math.max(0.0001, idealJump * scaleFactor);
-      const departureTotal = transitTime + chargeTime + jumpTime;
-
-      if (total === 0) {
-        scale = 0;
-      } else if (elapsed < departureTotal) {
-        if (elapsed < transitTime) {
-          const p = Math.max(0, Math.min(1, elapsed / Math.max(0.0001, transitTime)));
-          const t = Math.pow(p, 1.2); 
-          if (view === 'galaxy') {
-            const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
-            globalPos.set(sourceSys.pos[0] - starRadius * 0.4, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 0.4);
-          } else {
-            globalPos.lerpVectors(startPos, gatePos, t);
-          }
-          engineIntensity = (0.8 + t * 2.5) * (1.0 + Math.random() * 0.15);
-          if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
-        } else if (elapsed < transitTime + chargeTime) {
-          const p = Math.max(0, Math.min(1, (elapsed - transitTime) / Math.max(0.0001, chargeTime)));
-          if (view === 'galaxy') {
-            const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
-            globalPos.set(sourceSys.pos[0] + starRadius * 0.4, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 0.4);
-          } else {
-            globalPos.copy(gatePos);
-          }
-          engineIntensity = 2.5 + Math.sin(p * Math.PI * 10) * 1.0;
-          if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
-        } else {
-          const p = Math.max(0, Math.min(1, (elapsed - (transitTime + chargeTime)) / Math.max(0.0001, jumpTime)));
-          if (view === 'galaxy') {
-            const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
-            globalPos.set(sourceSys.pos[0] + starRadius * 0.4, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 0.4);
-          } else {
-            globalPos.copy(gatePos);
-          }
-          if (!hasJumpedRef.current && jumpSoundRef.current && view !== 'galaxy' && viewedSystemId === playerSystemId) {
-            if (jumpSoundRef.current.isPlaying) jumpSoundRef.current.stop();
-            jumpSoundRef.current.play();
-            hasJumpedRef.current = true;
-          }
-          scale = Math.max(0, 1.0 - p * 3);
-          flashScale = p * 12;
-          flashOpacity = 1.0 - p;
-          engineIntensity = 5.0 * (1.0 + Math.random() * 0.2);
-          if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
-        }
-      } else if (elapsed < total) {
-        hasJumpedRef.current = false;
-        const t = Math.max(0, Math.min(1, (elapsed - departureTotal) / Math.max(1, total - departureTotal)));
-        if (view === 'galaxy') {
-          const sourceCenter = new THREE.Vector3(...sourceSys.pos);
-          const targetCenter = new THREE.Vector3(...targetSys.pos);
-          globalPos.lerpVectors(sourceCenter, targetCenter, t);
-        } else {
-          const sourceGate = new THREE.Vector3(...sourceSys.pos).add(getGateLocalPosition(sourceSys, travel.targetId));
-          const targetGate = new THREE.Vector3(...targetSys.pos).add(getGateLocalPosition(targetSys, sourceSys.id));
-          globalPos.lerpVectors(sourceGate, targetGate, t);
-        }
-        engineIntensity = 3.0 + Math.random() * 1.0;
-        scale = view === 'galaxy' ? 4.0 : 0; 
+      
+      if (travel.type === "intra") {
+        // Sub-light travel between bodies in the same system
+        const startPos = getShipTargetPos(sourceSys, (playerBodyId as string), travel.startTime);
+        const targetPos = getShipTargetPos(sourceSys, travel.targetId, travel.endTime);
+        
+        const p = Math.max(0, Math.min(1, elapsed / Math.max(1, total)));
+        const eased = 1 - Math.pow(1 - p, 2.0); // Smooth arrival
+        
+        globalPos.lerpVectors(startPos, targetPos, eased);
+        engineIntensity = (1.5 + Math.sin(p * Math.PI) * 2.0) * (1.0 + Math.random() * 0.1);
+        scale = 1.0;
+        if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
       } else {
-        scale = 0;
+        // Inter-system FTL jump (existing logic)
+        const targetSys = galaxy.systemById[travel.targetId];
+        const startPos = getShipTargetPos(sourceSys, (playerBodyId as string), travel.startTime);
+        const gateOffset = getGateLocalPosition(sourceSys, travel.targetId);
+        const gatePos = new THREE.Vector3(...sourceSys.pos).add(gateOffset);
+        const localDist = startPos.distanceTo(gatePos);
+        const idealTransit = (localDist / SUB_LIGHT_VELOCITY) * 1000;
+        const idealCharge = 2500;
+        const idealJump = 1000;
+        const idealTotal = idealTransit + idealCharge + idealJump;
+        const scaleFactor = Math.max(0.0001, (total * 0.5) / Math.max(0.0001, idealTotal));
+        const transitTime = Math.max(0.0001, idealTransit * scaleFactor);
+        const chargeTime = Math.max(0.0001, idealCharge * scaleFactor);
+        const jumpTime = Math.max(0.0001, idealJump * scaleFactor);
+        const departureTotal = transitTime + chargeTime + jumpTime;
+
+        if (total === 0) {
+          scale = 0;
+        } else if (elapsed < departureTotal) {
+          if (elapsed < transitTime) {
+            const p = Math.max(0, Math.min(1, elapsed / Math.max(0.0001, transitTime)));
+            const t = Math.pow(p, 1.2); 
+            if (view === 'galaxy') {
+              const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
+              globalPos.set(sourceSys.pos[0] - starRadius * 0.4, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 0.4);
+            } else {
+              globalPos.lerpVectors(startPos, gatePos, t);
+            }
+            engineIntensity = (0.8 + t * 2.5) * (1.0 + Math.random() * 0.15);
+            if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
+          } else if (elapsed < transitTime + chargeTime) {
+            const p = Math.max(0, Math.min(1, (elapsed - transitTime) / Math.max(0.0001, chargeTime)));
+            if (view === 'galaxy') {
+              const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
+              globalPos.set(sourceSys.pos[0] + starRadius * 0.4, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 0.4);
+            } else {
+              globalPos.copy(gatePos);
+            }
+            engineIntensity = 2.5 + Math.sin(p * Math.PI * 10) * 1.0;
+            if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
+          } else {
+            const p = Math.max(0, Math.min(1, (elapsed - (transitTime + chargeTime)) / Math.max(0.0001, jumpTime)));
+            if (view === 'galaxy') {
+              const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
+              globalPos.set(sourceSys.pos[0] + starRadius * 0.4, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 0.4);
+            } else {
+              globalPos.copy(gatePos);
+            }
+            if (!hasJumpedRef.current && jumpSoundRef.current && view !== 'galaxy' && viewedSystemId === playerSystemId) {
+              if (jumpSoundRef.current.isPlaying) jumpSoundRef.current.stop();
+              jumpSoundRef.current.play();
+              hasJumpedRef.current = true;
+            }
+            scale = Math.max(0, 1.0 - p * 3);
+            flashScale = p * 12;
+            flashOpacity = 1.0 - p;
+            engineIntensity = 5.0 * (1.0 + Math.random() * 0.2);
+            if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
+          }
+        } else if (elapsed < total) {
+          hasJumpedRef.current = false;
+          const t = Math.max(0, Math.min(1, (elapsed - departureTotal) / Math.max(1, total - departureTotal)));
+          if (view === 'galaxy') {
+            const sourceCenter = new THREE.Vector3(...sourceSys.pos);
+            const targetCenter = new THREE.Vector3(...targetSys.pos);
+            globalPos.lerpVectors(sourceCenter, targetCenter, t);
+          } else {
+            const sourceGate = new THREE.Vector3(...sourceSys.pos).add(getGateLocalPosition(sourceSys, travel.targetId));
+            const targetGate = new THREE.Vector3(...targetSys.pos).add(getGateLocalPosition(targetSys, sourceSys.id));
+            globalPos.lerpVectors(sourceGate, targetGate, t);
+          }
+          engineIntensity = 3.0 + Math.random() * 1.0;
+          scale = view === 'galaxy' ? 4.0 : 0; 
+        } else {
+          scale = 0;
+        }
       }
     } else if (arrivalState) {
       const elapsed = now - arrivalState.time;
@@ -2046,7 +2153,7 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
       let transitTime = 0;
       let arrivalTotal = 0;
       for (let i = 0; i < 3; i++) {
-        targetIdlePos = getIdlePos(targetSys.pos, targetSys.starType, expectedArrivalEndTime);
+        targetIdlePos = getShipTargetPos(targetSys, "star", expectedArrivalEndTime);
         const localDist = gatePos.distanceTo(targetIdlePos);
         transitTime = (localDist / SUB_LIGHT_VELOCITY) * 1200;
         arrivalTotal = Math.max(1, transitTime + matTime);
@@ -2090,10 +2197,10 @@ function PlayerFleetVisual({ galaxy, playerSystemId, viewedSystemId, travel, vie
           arrivalDoneRef.current = true;
           setArrivalState(null);
         }
-        globalPos.copy(getIdlePos(targetSys.pos, targetSys.starType, now));
+        globalPos.copy(getShipTargetPos(targetSys, "star", now));
       }
     } else {
-      globalPos.copy(getIdlePos(sourceSys.pos, sourceSys.starType, now));
+      globalPos.copy(getShipTargetPos(sourceSys, (playerBodyId as string), now));
       engineIntensity = 0.3 + Math.sin(now * 0.005) * 0.1;
       intensityRef.current = engineIntensity;
       if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;

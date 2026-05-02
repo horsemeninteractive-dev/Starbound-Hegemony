@@ -44,6 +44,17 @@ export function getOrbitalSpeed(r: number, starType: StarType, isMoon: boolean) 
   return 0.04 * Math.sqrt(mass / Math.max(1, r));
 }
 
+export function getBodyPosition(body: { orbit: number; phase: number; type: string }, starType: StarType, time: number) {
+  const t = time * 0.001;
+  const speed = getOrbitalSpeed(body.orbit, starType, body.type === "moon");
+  const angle = (body.phase || 0) + (t * speed) % (Math.PI * 2);
+  
+  return {
+    x: Math.cos(angle) * body.orbit,
+    z: Math.sin(angle) * body.orbit
+  };
+}
+
 export const STAR_LUMINOSITY: Record<StarType, number> = {
   O: 40.0, B: 15.0, A: 5.0, F: 2.5, G: 1.0, K: 0.4, M: 0.08,
   whitedwarf: 0.01, neutron: 0.005, pulsar: 0.005, binary: 2.0, trinary: 3.5, blackhole: 0.001, whitehole: 100.0,
