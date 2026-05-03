@@ -160,6 +160,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
         if (vessel) {
           setVesselId(vessel.id);
           setShipConfig({
+            name: vessel.name || "Aegis VII",
             primaryColor: vessel.primary_color,
             accentColor: vessel.accent_color,
             hullId: vessel.hull_id,
@@ -211,6 +212,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
     const updateVessel = async () => {
       await supabase.from('vessels').upsert({
         user_id: user.id,
+        name: shipConfig.name,
         primary_color: shipConfig.primaryColor,
         accent_color: shipConfig.accentColor,
         hull_id: shipConfig.hullId,
@@ -286,7 +288,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
 
       const { data } = await supabase
         .from('fleet_positions')
-        .select('*')
+        .select('*, profiles(commander_name)')
         .neq('user_id', user.id)
         .in('system_id', systemArray); 
         
@@ -404,7 +406,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
       const shipBody: Body = {
         id: "ship",
         systemId: system.id,
-        name: "Commander's Vessel",
+        name: shipConfig.name,
         type: "ship",
         subtype: "commander",
         size: 0.0003,

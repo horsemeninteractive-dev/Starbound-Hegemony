@@ -670,6 +670,7 @@ function MapContent({
               config={undefined} // Use default config
               arrival={opArrival}
               isOtherPlayer={true}
+              commanderName={op.profiles?.commander_name}
             />
           );
         })}
@@ -1922,7 +1923,7 @@ function JumpGateMarkers({ system, galaxy, onSelect, filters, listener, quality 
               <meshBasicMaterial transparent opacity={0} depthWrite={false} />
             </mesh>
             {filters.layers.has("objectLabels") && (
-              <Html position={[0, 3.5, 0]} center zIndexRange={[100, 0]}>
+              <Html position={[0, 3.5, 0]} center zIndexRange={[100, 0]} style={{ pointerEvents: "none" }}>
                 <div className={`font-mono-hud text-[7px] bg-background/90 px-1.5 py-0.5 border backdrop-blur-sm whitespace-nowrap uppercase tracking-widest ${
                   isLocked
                     ? "text-red-400 border-red-500/40"
@@ -1962,7 +1963,8 @@ function PlayerFleetVisual({
   listener, 
   config,
   arrival,
-  isOtherPlayer
+  isOtherPlayer,
+  commanderName
 }: { 
   galaxy: Galaxy, 
   playerSystemId: string, 
@@ -1982,7 +1984,8 @@ function PlayerFleetVisual({
   listener: THREE.AudioListener | null, 
   config?: ShipConfiguration,
   arrival?: { fromId: string; startTime: number; duration: number } | null,
-  isOtherPlayer?: boolean
+  isOtherPlayer?: boolean,
+  commanderName?: string
 }) {
   const { camera } = useThree();
   
@@ -2456,11 +2459,19 @@ function PlayerFleetVisual({
           </>
         )}
         
-        {config && (
+        {(config || isOtherPlayer) && (
           <ModularShip 
-            config={config} 
+            config={config || {
+              name: "Other",
+              primaryColor: "#ffffff",
+              accentColor: "#ffffff",
+              hullId: "hull_vanguard",
+              wingsId: "wings_delta",
+              enginesId: "engine_plasma",
+              bridgeId: "bridge_panoramic",
+            }} 
             engineIntensityRef={intensityRef} 
-            engineColor={config.accentColor} 
+            engineColor={isOtherPlayer ? "#ffffff" : config?.accentColor} 
           />
         )}
 
@@ -2476,12 +2487,12 @@ function PlayerFleetVisual({
       </group>
 
       <group ref={labelGroupRef}>
-        <Html center position={[0, 0.4, 0]}>
+        <Html center position={[0, 0.4, 0]} style={{ pointerEvents: "none" }}>
           <div 
             ref={labelRef}
             className="flex flex-col items-center pointer-events-none select-none transition-opacity duration-300"
           >
-            <div className="relative flex flex-col items-center text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-pulse">
+            <div className={`relative flex flex-col items-center ${isOtherPlayer ? 'text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.8)]' : 'text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]'} animate-pulse`}>
               <Rocket size={14} className="-rotate-45" />
               {(travel || arrival) && (
                 <div className="absolute left-[100%] top-0 ml-0.5 flex flex-col-reverse items-center">
@@ -2492,8 +2503,13 @@ function PlayerFleetVisual({
               )}
             </div>
             <div className="text-[6px] font-mono-hud mt-1 uppercase text-primary/80">
-              {isOtherPlayer ? "FLEET" : "CMDR"}
+              CMDR
             </div>
+            {isOtherPlayer && commanderName && (
+              <div className="text-[5px] font-mono-hud mt-0.5 uppercase text-white/60 tracking-wider">
+                {commanderName}
+              </div>
+            )}
           </div>
         </Html>
         

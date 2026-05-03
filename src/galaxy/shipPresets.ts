@@ -10,6 +10,7 @@ export interface ShipPart {
 }
 
 export interface ShipConfiguration {
+  name: string;
   hullId: string;
   wingsId: string;
   enginesId: string;
@@ -50,6 +51,7 @@ export const SHIP_PARTS: Record<ShipComponentType, ShipPart[]> = {
 };
 
 export const DEFAULT_SHIP_CONFIG: ShipConfiguration = {
+  name: 'Aegis VII',
   hullId: 'hull_vanguard',
   wingsId: 'wings_delta',
   enginesId: 'engine_plasma',

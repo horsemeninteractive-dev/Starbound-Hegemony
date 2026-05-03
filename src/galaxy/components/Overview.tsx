@@ -23,7 +23,7 @@ export function GalaxyOverview({ galaxy, hideHeader }: { galaxy: Galaxy; hideHea
 }
 
 /* ======================= SYSTEM OVERVIEW ======================= */
-export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, travel, arrival, initiateJump, getJumpCost, currentTime, isExplored, hideHeader, hideActions, onPlayClick, onSelectEmpire, onEnterSystem }: {
+export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, travel, arrival, initiateJump, getJumpCost, currentTime, isExplored, hideHeader, hideActions, onPlayClick, onSelectEmpire, onEnterSystem, shipName }: {
   system: StarSystem;
   galaxy: Galaxy;
   onSelectBody: (id: string) => void;
@@ -39,6 +39,7 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, t
   onPlayClick?: () => void;
   onSelectEmpire?: (id: string) => void;
   onEnterSystem?: () => void;
+  shipName?: string;
 }) {
   const explored = isExplored || system.id === "sys-center";
   const meta = STAR_META[system.starType];
@@ -180,7 +181,7 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, t
                 className="flex items-center justify-between gap-2 px-2 py-1 text-[10px] uppercase tracking-wider border border-primary/30 bg-primary/10 hover:bg-primary/20 text-left transition mb-1 shadow-[0_0_10px_rgba(16,185,129,0.1)]"
               >
                 <span className="text-primary">{BODY_META.ship.icon}</span>
-                <span className="flex-1 truncate text-primary font-bold">Commander's Vessel</span>
+                <span className="flex-1 truncate text-primary font-bold">{shipName || "Commander's Vessel"}</span>
                 <span className="text-primary/60">{BODY_META.ship.label}</span>
               </button>
             )}
@@ -454,7 +455,7 @@ export function BodyOverview({ body, galaxy, hideHeader, isExplored = true, isVi
 }
 
 /* ======================= SHIP OVERVIEW ======================= */
-export function ShipOverview({ system, travel, arrival, currentTime, onDeselect, hideHeader, onPlayClick }: {
+export function ShipOverview({ system, travel, arrival, currentTime, onDeselect, hideHeader, onPlayClick, shipName }: {
   system: StarSystem | null;
   travel: { targetId: string; startTime: number; endTime: number } | null;
   arrival: { fromId: string; startTime: number; duration: number } | null;
@@ -462,6 +463,7 @@ export function ShipOverview({ system, travel, arrival, currentTime, onDeselect,
   onDeselect?: () => void;
   hideHeader?: boolean;
   onPlayClick?: () => void;
+  shipName?: string;
 }) {
   const isMoving = !!travel || !!arrival;
   const transitPct = travel
@@ -472,7 +474,7 @@ export function ShipOverview({ system, travel, arrival, currentTime, onDeselect,
   const etaSec = travel ? Math.max(0, Math.ceil((travel.endTime - currentTime) / 1000)) : 0;
 
   return (
-    <Panel title="Commander's Vessel" subtitle="Fleet · CMDR Ship" hideHeader={hideHeader}>
+    <Panel title={shipName || "Commander's Vessel"} subtitle="Fleet · Flagship" hideHeader={hideHeader}>
       <div className="mb-3 p-2 bg-primary/10 border border-primary/20 rounded flex items-center gap-2">
         <span className="text-xl">🚀</span>
         <div>

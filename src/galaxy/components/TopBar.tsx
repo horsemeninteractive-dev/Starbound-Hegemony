@@ -48,6 +48,7 @@ interface Props {
   onSetAp: (val: number) => void;
   onPlayClick?: () => void;
   isGameReady?: boolean;
+  shipName?: string;
 }
 
 import { Eye, EyeOff, Zap, Globe, Compass, Radio, RefreshCcw, BatteryFull } from "lucide-react";
@@ -59,7 +60,6 @@ const GAME_MENU = [
   { icon: Rocket, label: "Fleets", desc: "Fleet command", route: "fleets" },
   { icon: Users, label: "Party", desc: "Political party", route: "party" },
   { icon: User, label: "Profile", desc: "Commander profile", route: "profile" },
-  { icon: Sparkles, label: "Skill Tree", desc: "Doctrines & perks", route: "skills" },
   { icon: Settings, label: "Settings", desc: "Preferences", route: "settings" },
 ];
 
@@ -68,7 +68,7 @@ export function TopBar({
   onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills, onOpenChangelog, onOpenCredits,
   ap, sc, vt = 0, playerName, playerLevel, playerXP, xpToNextLevel, playerAvatar,
   fogOfWar, setFogOfWar, instantJump, setInstantJump,
-  playerSystemName, playerSystemId, travel, arrival, currentTime, galaxy, onReset, onSetAp, onPlayClick, isGameReady = true
+  playerSystemName, playerSystemId, travel, arrival, currentTime, galaxy, onReset, onSetAp, onPlayClick, isGameReady = true, shipName
 }: Props) {
   // Game menu state - Radix Sheet handles escape/outside-click automatically
   const [menuOpen, setMenuOpen] = useState(false);
@@ -166,7 +166,7 @@ export function TopBar({
             <div className="flex items-center gap-1.5 sm:gap-2">
               <Compass size={10} className={`${(travel || arrival) ? "text-cyan-400 animate-spin-slow" : "text-cyan-400/60"} shrink-0`} />
               <span className="text-[8px] sm:text-[9px] font-display text-cyan-400 uppercase tracking-widest truncate">
-                {travel ? `${travel.type === "intra" ? "SLT" : "FTL"} → ${destinationName}` : arrival ? `TRANSIT → STAR` : playerSystemName || "Unknown Space"}
+                {travel ? `${travel.type === "intra" ? "SLT" : "FTL"} → ${destinationName}` : arrival ? `TRANSIT → STAR` : `${shipName || "Vessel"} @ ${playerSystemName || "Unknown Space"}`}
               </span>
             </div>
             <div className="flex items-center gap-1.5 sm:gap-2 mt-0.5 h-2.5">

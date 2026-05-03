@@ -85,6 +85,18 @@ export function ShipCustomizer({ config, onChange, playClick }: Props) {
 
       {/* Customization Controls - Non-shrinking to guarantee visibility */}
       <div className="flex-none lg:w-[380px] flex flex-col bg-black/40 border-t lg:border-t-0 lg:border-l border-primary/20 min-h-0">
+        {/* Ship Name Input */}
+        <div className="p-3 border-b border-primary/20 bg-primary/5">
+          <div className="font-mono-hud text-[7px] text-primary/40 uppercase tracking-widest mb-1">VESSEL_DESIGNATION</div>
+          <input
+            type="text"
+            value={config.name}
+            onChange={(e) => onChange({ ...config, name: e.target.value.substring(0, 24) })}
+            placeholder="ENTER_SHIP_NAME"
+            className="w-full bg-black/60 border border-primary/20 px-3 py-2 text-primary font-display text-xs lg:text-sm tracking-wider uppercase focus:outline-none focus:border-primary/60 transition-colors placeholder:text-primary/20"
+          />
+        </div>
+
         {/* Tabs */}
         <div className="flex border-b border-primary/20 shrink-0 bg-black/40">
           {tabs.map((tab) => (

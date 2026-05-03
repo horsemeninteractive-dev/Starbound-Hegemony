@@ -221,6 +221,7 @@ const Index = () => {
           onSetAp={app.setAp}
           onPlayClick={playClick}
           isGameReady={isGameReady}
+          shipName={app.shipConfig.name}
         />
       </div>
 
@@ -326,6 +327,7 @@ const Index = () => {
                       onPlayClick={playClick}
                       onSelectEmpire={handleSelectEmpire}
                       onEnterSystem={() => handleEnterSystem(app.system!.id)}
+                      shipName={app.shipConfig.name}
                     />
                   ) : (
                     <GalaxyOverview galaxy={app.galaxy} />
@@ -345,6 +347,7 @@ const Index = () => {
                     isExplored={!app.fogOfWar || app.exploredSystemIds.has(app.system.id)}
                     onPlayClick={playClick}
                     onSelectEmpire={handleSelectEmpire}
+                    shipName={app.shipConfig.name}
                   />
                 )}
                 {app.view === "body" && app.body && app.system && (
@@ -370,6 +373,7 @@ const Index = () => {
                     currentTime={app.currentTime}
                     onDeselect={handleBackToSystem}
                     onPlayClick={playClick}
+                    shipName={app.shipConfig.name}
                   />
                 )}
               </div>
@@ -527,7 +531,14 @@ const Index = () => {
                             
                             <div className="space-y-4">
                               {[
-                                { name: "HGV-01 VANGUARD", class: "Swift-Class Explorer", status: "Stationary", pos: "Sanctum 11", hull: 100, shield: 100 },
+                                { 
+                                  name: app.shipConfig.name.toUpperCase(), 
+                                  class: "Commander Flagship", 
+                                  status: app.travel ? "In Transit" : "Stationary", 
+                                  pos: app.galaxy.systemById[app.playerSystemId]?.name || "Deep Space", 
+                                  hull: 100, 
+                                  shield: 100 
+                                },
                                 { name: "HGV-02 SENTINEL", class: "Aegis-Class Defender", status: "Patrolling", pos: "Inner Ring", hull: 92, shield: 85 },
                                 { name: "HGV-08 BROADSWORD", class: "Hammer-Class Corvette", status: "Docked", pos: "Centauri Hub", hull: 100, shield: 100 }
                               ].map((ship, i) => (
