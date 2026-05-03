@@ -44,7 +44,6 @@ interface Props {
   arrival?: { fromId: string; startTime: number; duration: number } | null;
   currentTime: number;
   galaxy: Galaxy;
-  onRegenerate: () => void;
   onReset: () => void;
   onSetAp: (val: number) => void;
   onPlayClick?: () => void;
@@ -69,7 +68,7 @@ export function TopBar({
   onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills, onOpenChangelog, onOpenCredits,
   ap, sc, vt = 0, playerName, playerLevel, playerXP, xpToNextLevel, playerAvatar,
   fogOfWar, setFogOfWar, instantJump, setInstantJump,
-  playerSystemName, playerSystemId, travel, arrival, currentTime, galaxy, onRegenerate, onReset, onSetAp, onPlayClick, isGameReady = true
+  playerSystemName, playerSystemId, travel, arrival, currentTime, galaxy, onReset, onSetAp, onPlayClick, isGameReady = true
 }: Props) {
   // Game menu state - Radix Sheet handles escape/outside-click automatically
   const [menuOpen, setMenuOpen] = useState(false);
@@ -250,7 +249,7 @@ export function TopBar({
                 <Bug size={14} className="group-hover:rotate-12 transition-transform sm:w-4 sm:h-4" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56 bg-background/95 backdrop-blur-xl border-primary/20 text-primary font-mono-hud uppercase text-[10px] tracking-widest">
+            <DropdownMenuContent align="end" className="w-56 bg-background/95 backdrop-blur-xl border-primary/20 text-foreground font-mono-hud uppercase text-[10px] tracking-widest">
               <DropdownMenuLabel className="text-primary/40 text-[9px]">Neural Debug Interface</DropdownMenuLabel>
               <DropdownMenuSeparator className="bg-primary/10" />
               
@@ -260,14 +259,6 @@ export function TopBar({
               >
                 <Compass size={14} />
                 <span>Reset Ship & Logs</span>
-              </DropdownMenuItem>
-
-              <DropdownMenuItem 
-                onClick={() => { onRegenerate(); onPlayClick?.(); }}
-                className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5"
-              >
-                <RefreshCcw size={14} />
-                <span>Regenerate Galaxy</span>
               </DropdownMenuItem>
 
               <DropdownMenuItem 
@@ -310,8 +301,8 @@ export function TopBar({
               e.preventDefault();
             }
           }}
-          overlayClassName="bg-black/60 backdrop-blur-md z-[60]"
-          className="w-[300px] sm:w-[380px] bg-background/95 backdrop-blur-xl border-r border-primary/20 p-0 flex flex-col z-[70] shadow-[10px_0_50px_rgba(0,0,0,0.8)]"
+          overlayClassName="bg-background/60 backdrop-blur-md z-[60]"
+          className="w-[300px] sm:w-[380px] bg-background/95 backdrop-blur-xl border-r border-primary/20 p-0 flex flex-col z-[70] shadow-[10px_0_50px_rgba(0,0,0,0.8)] text-foreground"
         >
           <VisuallyHidden>
             <SheetTitle>Navigation Menu</SheetTitle>

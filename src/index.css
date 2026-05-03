@@ -51,6 +51,53 @@
     --star-pulsar: 200 100% 90%;
     --star-binary: 40 100% 80%;
   }
+
+  .light {
+    --background: 210 40% 98%;
+    --foreground: 222 47% 4%;
+
+    --card: 210 40% 98%;
+    --card-foreground: 222 47% 4%;
+
+    --popover: 210 40% 98%;
+    --popover-foreground: 222 47% 4%;
+
+    --primary: 199 89% 48%;
+    --primary-foreground: 210 40% 98%;
+    --primary-glow: 199 89% 48%;
+
+    --secondary: 210 40% 92%;
+    --secondary-foreground: 222 47% 4%;
+
+    --muted: 210 40% 92%;
+    --muted-foreground: 215 20% 40%;
+
+    --accent: 210 40% 92%;
+    --accent-foreground: 222 47% 4%;
+
+    --border: 210 40% 88%;
+    --input: 210 40% 88%;
+    --ring: 199 89% 48%;
+  }
+  
+  .light .bg-nebula {
+    background: radial-gradient(circle at center, rgba(180, 210, 255, 0.2) 0%, rgba(255, 255, 255, 1) 100%);
+  }
+
+  .light .hud-panel {
+    border-color: hsl(var(--primary) / 0.35);
+    box-shadow: 0 8px 32px -4px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Disable glow effects in light mode for readability */
+  .light .text-glow {
+    text-shadow: none !important;
+  }
+  
+  /* Ensure primary text is readable on light bg */
+  .light {
+    --primary: 210 100% 40%;
+  }
 }
 
 @layer base {

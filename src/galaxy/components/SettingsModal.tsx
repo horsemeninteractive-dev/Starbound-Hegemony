@@ -1,4 +1,4 @@
-import { X, Maximize, Minimize, Volume2, VolumeX, Music, Zap, Radio } from "lucide-react";
+import { X, Maximize, Minimize, Volume2, VolumeX, Music, Zap, Radio, Sun, Moon } from "lucide-react";
 import { useState, useEffect } from "react";
 
 interface Props {
@@ -14,6 +14,8 @@ interface Props {
   onSfxVolumeChange: (v: number) => void;
   fxVolume: number;
   onFxVolumeChange: (v: number) => void;
+  theme: "dark" | "light";
+  onThemeChange: (t: "dark" | "light") => void;
   onPlayClick?: () => void;
 }
 
@@ -30,6 +32,8 @@ export function SettingsModal({
   onSfxVolumeChange,
   fxVolume,
   onFxVolumeChange,
+  theme,
+  onThemeChange,
   onPlayClick
 }: Props) {
   const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
@@ -62,7 +66,7 @@ export function SettingsModal({
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" onClick={() => onOpenChange(false)} />
       
-      <div className="hud-panel hud-corner w-full max-w-[420px] animate-fade-in relative">
+      <div className="hud-panel hud-corner w-full max-w-[420px] animate-fade-in relative text-foreground">
         <div className="flex items-center justify-between px-4 py-3 border-b border-primary/20">
           <div className="font-display text-sm uppercase tracking-[0.2em] text-primary text-glow">
             System Settings
@@ -174,6 +178,32 @@ export function SettingsModal({
               Display &amp; HUD
             </div>
             
+            <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-1">
+                <span className="text-[12px] font-display uppercase tracking-widest text-foreground">Interface Theme</span>
+                <span className="text-[9px] font-mono-hud text-muted-foreground">Toggle Dark / Light mode</span>
+              </div>
+              <div className="flex bg-primary/5 border border-primary/20 p-0.5 rounded gap-1">
+                {(["dark", "light"] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => {
+                      onThemeChange(t);
+                      onPlayClick?.();
+                    }}
+                    className={`flex items-center gap-2 px-3 py-1.5 transition ${
+                      theme === t 
+                        ? "bg-primary text-background shadow-[0_0_10px_hsl(var(--primary)/0.3)]" 
+                        : "text-muted-foreground hover:text-primary"
+                    }`}
+                  >
+                    {t === "dark" ? <Moon size={12} /> : <Sun size={12} />}
+                    <span className="font-mono-hud text-[9px] uppercase tracking-widest">{t}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="flex items-center justify-between">
               <div className="flex flex-col gap-1">
                 <span className="text-[12px] font-display uppercase tracking-widest text-foreground">Fullscreen Mode</span>

@@ -33,21 +33,24 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [user, setUser] = useState<User | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
 
-  const [seed, setSeed] = useState(() => {
-    const saved = localStorage.getItem("galaxy_seed");
-    return saved ? Number(saved) : initialSeed;
-  });
+  const [vesselId, setVesselId] = useState<string | null>(null);
+  const [otherPlayers, setOtherPlayers] = useState<any[]>([]);
 
-  const galaxy: Galaxy = useMemo(() => generateGalaxy(seed), [seed]);
+  // Bake in a universal galaxy seed so all players see the exact same universe
+  const UNIVERSAL_SEED = 20260423;
+  const galaxy: Galaxy = useMemo(() => generateGalaxy(UNIVERSAL_SEED), []);
+
 
   const [view, setView] = useState<ViewMode>(() => {
     const saved = localStorage.getItem("view") as ViewMode;
     if (saved === "galaxy" || saved === "system") return saved;
     return "galaxy";
   });
-  const [playerSystemId, setPlayerSystemId] = useState<string>(
-    () => localStorage.getItem("playerSystemId") ?? "sys-center"
-  );
+  const [playerSystemId, setPlayerSystemId] = useState<string>(() => {
+    const saved = localStorage.getItem("playerSystemId");
+    if (saved && galaxy.systemById[saved]) return saved;
+    return Object.keys(galaxy.systemById)[0] || "sys-center";
+  });
   const [playerBodyId, setPlayerBodyId] = useState<string>(
     () => localStorage.getItem("playerBodyId") ?? "star"
   );
@@ -60,10 +63,17 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [fogOfWar, setFogOfWarState] = useState(() => localStorage.getItem("fogOfWar") !== "false");
   const [instantJump, setInstantJumpState] = useState(() => localStorage.getItem("instantJump") === "true");
   
-  const [travel, setTravel] = useState<{ targetId: string; startTime: number; endTime: number; type?: "inter" | "intra" } | null>(() => {
+  const [travel, setTravel] = useState<{ 
+    targetId: string; 
+    startTime: number; 
+    endTime: number; 
+    type?: "inter" | "intra";
+    startPos?: { x: number; z: number }; // Relative to system center
+  } | null>(() => {
     const saved = localStorage.getItem("travel");
     return saved ? JSON.parse(saved) : null;
   });
+  const [arrival, setArrival] = useState<{ fromId: string; startTime: number; duration: number } | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
 
   const [ap, setAp] = useState(() => Number(localStorage.getItem("ap") ?? 240));
@@ -90,6 +100,13 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [musicVolume, setMusicVolume] = useState(() => Number(localStorage.getItem("musicVolume") ?? 0.4));
   const [sfxVolume, setSfxVolume] = useState(() => Number(localStorage.getItem("sfxVolume") ?? 0.6));
   const [fxVolume, setFxVolume] = useState(() => Number(localStorage.getItem("fxVolume") ?? 0.5));
+  const [theme, setThemeState] = useState<"dark" | "light">(() => (localStorage.getItem("theme") as "dark" | "light") || "dark");
+
+  const setTheme = useCallback((newTheme: "dark" | "light") => {
+    setThemeState(newTheme);
+    localStorage.setItem("theme", newTheme);
+  }, []);
+
 
   // --- SUPABASE SYNC LOGIC ---
 
@@ -141,6 +158,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
           .single();
 
         if (vessel) {
+          setVesselId(vessel.id);
           setShipConfig({
             primaryColor: vessel.primary_color,
             accentColor: vessel.accent_color,
@@ -205,6 +223,84 @@ export function useGalaxyApp(initialSeed = 20260423) {
     updateVessel();
   }, [user, initialDataLoaded, shipConfig]);
 
+  // Sync location to Supabase fleet_positions
+  useEffect(() => {
+    if (!user || !vesselId || !initialDataLoaded) return;
+    
+    const syncPosition = async () => {
+      await supabase.from('fleet_positions').upsert({
+        user_id: user.id,
+        vessel_id: vesselId,
+        system_id: playerSystemId,
+        body_id: playerBodyId,
+        travel_type: travel?.type || null,
+        travel_target_id: travel?.targetId || null,
+        travel_start_time: travel?.startTime || null,
+        travel_end_time: travel?.endTime || null,
+        travel_start_pos_x: travel?.startPos?.x || null,
+        travel_start_pos_z: travel?.startPos?.z || null,
+        arrival_from_id: arrival?.fromId || null,
+        arrival_start_time: arrival?.startTime || null,
+        arrival_duration: arrival?.duration || null,
+      }, { onConflict: 'vessel_id' });
+    };
+    syncPosition();
+  }, [user, vesselId, initialDataLoaded, playerSystemId, playerBodyId, travel, arrival]);
+
+  const knownSystemIds = useMemo(() => {
+    // 1. Start with all explored systems (stay visible forever)
+    const known = new Set<string>(exploredSystemIds);
+    
+    // 2. Add systems within 2 jumps of current position (sensor range)
+    const queue: [string, number][] = [[playerSystemId, 0]];
+    known.add(playerSystemId);
+    
+    const bfsVisited = new Set<string>([playerSystemId]);
+    let head = 0;
+    while (head < queue.length) {
+      const [id, depth] = queue[head++];
+      if (depth >= 2) continue;
+      
+      for (const lane of galaxy.hyperlanes) {
+        let neighbor = "";
+        if (lane.a === id) neighbor = lane.b;
+        else if (lane.b === id) neighbor = lane.a;
+        
+        if (neighbor && !bfsVisited.has(neighbor)) {
+          bfsVisited.add(neighbor);
+          known.add(neighbor);
+          queue.push([neighbor, depth + 1]);
+        }
+      }
+    }
+    return known;
+  }, [exploredSystemIds, galaxy, playerSystemId]);
+
+  // Poll other players' positions
+  useEffect(() => {
+    if (!user || !initialDataLoaded) return;
+    
+    const fetchOthers = async () => {
+      const systemArray = Array.from(knownSystemIds);
+      if (systemArray.length === 0) return;
+
+      const { data } = await supabase
+        .from('fleet_positions')
+        .select('*')
+        .neq('user_id', user.id)
+        .in('system_id', systemArray); 
+        
+      if (data) {
+        setOtherPlayers(data);
+      }
+    };
+    
+    fetchOthers();
+    const interval = setInterval(fetchOthers, 5000); 
+    
+    return () => clearInterval(interval);
+  }, [user, initialDataLoaded, knownSystemIds]);
+
   // --- LOCALSTORAGE PERSISTENCE (Fallback/Sync) ---
   const setFogOfWar = (v: boolean) => {
     setFogOfWarState(v);
@@ -225,24 +321,6 @@ export function useGalaxyApp(initialSeed = 20260423) {
     setBodyId(null);
     toast.success("Galaxy reset", {
       description: "Returned to central star. Exploration logs cleared."
-    });
-  };
-
-  const regenerateGalaxy = () => {
-    const newSeed = Math.floor(Math.random() * 1000000);
-    setSeed(newSeed);
-    localStorage.setItem("galaxy_seed", String(newSeed));
-    
-    // Reset state as well
-    setPlayerSystemId("sys-center");
-    setExploredSystemIds(new Set(["sys-center"]));
-    setTravel(null);
-    setView("system");
-    setSystemId("sys-center");
-    setBodyId(null);
-
-    toast.success("Galaxy regenerated", {
-      description: `New Seed: ${newSeed}. Coordinates shifted.`
     });
   };
 
@@ -374,34 +452,6 @@ export function useGalaxyApp(initialSeed = 20260423) {
     return system.bodies.find((b) => b.id === bodyId) ?? null;
   }, [system, bodyId]);
 
-  const knownSystemIds = useMemo(() => {
-    // 1. Start with all explored systems (stay visible forever)
-    const known = new Set<string>(exploredSystemIds);
-    
-    // 2. Add systems within 2 jumps of current position (sensor range)
-    const queue: [string, number][] = [[playerSystemId, 0]];
-    known.add(playerSystemId);
-    
-    const bfsVisited = new Set<string>([playerSystemId]);
-    let head = 0;
-    while (head < queue.length) {
-      const [id, depth] = queue[head++];
-      if (depth >= 2) continue;
-      
-      for (const lane of galaxy.hyperlanes) {
-        let neighbor = "";
-        if (lane.a === id) neighbor = lane.b;
-        else if (lane.b === id) neighbor = lane.a;
-        
-        if (neighbor && !bfsVisited.has(neighbor)) {
-          bfsVisited.add(neighbor);
-          known.add(neighbor);
-          queue.push([neighbor, depth + 1]);
-        }
-      }
-    }
-    return known;
-  }, [playerSystemId, galaxy, exploredSystemIds]);
 
   const getJumpCost = useCallback((targetId: string) => {
     const s1 = galaxy.systemById[playerSystemId];
@@ -411,6 +461,55 @@ export function useGalaxyApp(initialSeed = 20260423) {
     // Formula: 10 AP base + 1 AP per 30 scene units
     return Math.floor(10 + dist / 30);
   }, [galaxy, playerSystemId]);
+
+  const getGateLocalPos = useCallback((sysId: string, targetId: string) => {
+    const system = galaxy.systemById[sysId];
+    if (!system || !system.gates) return { x: 15, z: 0 };
+    
+    // Exact same logic as UnifiedMap's getGateLocalPosition
+    const outer = 150; // Standard system radius for gates
+    const i = system.gates.findIndex((g) => g.targetSystemId === targetId);
+    if (i < 0) return { x: outer, z: 0 };
+    const duration = Math.max(1, system.gates.length);
+    const angle = (Math.max(0, i) / duration) * Math.PI * 2;
+    return { x: Math.cos(angle) * outer, z: Math.sin(angle) * outer };
+  }, [galaxy]);
+
+  const getVesselLocalPos = useCallback((time: number) => {
+    const sys = galaxy.systemById[playerSystemId];
+    if (!sys) return { x: 0, z: 0 };
+
+    if (travel) {
+      if (travel.type === "intra") {
+        const duration = Math.max(1, travel.endTime - travel.startTime);
+        const p = Math.max(0, Math.min(1, (time - travel.startTime) / duration));
+        const eased = 1 - Math.pow(1 - p, 2.0);
+        const sP = travel.startPos || { x: 0, z: 0 };
+        const tBody = sys.bodies.find(b => b.id === travel.targetId);
+        const tP = tBody ? getBodyPosition(tBody, sys.starType, travel.endTime) : { x: 0, z: 0 };
+        return {
+          x: sP.x + (tP.x - sP.x) * eased,
+          z: sP.z + (tP.z - sP.z) * eased
+        };
+      } else {
+        // Inter-system travel is complex, but let's just return system center for now 
+        // as redirection during hyperlane isn't supported yet.
+        return { x: 0, z: 0 };
+      }
+    } else if (arrival) {
+      const duration = Math.max(1, arrival.duration);
+      const p = Math.max(0, Math.min(1, (time - arrival.startTime) / duration));
+      const eased = 1 - Math.pow(1 - p, 2.0);
+      const gP = getGateLocalPos(playerSystemId, arrival.fromId);
+      return {
+        x: gP.x * (1 - eased),
+        z: gP.z * (1 - eased)
+      };
+    } else {
+      const body = playerBodyId === "star" ? null : sys.bodies.find(b => b.id === playerBodyId);
+      return body ? getBodyPosition(body, sys.starType, time) : { x: 0, z: 0 };
+    }
+  }, [galaxy, playerSystemId, travel, arrival, playerBodyId, getGateLocalPos]);
 
   const initiateJump = useCallback((targetId: string) => {
     if (travel) return; // Already moving
@@ -427,37 +526,37 @@ export function useGalaxyApp(initialSeed = 20260423) {
     const targetPos = galaxy.systemById[targetId].pos;
     const dist = Math.hypot(currentPos[0] - targetPos[0], currentPos[1] - targetPos[1], currentPos[2] - targetPos[2]);
     
-    // Total travel time includes: 
-    // - Sub-light departure (transit to gate + charge)
-    // - FTL transit (proportional to distance)
-    // - Sub-light arrival (materialize + transit to star)
-    // FTL transit: 15s base (prep) + distance factor
     const durationMs = instantJump ? 0 : (15 + dist * 1.2) * 1000;
     const now = Date.now();
+    const currentLocalPos = getVesselLocalPos(now);
     
     setAp(prev => prev - cost);
-    setTravel({ targetId, startTime: now, endTime: now + durationMs, type: "inter" });
-  }, [playerSystemId, galaxy, travel, instantJump, ap, getJumpCost]);
+    setTravel({ 
+      targetId, 
+      startTime: now, 
+      endTime: now + durationMs, 
+      type: "inter",
+      startPos: currentLocalPos // Capture starting orbital position for sync
+    });
+    setArrival(null); // Clear any pending arrival animation
+  }, [playerSystemId, galaxy, travel, instantJump, ap, getJumpCost, getVesselLocalPos]);
 
   const initiateTravelToBody = useCallback((targetBodyId: string) => {
-    if (travel) return;
+    // 1. Calculate current position for starting (supports mid-flight redirection)
+    const now = Date.now();
+    const currentLocalPos = getVesselLocalPos(now);
     
-    // Intra-system travel distance
+    // 2. Intra-system travel distance
     const currentSystem = galaxy.systemById[playerSystemId];
     if (!currentSystem) return;
 
-    const startBody = playerBodyId === "star" ? null : currentSystem.bodies.find(b => b.id === playerBodyId);
     const targetBody = targetBodyId === "star" ? null : currentSystem.bodies.find(b => b.id === targetBodyId);
-    
-    const now = Date.now();
-    const startPos = startBody ? getBodyPosition(startBody, currentSystem.starType, now) : { x: 0, z: 0 };
     const targetPos = targetBody ? getBodyPosition(targetBody, currentSystem.starType, now) : { x: 0, z: 0 };
     
-    const dx = targetPos.x - startPos.x;
-    const dz = targetPos.z - startPos.z;
+    const dx = targetPos.x - currentLocalPos.x;
+    const dz = targetPos.z - currentLocalPos.z;
     const dist = Math.sqrt(dx*dx + dz*dz);
 
-    // Intra-system travel cost: 5 AP base + 2 AP per 500 AU
     const cost = 5 + Math.floor(dist / 250); 
     if (ap < cost) {
       toast.error(`Insufficient AP! Travel requires ${cost} AP`, {
@@ -466,14 +565,22 @@ export function useGalaxyApp(initialSeed = 20260423) {
       return;
     }
 
-    // Dynamic speed (AU/ms) - Cinematic pace (15 AU/s)
     const travelSpeed = 0.015; 
     const durationMs = instantJump ? 0 : Math.max(5000, dist / travelSpeed);    
+    
     setAp(prev => prev - cost);
-    setTravel({ targetId: targetBodyId, startTime: now, endTime: now + durationMs, type: "intra" });
-  }, [travel, ap, instantJump, playerSystemId, playerBodyId, galaxy]);
+    // Important: Capture currentLocalPos as the explicit startPos for the travel lerp
+    setTravel({ 
+      targetId: targetBodyId, 
+      startTime: now, 
+      endTime: now + durationMs, 
+      type: "intra",
+      startPos: currentLocalPos
+    });
+    setArrival(null); // Stop any arrival sequence
+  }, [ap, instantJump, playerSystemId, galaxy, getVesselLocalPos]);
 
-  const [arrival, setArrival] = useState<{ fromId: string; startTime: number; duration: number } | null>(null);
+
 
   // Arrive at destination
   useEffect(() => {
@@ -618,8 +725,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
     instantJump,
     setInstantJump,
     resetGalaxy,
-    regenerateGalaxy,
-    seed,
+    seed: UNIVERSAL_SEED,
     ap,
     setAp,
     sc,
@@ -632,8 +738,11 @@ export function useGalaxyApp(initialSeed = 20260423) {
     setSfxVolume,
     fxVolume,
     setFxVolume,
+    theme,
+    setTheme,
     user,
     sessionLoading,
+    otherPlayers,
   };
 }
 

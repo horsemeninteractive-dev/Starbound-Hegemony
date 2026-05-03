@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Heart, Shield, Globe, Rocket, Zap } from 'lucide-react';
 import logo from "@/assets/logo.png";
+import hiLogo from "@/assets/hilogo.png";
 
 interface CreditsScreenProps {
   onClose: () => void;
@@ -247,18 +248,18 @@ export const CreditsScreen: React.FC<CreditsScreenProps> = ({ onClose, onPlayCli
                 initial={{ scale: 0.8, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ duration: 2, ease: "easeOut" }}
-                className="relative p-8 sm:p-12 bg-primary/5 rounded-3xl border border-primary/20 backdrop-blur-3xl shadow-[0_0_50px_rgba(6,182,212,0.1)]"
+                className="relative p-8 sm:p-12 bg-primary/5 rounded-[3rem] border border-primary/20 backdrop-blur-3xl shadow-[0_0_50px_rgba(6,182,212,0.1)] overflow-hidden"
               >
                 {/* Internal Glow */}
-                <div className="absolute inset-0 bg-primary/10 rounded-3xl blur-2xl" />
+                <div className="absolute inset-0 bg-primary/10 blur-2xl" />
                 
-                <div className="relative flex items-center gap-6 sm:gap-10">
-                  <Shield size={40} className="text-primary/40" />
-                  <div className="relative">
-                    <div className="absolute inset-0 bg-primary/40 blur-xl animate-pulse" />
-                    <Globe size={60} className="relative text-primary animate-spin-slow" />
-                  </div>
-                  <Rocket size={40} className="text-primary/40" />
+                <div className="relative flex items-center justify-center h-24 sm:h-32 w-24 sm:w-32 mx-auto">
+                   <div className="absolute inset-0 bg-primary/20 blur-2xl animate-pulse" />
+                   <img 
+                     src={hiLogo} 
+                     alt="Horsemen Interactive" 
+                     className="relative h-full w-full object-contain drop-shadow-[0_0_20px_rgba(6,182,212,0.4)]" 
+                   />
                 </div>
               </motion.div>
               
@@ -278,6 +279,9 @@ export const CreditsScreen: React.FC<CreditsScreenProps> = ({ onClose, onPlayCli
                   <div className="flex flex-col gap-2 pt-4">
                     <p className="text-[8px] sm:text-[10px] font-mono-hud text-primary/20 uppercase tracking-[0.3em]">Neural Link Protocol Active</p>
                     <p className="text-[8px] sm:text-[10px] font-mono-hud text-primary/10 uppercase tracking-[0.2em]">London • United Kingdom</p>
+                    <div className="pt-2 font-mono-hud text-[8px] text-muted-foreground/30 uppercase tracking-[0.2em]">
+                      Starbound Hegemony · Build v0.1.21-sb
+                    </div>
                   </div>
                 </div>
               </div>

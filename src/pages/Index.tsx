@@ -161,8 +161,18 @@ const Index = () => {
 
   const isGameReady = (app.user || guestMode) && app.onboardingCompleted;
 
+  // Apply theme class to document root for global inheritance
+  useEffect(() => {
+    const root = document.documentElement;
+    if (app.theme === "light") {
+      root.classList.add("light");
+    } else {
+      root.classList.remove("light");
+    }
+  }, [app.theme]);
+
   return (
-    <main className="relative flex flex-col h-screen w-screen overflow-hidden bg-background">
+    <main className={`relative flex flex-col h-screen w-screen overflow-hidden bg-background`}>
       {/* Game Content — only mounted after auth + onboarding complete to avoid
           loading the heavy WebGL canvas and galaxy generation during auth flows. */}
       <AnimatePresence>
@@ -207,7 +217,6 @@ const Index = () => {
           arrival={app.arrival}
           currentTime={app.currentTime}
           galaxy={app.galaxy}
-          onRegenerate={app.regenerateGalaxy}
           onReset={app.resetGalaxy}
           onSetAp={app.setAp}
           onPlayClick={playClick}
@@ -249,6 +258,8 @@ const Index = () => {
                     graphicsQuality={graphicsQuality}
                     shipConfig={app.shipConfig}
                     fxVolume={app.audioEnabled ? app.fxVolume : 0}
+                    arrival={app.arrival}
+                    otherPlayers={app.otherPlayers}
                   />
                 </Suspense>
               </div>
@@ -782,7 +793,7 @@ const Index = () => {
       </div>
 
       {/* ── Global Breadcrumb Footer ───────────────────────────────────────── */}
-      <footer className="relative z-50 border-t border-primary/20 bg-black/60 backdrop-blur-md flex items-center justify-between px-3 h-8 shrink-0">
+      <footer className="relative z-50 border-t border-primary/20 bg-background/80 backdrop-blur-md flex items-center justify-between px-3 h-8 shrink-0">
         <nav className="flex items-center gap-0.5 font-mono-hud text-[9px] uppercase tracking-widest overflow-hidden">
           <button
             onClick={() => navigateTo("map", handleBackToGalaxy)}
@@ -845,6 +856,8 @@ const Index = () => {
         onFxVolumeChange={app.setFxVolume}
         audioEnabled={app.audioEnabled}
         onAudioEnabledChange={app.setAudioEnabled}
+        theme={app.theme}
+        onThemeChange={app.setTheme}
         onPlayClick={playClick}
       />
 
@@ -959,7 +972,7 @@ function WelcomeScreen({ playerName, onEnter }: { playerName: string; onEnter: (
         <div className="absolute inset-0 bg-gradient-to-r from-primary/0 via-primary/20 to-primary/0 animate-scan pointer-events-none" />
         <button 
           onClick={onEnter}
-          className="hud-panel p-8 md:p-12 border border-primary/40 bg-black/60 hover:bg-primary/10 transition-colors flex flex-col items-center gap-6 group cursor-pointer w-[300px] md:w-[400px]"
+          className="hud-panel p-8 md:p-12 border border-primary/40 bg-background/60 hover:bg-primary/10 transition-colors flex flex-col items-center gap-6 group cursor-pointer w-[300px] md:w-[400px]"
         >
           <div className="w-16 h-16 rounded-full border border-primary flex items-center justify-center bg-primary/10 group-hover:bg-primary/20 transition-colors">
             <Zap className="text-primary w-8 h-8 group-hover:scale-110 transition-transform" />
@@ -987,7 +1000,7 @@ function DataProcessingIndicator({ isBusy }: { isBusy: boolean }) {
 
   return (
     <div className="absolute top-4 right-4 z-40 pointer-events-none animate-in fade-in slide-in-from-right duration-500">
-      <div className="hud-panel hud-corner bg-black/40 backdrop-blur-md border border-primary/20 px-3 py-2 flex items-center gap-3">
+      <div className="hud-panel hud-corner bg-background/40 backdrop-blur-md border border-primary/20 px-3 py-2 flex items-center gap-3">
         <div className="relative w-4 h-4">
           <div className="absolute inset-0 border-2 border-primary/40 rounded-sm animate-spin-slow" />
           <div className="absolute inset-1 border border-primary animate-ping" />
@@ -1383,15 +1396,15 @@ function ProfileView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: () => 
                       <h3 className="font-display text-xs uppercase tracking-[0.2em] text-primary">Current Status</h3>
                     </div>
                     <div className="space-y-4">
-                      <div className="flex justify-between items-center bg-black/20 p-3 rounded">
+                      <div className="flex justify-between items-center bg-background/20 p-3 rounded">
                         <span className="font-mono-hud text-[10px] text-muted-foreground uppercase">Hegemony Status</span>
                         <span className="font-display text-[10px] text-success uppercase tracking-widest px-2 py-0.5 border border-success/40 rounded">Active Service</span>
                       </div>
-                      <div className="flex justify-between items-center bg-black/20 p-3 rounded">
+                      <div className="flex justify-between items-center bg-background/20 p-3 rounded">
                         <span className="font-mono-hud text-[10px] text-muted-foreground uppercase">Bounty Priority</span>
                         <span className="font-display text-[10px] text-primary uppercase tracking-widest px-2 py-0.5 border border-primary/40 rounded">None</span>
                       </div>
-                      <div className="flex justify-between items-center bg-black/20 p-3 rounded">
+                      <div className="flex justify-between items-center bg-background/20 p-3 rounded">
                         <span className="font-mono-hud text-[10px] text-muted-foreground uppercase">Next Requisition</span>
                         <span className="font-display text-[10px] text-warning uppercase">24h 12m 04s</span>
                       </div>
@@ -1822,7 +1835,7 @@ function CouncilHemicycle({ empire }: { empire: Empire }) {
             exit={{ opacity: 0, scale: 0.95 }}
             className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[120%] z-50 pointer-events-none"
           >
-            <div className="hud-panel p-3 border-l-2 bg-black/90 backdrop-blur-md min-w-[140px] shadow-2xl" style={{ borderLeftColor: hoveredSeat.color }}>
+            <div className="hud-panel p-3 border-l-2 bg-background/90 backdrop-blur-md min-w-[140px] shadow-2xl" style={{ borderLeftColor: hoveredSeat.color }}>
               {hoveredSeat.role && (
                 <div className="text-[7px] font-mono-hud text-primary uppercase tracking-[0.2em] mb-1">{hoveredSeat.role}</div>
               )}
@@ -1919,7 +1932,7 @@ function EmpireView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: () => v
                     </div>
                     
                     <div className="space-y-6">
-                      <div className="p-4 border border-primary/10 bg-black/20 rounded space-y-4">
+                      <div className="p-4 border border-primary/10 bg-background/20 rounded space-y-4">
                         <div className="flex items-center gap-3">
                           <div className={`p-2 rounded ${empire.government.president ? 'bg-primary/20 text-primary' : 'bg-white/5 text-muted-foreground'}`}>
                             {empire.government.type.includes("monarchy") || empire.government.type.includes("Dictator") ? <ShieldAlert size={18} /> : <Crown size={18} />}
