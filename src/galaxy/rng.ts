@@ -119,14 +119,20 @@ const SUBTYPE_ABBR: Record<string, string> = {
   asteroid: "AST",
 };
 
+/** e.g. planetName("ZET 66205", "toxic", 1) → "ZET 66205 B TOX" */
 export const planetName = (parentName: string, subtype: string, idx: number) => {
+  const letter = String.fromCharCode(65 + idx); // A, B, C…
   const abbr = SUBTYPE_ABBR[subtype] || "UNK";
-  return `${parentName}/${abbr}/${idx + 1}`;
+  return `${parentName} ${letter} ${abbr}`;
 };
 
-const ROMAN_NUMERALS = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
-
-export const moonName = (parent: string, idx: number) => {
-  const roman = ROMAN_NUMERALS[idx] || (idx + 1).toString();
-  return `${parent}/${roman}`;
+/** e.g. moonName("ZET 66205 B TOX", 0) → "ZET 66205 B1 ARD"
+ *  We derive the planet letter from the parent name and append the moon number. */
+export const moonName = (parentPlanetName: string, moonSubtype: string, moonIdx: number) => {
+  // parentPlanetName is e.g. "ZET 66205 B TOX" — strip the subtype suffix to get "ZET 66205 B"
+  const parts = parentPlanetName.split(" ");
+  // Last part is the subtype abbr; second-to-last is the planet letter
+  const baseParts = parts.slice(0, -1); // e.g. ["ZET", "66205", "B"]
+  const abbr = SUBTYPE_ABBR[moonSubtype] || "UNK";
+  return `${baseParts.join(" ")}${moonIdx + 1} ${abbr}`;
 };

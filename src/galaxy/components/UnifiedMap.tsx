@@ -1560,7 +1560,7 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
                   : "white"
               }}
             >
-              {body.type === "star" ? "★" : (BODY_META[body.type as keyof typeof BODY_META]?.icon || "○")} {body.name}
+              {body.type === "star" ? "★" : body.type === "moon" ? "◌" : body.type === "gas_giant" ? "◉" : body.type === "station" ? "⬡" : body.type === "asteroid" ? "✦" : "◎"} {body.name}
             </span>
           </div>
         </Html>

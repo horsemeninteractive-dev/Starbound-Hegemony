@@ -11,6 +11,21 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.2.2",
+    title: "XP & Skill Progression",
+    date: "2026-05-05",
+    type: "feature",
+    changes: [
+      "Implemented comprehensive XP system with Level-Up rewards (1,000 XP scaling)",
+      "Added Neural Uplink Skill Tree with 22 unlockable perks across 5 branches",
+      "Restructured body naming scheme to canonical 'SYSTEM NAME [Letter] [Subtype]' format",
+      "Fixed 3D map label iconography using high-fidelity Unicode symbols",
+      "Integrated XP gains with exploration, manufacturing, trading, and residency",
+      "Resolved 'depositInput' industrial logic conflict in factory operations",
+      "Performed Global Database Reset to synchronize all commanders to Level 1"
+    ]
+  },
+  {
     version: "0.2.1",
     title: "Phase 2: Empire Governance",
     date: "2026-05-04",
@@ -334,7 +349,7 @@ export function ChangelogModal({ open, onOpenChange, onPlayClick }: { open: bool
             Acknowledge
           </button>
           <div className="font-mono-hud text-[8px] text-muted-foreground/30 uppercase tracking-[0.2em]">
-            Starbound Hegemony · Build v0.2.1-sb
+            Starbound Hegemony · Build v0.2.2-sb
           </div>
         </div>
       </div>

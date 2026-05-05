@@ -97,19 +97,77 @@ export const ECON_META = {
 } as const;
 
 export const RESOURCE_META = {
-  "Helium-3": { factory: "h3_extractor", label: "H3 Extraction Hub", icon: "CircleDot", color: "#A5B4FC" },
-  "Energy Crystals": { factory: "crystal_resonator", label: "Crystal Resonator", icon: "Sparkles", color: "#F472B6" },
-  "Hydrogen": { factory: "hydrogen_siphon", label: "Hydrogen Siphon", icon: "Droplets", color: "#93C5FD" },
-  "Exotic Matter": { factory: "matter_stabilizer", label: "Matter Stabilizer", icon: "Orbit", color: "#C084FC" },
-  "Solar Energy": { factory: "solar_array", label: "Solar Array Node", icon: "Sun", color: "#FBBF24" },
-  "Radiogenic Elements": { factory: "isotope_separator", label: "Isotope Separator", icon: "Radiation", color: "#BEF264" },
-  "Ore": { factory: "mineral_refinery", label: "Mineral Refinery", icon: "Hammer", color: "#94A3B8" },
-  "Organics": { factory: "bio_vat", label: "Bio-Vat Colony", icon: "Leaf", color: "#4ADE80" },
-  "Rare Earths": { factory: "lanthanide_forge", label: "Lanthanide Forge", icon: "Gem", color: "#F87171" },
-  "Silicates": { factory: "silicate_kiln", label: "Silicate Kiln", icon: "Mountain", color: "#E2C499" },
-  "Water Ice": { factory: "cryo_melter", label: "Cryo-Melter", icon: "Snowflake", color: "#BAE6FD" },
-  "Exotic Technology": { factory: "tech_lab", label: "Xenon Tech Lab", icon: "Cpu", color: "#22D3EE" },
+  // ── T1: Raw Extraction ───────────────────────────────────────
+  "Helium-3":           { tier: 1, factory: "h3_extractor",       label: "H3 Extraction Hub",    icon: "CircleDot",  color: "#A5B4FC" },
+  "Energy Crystals":    { tier: 1, factory: "crystal_resonator",  label: "Crystal Resonator",    icon: "Sparkles",   color: "#F472B6" },
+  "Hydrogen":           { tier: 1, factory: "hydrogen_siphon",    label: "Hydrogen Siphon",      icon: "Droplets",   color: "#93C5FD" },
+  "Exotic Matter":      { tier: 1, factory: "matter_stabilizer",  label: "Matter Stabilizer",    icon: "Orbit",      color: "#C084FC" },
+  "Solar Energy":       { tier: 1, factory: "solar_array",        label: "Solar Array Node",     icon: "Sun",        color: "#FBBF24" },
+  "Radiogenic Elements":{ tier: 1, factory: "isotope_separator",  label: "Isotope Separator",    icon: "Radiation",  color: "#BEF264" },
+  "Ore":                { tier: 1, factory: "mineral_refinery",   label: "Mineral Refinery",     icon: "Hammer",     color: "#94A3B8" },
+  "Organics":           { tier: 1, factory: "bio_vat",            label: "Bio-Vat Colony",       icon: "Leaf",       color: "#4ADE80" },
+  "Rare Earths":        { tier: 1, factory: "lanthanide_forge",   label: "Lanthanide Forge",     icon: "Gem",        color: "#F87171" },
+  "Silicates":          { tier: 1, factory: "silicate_kiln",      label: "Silicate Kiln",        icon: "Mountain",   color: "#E2C499" },
+  "Water Ice":          { tier: 1, factory: "cryo_melter",        label: "Cryo-Melter",          icon: "Snowflake",  color: "#BAE6FD" },
+  "Exotic Technology":  { tier: 1, factory: "tech_lab",           label: "Xenon Tech Lab",       icon: "Cpu",        color: "#22D3EE" },
+
+  // ── T2: Refined Materials (each requires 2 T1 inputs per work shift) ──
+  "Steel Alloy":        { tier: 2, factory: "steel_foundry",      label: "Steel Foundry",        icon: "Layers",     color: "#94A3B8",
+    inputs: [{ resource: "Ore", qty: 2 }, { resource: "Silicates", qty: 2 }] },
+  "Plasma Cells":       { tier: 2, factory: "plasma_condenser",   label: "Plasma Condenser",     icon: "Zap",        color: "#818CF8",
+    inputs: [{ resource: "Helium-3", qty: 2 }, { resource: "Hydrogen", qty: 2 }] },
+  "Biofuel":            { tier: 2, factory: "biofuel_vat",        label: "Biofuel Synthesizer",  icon: "FlaskConical", color: "#86EFAC",
+    inputs: [{ resource: "Organics", qty: 2 }, { resource: "Water Ice", qty: 2 }] },
+  "Rare Alloys":        { tier: 2, factory: "rare_forge",         label: "Rare-Alloy Forge",     icon: "GemIcon",    color: "#FCA5A5",
+    inputs: [{ resource: "Rare Earths", qty: 2 }, { resource: "Ore", qty: 2 }] },
+  "Crystal Circuits":   { tier: 2, factory: "circuit_press",      label: "Crystal Circuit Press",icon: "CircuitBoard", color: "#F9A8D4",
+    inputs: [{ resource: "Energy Crystals", qty: 2 }, { resource: "Silicates", qty: 2 }] },
+  "Fusion Cores":       { tier: 2, factory: "fusion_chamber",     label: "Fusion Chamber",       icon: "Flame",      color: "#FCD34D",
+    inputs: [{ resource: "Helium-3", qty: 2 }, { resource: "Radiogenic Elements", qty: 2 }] },
+  "Nanomaterials":      { tier: 2, factory: "nano_fab",           label: "Nano Fabricator",      icon: "Atom",       color: "#67E8F9",
+    inputs: [{ resource: "Exotic Technology", qty: 2 }, { resource: "Rare Earths", qty: 2 }] },
+  "Polymer Sheets":     { tier: 2, factory: "polymer_extruder",   label: "Polymer Extruder",     icon: "Layers2",    color: "#D9F99D",
+    inputs: [{ resource: "Organics", qty: 2 }, { resource: "Silicates", qty: 2 }] },
+  "Superconductors":    { tier: 2, factory: "cryo_conductor",     label: "Cryo Conductor Lab",   icon: "Radio",      color: "#A5F3FC",
+    inputs: [{ resource: "Radiogenic Elements", qty: 2 }, { resource: "Exotic Technology", qty: 2 }] },
+  "Dark Matter Gel":    { tier: 2, factory: "dm_condenser",       label: "Dark Matter Condenser",icon: "Eclipse",    color: "#7C3AED",
+    inputs: [{ resource: "Exotic Matter", qty: 2 }, { resource: "Water Ice", qty: 2 }] },
+  "Solar Capacitors":   { tier: 2, factory: "solar_capacitor",    label: "Solar Capacitor Bank", icon: "BatteryCharging", color: "#FDE68A",
+    inputs: [{ resource: "Solar Energy", qty: 2 }, { resource: "Energy Crystals", qty: 2 }] },
+  "Hydro-Gel":          { tier: 2, factory: "hydrogel_plant",     label: "Hydro-Gel Plant",      icon: "Droplets",   color: "#7DD3FC",
+    inputs: [{ resource: "Hydrogen", qty: 2 }, { resource: "Organics", qty: 2 }] },
+
+  // ── T3: Manufactured Components (each requires 2 T2 inputs per work shift) ──
+  "Warp Drives":        { tier: 3, factory: "warp_assembly",      label: "Warp Drive Assembly",  icon: "Rocket",     color: "#818CF8",
+    inputs: [{ resource: "Plasma Cells", qty: 3 }, { resource: "Fusion Cores", qty: 3 }] },
+  "Hull Plating":       { tier: 3, factory: "hull_forge",         label: "Hull Plating Forge",   icon: "Shield",     color: "#9CA3AF",
+    inputs: [{ resource: "Steel Alloy", qty: 3 }, { resource: "Rare Alloys", qty: 3 }] },
+  "Neural Arrays":      { tier: 3, factory: "array_foundry",      label: "Neural Array Foundry", icon: "Network",    color: "#C4B5FD",
+    inputs: [{ resource: "Crystal Circuits", qty: 3 }, { resource: "Superconductors", qty: 3 }] },
+  "Quantum Reactors":   { tier: 3, factory: "quantum_forge",      label: "Quantum Reactor Forge",icon: "Orbit",      color: "#6EE7B7",
+    inputs: [{ resource: "Dark Matter Gel", qty: 3 }, { resource: "Solar Capacitors", qty: 3 }] },
+  "Biotech Modules":    { tier: 3, factory: "biotech_lab",        label: "Biotech Module Lab",   icon: "Microscope", color: "#86EFAC",
+    inputs: [{ resource: "Biofuel", qty: 3 }, { resource: "Hydro-Gel", qty: 3 }] },
+  "Xenotech Frames":    { tier: 3, factory: "xenotech_press",     label: "Xenotech Frame Press", icon: "Cpu",        color: "#22D3EE",
+    inputs: [{ resource: "Nanomaterials", qty: 3 }, { resource: "Polymer Sheets", qty: 3 }] },
 } as const;
+
+export type ResourceKey = keyof typeof RESOURCE_META;
+
+/** Tier 1 raw resources (planet deposits drive extraction) */
+export const T1_RESOURCES = Object.entries(RESOURCE_META)
+  .filter(([, v]) => v.tier === 1)
+  .map(([k]) => k as ResourceKey);
+
+/** Tier 2 refined materials */
+export const T2_RESOURCES = Object.entries(RESOURCE_META)
+  .filter(([, v]) => v.tier === 2)
+  .map(([k]) => k as ResourceKey);
+
+/** Tier 3 manufactured components */
+export const T3_RESOURCES = Object.entries(RESOURCE_META)
+  .filter(([, v]) => v.tier === 3)
+  .map(([k]) => k as ResourceKey);
 
 export const RICHNESS_VALUES = {
   "trace": 1,
@@ -118,3 +176,4 @@ export const RICHNESS_VALUES = {
   "rich": 4,
   "abundant": 5,
 } as const;
+

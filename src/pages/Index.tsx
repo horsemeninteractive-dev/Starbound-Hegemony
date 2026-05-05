@@ -29,6 +29,7 @@ import { FleetsView } from "@/galaxy/components/FleetsView";
 import { ArticlesView } from "@/galaxy/components/ArticlesView";
 import { ProfileView } from "@/galaxy/components/ProfileView";
 import { PartyView } from "@/galaxy/components/PartyView";
+import { SkillsView } from "@/galaxy/components/SkillsView";
 import { useAudio } from "@/galaxy/useAudio";
 import { ChangelogModal } from "@/galaxy/components/ChangelogModal";
 import { CreditsScreen } from "@/galaxy/components/CreditsScreen";
@@ -206,6 +207,8 @@ const Index = () => {
           playerXP={app.playerXP}
           xpToNextLevel={app.xpToNextLevel}
           playerAvatar={app.playerAvatar}
+          playerPartyIcon={app.playerPartyIcon}
+          playerPartyHue={app.playerPartyHue}
           fogOfWar={app.fogOfWar}
           setFogOfWar={app.setFogOfWar}
           instantJump={app.instantJump}
@@ -222,7 +225,7 @@ const Index = () => {
           isGameReady={isGameReady}
           shipName={app.shipConfig.name}
           nextApTick={app.nextApTick}
-          onlinePlayerCount={app.onlinePlayerCount}
+          isAdmin={app.isAdmin}
         />
       </div>
 
@@ -376,6 +379,8 @@ const Index = () => {
                       onCollect={app.collectFactory}
                       onUpgrade={app.upgradeFactory}
                       onSaveSettings={app.updateFactorySettings}
+                      factoryInputStorage={app.factoryInputStorage}
+                      onDepositInput={app.depositFactoryInput}
                       userId={app.user?.id || null}
                       userResidency={app.userResidency}
                       residencyApplications={app.residencyApplications}
@@ -466,73 +471,12 @@ const Index = () => {
                         )}
 
                         {app.page === "skills" && (
-                          <div className="space-y-8">
-                             <div className="hud-panel p-8 border border-primary/20 bg-primary/5">
-                               <div className="flex justify-between items-center mb-10">
-                                  <h3 className="font-display text-xs uppercase tracking-[0.2em] text-primary">Doctrine Progress</h3>
-                                  <div className="font-mono-hud text-[10px] text-primary">Available SP: <span className="text-lg font-display ml-2">24</span></div>
-                               </div>
-                               <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 relative pb-4">
-                                  {[
-                                    { label: "Navigation", level: 4, max: 10, icon: Globe, color: "text-cyan-400" },
-                                    { label: "Extraction", level: 2, max: 10, icon: Factory, color: "text-warning" },
-                                    { label: "Logistics", level: 7, max: 10, icon: Rocket, color: "text-primary" },
-                                    { label: "Governance", level: 1, max: 10, icon: UsersIcon, color: "text-success" }
-                                  ].map((skill, i) => {
-                                    const Icon = skill.icon;
-                                    return (
-                                      <div key={skill.label} className="flex flex-col items-center gap-4 group">
-                                        <div className="w-16 h-16 rounded-full border-2 border-primary/20 flex items-center justify-center relative group-hover:border-primary/40 transition-all">
-                                          <Icon size={24} className={`${skill.color} opacity-60 group-hover:opacity-100 transition-opacity`} />
-                                          <div className="absolute -top-3 -right-3 bg-primary text-background text-[11px] font-bold h-7 w-7 flex items-center justify-center rounded-full shadow-[0_0_10px_hsl(var(--primary)/0.4)]">
-                                            {skill.level}
-                                          </div>
-                                          <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 100 100">
-                                            <circle 
-                                              cx="50" cy="50" r="48" 
-                                              fill="none" 
-                                              stroke="currentColor" 
-                                              strokeWidth="2" 
-                                              className="text-primary/10"
-                                            />
-                                            <circle 
-                                              cx="50" cy="50" r="48" 
-                                              fill="none" 
-                                              stroke="currentColor" 
-                                              strokeWidth="3" 
-                                              strokeDasharray={`${(skill.level / skill.max) * 301} 301`}
-                                              className="text-primary"
-                                            />
-                                          </svg>
-                                        </div>
-                                        <span className="font-mono-hud text-[10px] uppercase tracking-widest text-muted-foreground text-center line-clamp-1">{skill.label}</span>
-                                      </div>
-                                    );
-                                  })}
-                               </div>
-                               <div className="mt-8 p-4 bg-primary/10 border border-primary/20 rounded text-center">
-                                  <p className="font-mono-hud text-[10px] text-primary uppercase tracking-[0.2em]">Next Milestone: Tier 5 Master Doctrine</p>
-                               </div>
-                             </div>
-
-                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                                {[
-                                  { name: "Orbital Striker", desc: "Unlock tactical planetary strike capability from orbit. Increases military projection in contested systems by 40%.", cost: "15 SP", req: "Logistics IV" },
-                                  { name: "Singularity Core", desc: "Reduces FTL cooldown by 40% across the fleet. Essential for rapid response across multiple sectors.", cost: "12 SP", req: "Navigation III" },
-                                  { name: "AI Extraction Bot", desc: "Automated He-3 harvesting drones. Increases passive resource generation by 15% even in remote stations.", cost: "10 SP", req: "Extraction II" },
-                                  { name: "Hegemony Diploma", desc: "Advanced training in imperial bureaucracy. Reduces colony upkeep costs and increases stability.", cost: "8 SP", req: "Governance I" }
-                                ].map((perk, i) => (
-                                  <div key={i} className="hud-panel p-6 border border-primary/20 bg-primary/5 hover:bg-primary/10 transition-all">
-                                    <div className="flex justify-between items-start mb-4">
-                                      <h4 className="font-display text-xs text-primary uppercase tracking-widest">{perk.name}</h4>
-                                      <span className="font-mono-hud text-[8px] text-muted-foreground uppercase">{perk.req}</span>
-                                    </div>
-                                    <p className="font-mono-hud text-[10px] text-muted-foreground mb-6 uppercase leading-relaxed text-balance">{perk.desc}</p>
-                                    <button className="w-full py-2 border border-primary/30 text-primary font-mono-hud text-[10px] uppercase tracking-widest hover:bg-primary/20 transition-all shadow-[0_0_15px_hsl(var(--primary)/0.1)]">Unlock for {perk.cost}</button>
-                                  </div>
-                                ))}
-                             </div>
-                          </div>
+                          <SkillsView
+                            playerLevel={app.playerLevel}
+                            playerXP={app.playerXP}
+                            playerSkills={app.playerSkills}
+                            onUnlock={app.unlockSkill}
+                          />
                         )}
 
                         {!["skills", "shipyard"].includes(app.page) && (
@@ -644,7 +588,11 @@ const Index = () => {
         </nav>
 
         <div className="flex items-center gap-4 text-[9px] font-mono-hud uppercase tracking-widest text-primary/40 whitespace-nowrap overflow-hidden">
-          <span className="hidden sm:inline">Status: <span className="text-success/60">NOMINAL</span></span>
+          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-500/5 border border-emerald-500/20 rounded">
+            <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_5px_emerald]" />
+            <span className="font-mono-hud text-[8px] text-emerald-400/80 uppercase tracking-tighter">{app.onlinePlayerCount} ONL</span>
+          </div>
+
           <span>S-Time: <span className="text-primary/60">{new Date(app.currentTime).toISOString().slice(11, 19)} GMT</span></span>
         </div>
       </footer>
@@ -1076,6 +1024,8 @@ function MobileHUD({
                 onCollect={app.collectFactory}
                 onUpgrade={app.upgradeFactory}
                 onSaveSettings={app.updateFactorySettings}
+                factoryInputStorage={app.factoryInputStorage}
+                onDepositInput={app.depositFactoryInput}
                 userId={app.user?.id || null}
                 userResidency={app.userResidency}
                 residencyApplications={app.residencyApplications}

@@ -342,7 +342,7 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
     const planet: Body = {
       id,
       systemId,
-      name: `${systemName} ${String.fromCharCode(98 + i)}`, // e.g. "Sol b", "Sol c"
+      name: name, // e.g. "ZET 66205 B TOX"
       type,
       subtype,
       orbit,
@@ -398,7 +398,7 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
         id: `${id}-m${m}`,
         systemId,
         parentId: id,
-        name: `${planet.name}${m + 1}`, // e.g. "Sol b1", "Sol b2"
+        name: moonName(planet.name, moonSubtype, m), // e.g. "ZET 66205 B1 ARD"
         type: "moon",
         subtype: moonSubtype,
         orbit: moonOrbit,

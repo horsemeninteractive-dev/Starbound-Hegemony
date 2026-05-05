@@ -311,6 +311,8 @@ export function BodyOverview({
   onCollect: (id: string) => void;
   onUpgrade: (id: string, type: 'storage' | 'slots' | 'replenish') => void;
   onSaveSettings: (factoryId: string, wage: number, jobsAvailable: number) => Promise<void>;
+  factoryInputStorage: Record<string, Record<string, number>>;
+  onDepositInput: (factoryId: string, resource: string, amount: number) => void;
   userId: string | null;
   userResidency: Residency | null;
   residencyApplications: ResidencyApplication[];
@@ -334,6 +336,9 @@ export function BodyOverview({
   const isInSameSystem = playerSystemId === body.systemId;
   const isAtThisBody = playerBodyId === body.id;
   const effectiveIsVisited = isVisited || isAtThisBody;
+
+  const isSanctum = body.systemId.startsWith('sys-inner-') || body.systemId === 'sys-center';
+  const residencyProhibited = isSanctum || body.type === 'asteroid';
 
   return (
     <Panel title={body.name} subtitle={BODY_META[body.type].label} hideHeader={hideHeader}>
@@ -468,8 +473,8 @@ export function BodyOverview({
                   <Row k="Fauna"  v={formatLabel(body.fauna)}  accent={bioColors[body.fauna]} />
                 </>
               )}
-               {/* Residency Section */}
-              {!isShip && !isStar && isExplored && (
+              {/* Residency Section */}
+              {!isShip && !isStar && isExplored && !residencyProhibited && (
                 <div className="mt-4 border-t border-primary/20 pt-4">
                   <SubTitle>Citizenship</SubTitle>
                   {userResidency?.bodyId === body.id ? (
@@ -634,7 +639,7 @@ export function BodyOverview({
 }
 
 import { Building2, Pickaxe, UserPlus, LogOut, Briefcase as JobIcon, Coins as SC_Icon, Package, Settings, ArrowUp, ChevronRight } from "lucide-react";
-import { RESOURCE_META, RICHNESS_VALUES } from "@/galaxy/meta";
+import { RESOURCE_META, RICHNESS_VALUES, T1_RESOURCES, T2_RESOURCES, T3_RESOURCES } from "@/galaxy/meta";
 import { useState } from "react";
 
 const STORAGE_CAPACITY = [100, 300, 750, 2000, 5000];
@@ -646,7 +651,8 @@ const REPLENISH_COST = [3000, 8000, 20000];
 
 function FactoryCard({
   f, currentJob, isAtThisBody, userId, onPlayClick,
-  onWorkJob, onApplyForJob, onLeaveJob, onCollect, onUpgrade, onSaveSettings
+  onWorkJob, onApplyForJob, onLeaveJob, onCollect, onUpgrade, onSaveSettings,
+  factoryInputStorage, onDepositInput, userResources
 }: {
   f: Installation; currentJob: any; isAtThisBody: boolean; userId: string | null;
   onPlayClick?: () => void;
@@ -654,6 +660,9 @@ function FactoryCard({
   onCollect: (id: string) => void;
   onUpgrade: (id: string, type: 'storage' | 'slots' | 'replenish') => void;
   onSaveSettings: (id: string, wage: number, jobs: number) => void;
+  factoryInputStorage: Record<string, Record<string, number>>;
+  onDepositInput: (factoryId: string, resource: string, amount: number) => void;
+  userResources: UserResource[];
 }) {
   const rMeta = (RESOURCE_META as any)[f.resourceType];
   const isWorkingHere = currentJob?.factoryId === f.id;
@@ -711,12 +720,52 @@ function FactoryCard({
         {!f.isNpcOwned && (
           <div className="mt-2 space-y-1">
             <div className="flex justify-between text-[8px] font-mono-hud uppercase">
-              <span className="flex items-center gap-1 text-muted-foreground"><Package size={8} /> Storage</span>
+              <span className="flex items-center gap-1 text-muted-foreground"><Package size={8} /> Output Storage</span>
               <span className={storageFull ? "text-warning" : "text-primary"}>{f.storage} / {storageCapacity}</span>
             </div>
             <div className="h-1 bg-primary/10 rounded-full overflow-hidden">
               <div className={`h-full transition-all ${storageFull ? 'bg-warning' : 'bg-primary'}`} style={{ width: `${storagePct}%` }} />
             </div>
+          </div>
+        )}
+
+        {/* Input Storage (T2/T3) */}
+        {(f.tier ?? 1) > 1 && (
+          <div className="mt-3 p-2 bg-primary/5 border border-primary/10 rounded space-y-2">
+            <div className="text-[7px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Raw Materials Required</div>
+            {rMeta?.inputs?.map((inp: any) => {
+              const currentInput = factoryInputStorage[f.id]?.[inp.resource] ?? 0;
+              const userInCargo = userResources.find(r => r.resourceType === inp.resource)?.amount ?? 0;
+              const inputMeta = (RESOURCE_META as any)[inp.resource];
+              
+              return (
+                <div key={inp.resource} className="space-y-1">
+                  <div className="flex justify-between items-center text-[8px]">
+                    <div className="flex items-center gap-1">
+                      <GalaxyIcon name={inputMeta?.icon} className="w-2.5 h-2.5" color={inputMeta?.color} />
+                      <span className="text-primary/80 font-mono-hud uppercase">{inp.resource}</span>
+                    </div>
+                    <span className="font-mono-hud text-primary">{currentInput} units</span>
+                  </div>
+                  {isAtThisBody && userInCargo > 0 && (
+                    <div className="flex gap-1 mt-1">
+                      <button 
+                        onClick={() => onDepositInput(f.id, inp.resource, Math.min(userInCargo, 10))}
+                        className="flex-1 py-0.5 border border-primary/20 hover:bg-primary/10 text-[7px] text-primary uppercase rounded transition-all"
+                      >
+                        Deposit 10 ({userInCargo})
+                      </button>
+                      <button 
+                        onClick={() => onDepositInput(f.id, inp.resource, userInCargo)}
+                        className="px-1.5 py-0.5 border border-primary/20 hover:bg-primary/10 text-[7px] text-primary uppercase rounded transition-all"
+                      >
+                        All
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -850,7 +899,8 @@ function FactoryCard({
 function EconomyTab({ 
   body, factories, bodyResources, userResources, currentJob, 
   onBuildFactory, onApplyForJob, onWorkJob, onLeaveJob, onPlayClick,
-  isAtThisBody, userId, onCollect, onUpgrade, onSaveSettings
+  isAtThisBody, userId, onCollect, onUpgrade, onSaveSettings,
+  factoryInputStorage, onDepositInput
 }: {
   body: Body;
   factories: Installation[];
@@ -867,6 +917,8 @@ function EconomyTab({
   onCollect: (id: string) => void;
   onUpgrade: (id: string, type: 'storage' | 'slots' | 'replenish') => void;
   onSaveSettings: (id: string, wage: number, jobs: number) => void;
+  factoryInputStorage: Record<string, Record<string, number>>;
+  onDepositInput: (factoryId: string, resource: string, amount: number) => void;
 }) {
   const isSanctum = body.systemId.startsWith('sys-inner-') || body.systemId === 'sys-center';
   
@@ -935,6 +987,66 @@ function EconomyTab({
 
       <Divider />
 
+      {/* Advanced Industry Section */}
+      <section>
+        <SubTitle>Advanced Industrial Development</SubTitle>
+        <div className="grid grid-cols-2 gap-2">
+          {/* T2 Category */}
+          <div className="p-2 border border-primary/20 bg-primary/5 rounded">
+            <div className="text-[8px] font-bold text-primary/70 uppercase tracking-[0.2em] mb-2 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+              T2 Refineries
+            </div>
+            <div className="grid grid-cols-4 gap-1">
+              {T2_RESOURCES.map(res => {
+                const meta = (RESOURCE_META as any)[res];
+                const alreadyHas = factories.some(f => f.resourceType === res && f.ownerId === userId);
+                return (
+                  <button
+                    key={res}
+                    disabled={alreadyHas || !isAtThisBody || isSanctum}
+                    onClick={() => onBuildFactory(res)}
+                    title={`Build ${meta.label} (20,000 SC)`}
+                    className={`aspect-square flex items-center justify-center border rounded transition-all ${alreadyHas ? 'border-success/40 bg-success/10 text-success' : 'border-primary/20 bg-background hover:border-primary/60 text-primary/60 hover:text-primary'} ${(!isAtThisBody || isSanctum) ? 'opacity-30' : ''}`}
+                  >
+                    <GalaxyIcon name={meta.icon} className="w-5 h-5" color={alreadyHas ? meta.color : 'currentColor'} />
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-2 text-[7px] text-muted-foreground uppercase text-center">Cost: 20,000 SC</div>
+          </div>
+
+          {/* T3 Category */}
+          <div className="p-2 border border-accent/20 bg-accent/5 rounded">
+            <div className="text-[8px] font-bold text-accent/70 uppercase tracking-[0.2em] mb-2 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+              T3 Fabricators
+            </div>
+            <div className="grid grid-cols-3 gap-1">
+              {T3_RESOURCES.map(res => {
+                const meta = (RESOURCE_META as any)[res];
+                const alreadyHas = factories.some(f => f.resourceType === res && f.ownerId === userId);
+                return (
+                  <button
+                    key={res}
+                    disabled={alreadyHas || !isAtThisBody || isSanctum}
+                    onClick={() => onBuildFactory(res)}
+                    title={`Build ${meta.label} (75,000 SC)`}
+                    className={`aspect-square flex items-center justify-center border rounded transition-all ${alreadyHas ? 'border-success/40 bg-success/10 text-success' : 'border-accent/20 bg-background hover:border-accent/60 text-accent/60 hover:text-accent'} ${(!isAtThisBody || isSanctum) ? 'opacity-30' : ''}`}
+                  >
+                    <GalaxyIcon name={meta.icon} className="w-5 h-5" color={alreadyHas ? meta.color : 'currentColor'} />
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-2 text-[7px] text-muted-foreground uppercase text-center">Cost: 75,000 SC</div>
+          </div>
+        </div>
+      </section>
+
+      <Divider />
+
       {/* Industrial Facilities Section */}
       <section>
         <SubTitle>Active Facilities</SubTitle>
@@ -958,6 +1070,9 @@ function EconomyTab({
               onCollect={onCollect}
               onUpgrade={onUpgrade}
               onSaveSettings={onSaveSettings}
+              factoryInputStorage={factoryInputStorage}
+              onDepositInput={onDepositInput}
+              userResources={userResources}
             />
           ))}
         </div>

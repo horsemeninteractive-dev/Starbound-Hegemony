@@ -12,6 +12,9 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { UserAvatar } from "./UserAvatar";
+
 
 import type { Galaxy } from "@/galaxy/types";
 
@@ -37,6 +40,8 @@ interface Props {
   playerXP: number;
   xpToNextLevel: number;
   playerAvatar: string;
+  playerPartyIcon?: string;
+  playerPartyHue?: number;
   fogOfWar: boolean;
   setFogOfWar: (v: boolean) => void;
   instantJump: boolean;
@@ -53,7 +58,7 @@ interface Props {
   isGameReady?: boolean;
   shipName?: string;
   nextApTick?: number;
-  onlinePlayerCount?: number;
+  isAdmin?: boolean;
 }
 
 import { Eye, EyeOff, Zap, Globe, Compass, Radio, RefreshCcw, BatteryFull, ShoppingCart } from "lucide-react";
@@ -73,9 +78,10 @@ export function TopBar({
   onOpenSettings, onOpenProfile, onOpenMap, onOpenArticles, onOpenMarket,
   onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills, onOpenChangelog, onOpenCredits,
   ap, sc, vt = 0, cargoCapacity = 500, cargoUsed = 0, playerName, playerLevel, playerXP, xpToNextLevel, playerAvatar,
+  playerPartyIcon, playerPartyHue,
   fogOfWar, setFogOfWar, instantJump, setInstantJump,
   playerSystemName, playerSystemId, travel, arrival, currentTime, galaxy, onReset, onSetAp, onPlayClick, isGameReady = true, shipName,
-  nextApTick, onlinePlayerCount = 1
+  nextApTick, isAdmin = false
 }: Props) {
   // Game menu state - Radix Sheet handles escape/outside-click automatically
   const [menuOpen, setMenuOpen] = useState(false);
@@ -138,15 +144,14 @@ export function TopBar({
             onOpenProfile();
           }}
         >
-          {/* Avatar with level badge */}
-          <div className="relative shrink-0">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full border-2 border-primary/40 overflow-hidden shadow-[0_0_10px_hsl(var(--primary)/0.2)]">
-              <img src={playerAvatar} alt="" className="w-full h-full object-cover" />
-            </div>
-            <div className="absolute -bottom-1 -right-1 w-4 h-4 sm:w-5 sm:h-5 bg-background border border-primary/40 rounded-full flex items-center justify-center">
-              <span className="text-[7px] sm:text-[9px] font-bold text-primary">{playerLevel}</span>
-            </div>
-          </div>
+          {/* Avatar with level badge and party icon */}
+          <UserAvatar 
+            avatarUrl={playerAvatar} 
+            level={playerLevel}
+            partyIcon={playerPartyIcon}
+            partyHue={playerPartyHue}
+            size={window.innerWidth < 640 ? "md" : "lg"}
+          />
 
           {/* Name and XP details - hidden on mobile to save space */}
           <div className="hidden lg:flex flex-col gap-0.5 min-w-[140px]">
@@ -155,10 +160,6 @@ export function TopBar({
                 {playerName}
               </span>
               <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_5px_emerald]" />
-                  <span className="font-mono-hud text-[7px] text-emerald-400/80 uppercase tracking-tighter">{onlinePlayerCount} ONL</span>
-                </div>
                 <span className="font-mono-hud text-[7px] sm:text-[8px] text-muted-foreground uppercase tracking-tighter whitespace-nowrap">LVL {playerLevel}</span>
               </div>
             </div>
@@ -221,20 +222,43 @@ export function TopBar({
         {/* Action Points and Credits */}
         <div className="flex flex-row items-center gap-1 sm:gap-4 pr-1 sm:pr-4 ml-auto">
           {/* Action Points */}
-          <div className="flex items-center gap-1 sm:gap-2 px-1 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-primary bg-primary/5 sm:min-w-0">
-            <ZapIcon size={12} className="text-primary animate-pulse sm:w-3.5 sm:h-3.5" fill="currentColor" />
-            <div className="flex flex-col leading-none">
-              <div className="flex items-baseline gap-1">
-                <span className="text-[9px] sm:text-[11px] text-primary font-bold tracking-wider">{Math.floor(ap)}</span>
-                {nextApTick && ap < 240 && (
-                  <span className="text-[6px] text-primary/40 font-mono-hud">
-                    {Math.floor((nextApTick - currentTime) / 1000)}s
-                  </span>
-                )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-1 sm:gap-2 px-1 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-primary bg-primary/5 sm:min-w-0 cursor-help">
+                <ZapIcon size={12} className="text-primary animate-pulse sm:w-3.5 sm:h-3.5" fill="currentColor" />
+                <div className="flex flex-col leading-none">
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-[9px] sm:text-[11px] text-primary font-bold tracking-wider">{Math.floor(ap)}</span>
+                    {nextApTick && ap < 240 && (
+                      <span className="text-[6px] text-primary/40 font-mono-hud">
+                        {Math.floor((nextApTick - currentTime) / 1000)}s
+                      </span>
+                    )}
+                  </div>
+                  <span className="hidden sm:block text-[7px] text-primary/60 uppercase tracking-widest font-mono-hud">Action Points</span>
+                </div>
               </div>
-              <span className="hidden sm:block text-[7px] text-primary/60 uppercase tracking-widest font-mono-hud">Action Points</span>
-            </div>
-          </div>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="bg-background/95 border-primary/20 text-primary font-mono-hud text-[10px] uppercase tracking-widest p-3">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-muted-foreground">Neural Capacity:</span>
+                  <span className="text-primary">{Math.floor(ap)} / 240</span>
+                </div>
+                {nextApTick && ap < 240 ? (
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-muted-foreground">Next Cycle:</span>
+                    <span className="text-success">{Math.floor((nextApTick - currentTime) / 1000)}s</span>
+                  </div>
+                ) : (
+                  <div className="text-success text-[8px] animate-pulse">Neural Link Fully Charged</div>
+                )}
+                <div className="pt-1.5 border-t border-primary/10 text-[8px] text-muted-foreground">
+                  Regenerates 1 AP every 5 minutes
+                </div>
+              </div>
+            </TooltipContent>
+          </Tooltip>
 
           <div className="flex items-center gap-1 sm:gap-2 px-1 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-warning bg-warning/5 sm:min-w-0">
             <Coins size={12} className="text-warning sm:w-3.5 sm:h-3.5" />
@@ -270,56 +294,58 @@ export function TopBar({
         </div>
 
         {/* Condensed Debug Controls */}
-        <div className="flex items-center gap-0.5 sm:gap-1 border-l border-primary/20 pl-1 sm:pl-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="p-1 sm:p-1.5 rounded bg-primary/5 border border-primary/20 text-primary/40 hover:text-primary hover:bg-primary/10 transition-all group"
-                title="Debug Menu"
-              >
-                <Bug size={14} className="group-hover:rotate-12 transition-transform sm:w-4 sm:h-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56 bg-background/95 backdrop-blur-xl border-primary/20 text-foreground font-mono-hud uppercase text-[10px] tracking-widest">
-              <DropdownMenuLabel className="text-primary/40 text-[9px]">Neural Debug Interface</DropdownMenuLabel>
-              <DropdownMenuSeparator className="bg-primary/10" />
-              
-              <DropdownMenuItem 
-                onClick={() => { onReset(); onPlayClick?.(); }}
-                className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5"
-              >
-                <Compass size={14} />
-                <span>Reset Ship & Logs</span>
-              </DropdownMenuItem>
-
-              <DropdownMenuItem 
-                onClick={() => { setFogOfWar(!fogOfWar); onPlayClick?.(); }}
-                className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5"
-              >
-                {fogOfWar ? <EyeOff size={14} /> : <Eye size={14} />}
-                <span>{fogOfWar ? "Disable Fog of War" : "Enable Fog of War"}</span>
-              </DropdownMenuItem>
-
-              <DropdownMenuItem 
-                onClick={() => { setInstantJump(!instantJump); onPlayClick?.(); }}
-                className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5"
-              >
-                <Zap size={14} fill={instantJump ? "currentColor" : "none"} />
-                <span>{instantJump ? "Disable Instant FTL" : "Enable Instant FTL"}</span>
-              </DropdownMenuItem>
-
-              <DropdownMenuSeparator className="bg-primary/10" />
-
-              <DropdownMenuItem 
-                onClick={() => { onSetAp(240); onPlayClick?.(); }}
-                className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5 text-warning"
-              >
-                <BatteryFull size={14} />
-                <span>Refill Action Points</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+        {isAdmin && (
+          <div className="flex items-center gap-0.5 sm:gap-1 border-l border-primary/20 pl-1 sm:pl-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="p-1 sm:p-1.5 rounded bg-primary/5 border border-primary/20 text-primary/40 hover:text-primary hover:bg-primary/10 transition-all group"
+                  title="Debug Menu"
+                >
+                  <Bug size={14} className="group-hover:rotate-12 transition-transform sm:w-4 sm:h-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 bg-background/95 backdrop-blur-xl border-primary/20 text-foreground font-mono-hud uppercase text-[10px] tracking-widest">
+                <DropdownMenuLabel className="text-primary/40 text-[9px]">Neural Debug Interface</DropdownMenuLabel>
+                <DropdownMenuSeparator className="bg-primary/10" />
+                
+                <DropdownMenuItem 
+                  onClick={() => { onReset(); onPlayClick?.(); }}
+                  className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5"
+                >
+                  <Compass size={14} />
+                  <span>Reset Ship & Logs</span>
+                </DropdownMenuItem>
+  
+                <DropdownMenuItem 
+                  onClick={() => { setFogOfWar(!fogOfWar); onPlayClick?.(); }}
+                  className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5"
+                >
+                  {fogOfWar ? <EyeOff size={14} /> : <Eye size={14} />}
+                  <span>{fogOfWar ? "Disable Fog of War" : "Enable Fog of War"}</span>
+                </DropdownMenuItem>
+  
+                <DropdownMenuItem 
+                  onClick={() => { setInstantJump(!instantJump); onPlayClick?.(); }}
+                  className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5"
+                >
+                  <Zap size={14} fill={instantJump ? "currentColor" : "none"} />
+                  <span>{instantJump ? "Disable Instant FTL" : "Enable Instant FTL"}</span>
+                </DropdownMenuItem>
+  
+                <DropdownMenuSeparator className="bg-primary/10" />
+  
+                <DropdownMenuItem 
+                  onClick={() => { onSetAp(240); onPlayClick?.(); }}
+                  className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5 text-warning"
+                >
+                  <BatteryFull size={14} />
+                  <span>Refill Action Points</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
       </div>
 
       {/* Game Menu Drawer */}
@@ -413,7 +439,7 @@ export function TopBar({
               </button>
             </div>
             <span className="font-mono-hud text-[7px] uppercase tracking-[0.25em] text-primary/30">
-              Starbound Hegemony OS v0.2.1
+              Starbound Hegemony OS v0.2.2
             </span>
           </div>
         </SheetContent>

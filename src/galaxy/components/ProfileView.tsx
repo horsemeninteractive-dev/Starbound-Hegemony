@@ -7,6 +7,7 @@ import { GalaxyIcon } from "./ResourceIcon";
 import { PartyView } from "./PartyView";
 import { type GalaxyApp } from "@/galaxy/useGalaxyApp";
 import { RESOURCE_META } from "@/galaxy/meta";
+import { UserAvatar } from "./UserAvatar";
 
 
 
@@ -70,14 +71,13 @@ export function ProfileView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick:
       {/* Profile Sidebar */}
       <aside className="w-full sm:w-[320px] border-b sm:border-b-0 sm:border-r border-primary/20 flex flex-col bg-primary/5 animate-in slide-in-from-left duration-500 shrink-0">
         <div className="p-3 sm:p-6 border-b border-primary/20 flex flex-row sm:flex-col items-center justify-center sm:justify-start gap-4">
-          <div className="relative">
-            <div className="w-12 h-12 sm:w-24 sm:h-24 rounded-full border-2 sm:border-4 border-primary/30 overflow-hidden shadow-[0_0_20px_hsl(var(--primary)/0.2)]">
-              <img src={app.playerAvatar} alt="" className="w-full h-full object-cover" />
-            </div>
-            <div className="absolute -bottom-1 -right-1 sm:-bottom-2 sm:-right-2 bg-primary text-background font-display text-[10px] sm:text-lg px-1 sm:px-2 rounded border border-background">
-              {app.playerLevel}
-            </div>
-          </div>
+          <UserAvatar 
+            avatarUrl={app.playerAvatar} 
+            level={app.playerLevel}
+            partyIcon={app.playerPartyIcon}
+            partyHue={app.playerPartyHue}
+            size={window.innerWidth < 640 ? "lg" : "xl"}
+          />
           <div className="flex flex-col text-left sm:text-center min-w-0">
             <h2 className="font-display text-base sm:text-2xl text-primary text-glow uppercase tracking-[0.1em] truncate">{app.playerName}</h2>
             <p className="font-mono-hud text-[8px] sm:text-[10px] text-muted-foreground uppercase tracking-[0.2em] sm:tracking-[0.3em] truncate">Commander</p>

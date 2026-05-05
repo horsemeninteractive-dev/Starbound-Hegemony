@@ -28,6 +28,7 @@ const CommentIcon = MessageSquare;
 import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { formatDistanceToNow } from "date-fns";
+import { UserAvatar } from "./UserAvatar";
 
 interface ArticlesViewProps {
   app: any;
@@ -342,9 +343,15 @@ function ArticleCard({ article, onVote, onComment, user }: { article: any, onVot
             <h3 className="text-lg font-display text-white tracking-wider uppercase group-hover:text-primary transition-colors">{article.title}</h3>
           </div>
           <div className="flex flex-col items-end shrink-0">
-             <div className="flex items-center gap-2 text-primary/70 mb-1">
-                <User size={12} />
-                <span className="text-[10px] font-bold uppercase tracking-widest">{article.profiles?.commander_name || "Unknown Link"}</span>
+             <div className="flex items-center gap-2 mb-1">
+                <UserAvatar 
+                  avatarUrl={article.profiles?.avatar_url || ""} 
+                  level={article.profiles?.level}
+                  partyIcon={article.profiles?.party_members?.[0]?.parties?.logo_symbol}
+                  partyHue={article.profiles?.party_members?.[0]?.parties?.hue}
+                  size="sm"
+                />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-primary/70">{article.profiles?.commander_name || "Unknown Link"}</span>
              </div>
              <div className="text-[8px] text-muted-foreground/60 uppercase tracking-tighter">Broadcast Origin: Subspace Relay</div>
           </div>
@@ -407,10 +414,19 @@ function ArticleCard({ article, onVote, onComment, user }: { article: any, onVot
               {article.article_comments?.map((comment: any) => (
                 <div key={comment.id} className="hud-panel p-3 bg-white/5 border border-primary/10 rounded">
                   <div className="flex justify-between items-center mb-1">
-                    <span className="text-[10px] font-bold text-primary uppercase">{comment.profiles?.commander_name || "Unknown"}</span>
+                    <div className="flex items-center gap-2">
+                      <UserAvatar 
+                        avatarUrl={comment.profiles?.avatar_url || ""} 
+                        level={comment.profiles?.level}
+                        partyIcon={comment.profiles?.party_members?.[0]?.parties?.logo_symbol}
+                        partyHue={comment.profiles?.party_members?.[0]?.parties?.hue}
+                        size="sm"
+                      />
+                      <span className="text-[10px] font-bold text-primary uppercase">{comment.profiles?.commander_name || "Unknown"}</span>
+                    </div>
                     <span className="text-[8px] text-muted-foreground uppercase">{formatDistanceToNow(new Date(comment.created_at))} ago</span>
                   </div>
-                  <p className="text-xs text-muted-foreground italic leading-relaxed">{comment.content}</p>
+                  <p className="text-xs text-muted-foreground italic leading-relaxed pl-8">{comment.content}</p>
                 </div>
               ))}
               {(!article.article_comments || article.article_comments.length === 0) && (

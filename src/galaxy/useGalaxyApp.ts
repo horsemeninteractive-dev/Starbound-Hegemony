@@ -4,7 +4,7 @@ import { useMemo, useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { generateGalaxy } from "./generate";
 import type { Galaxy, Empire, StarSystem, Body, ContestState, EconomicStatus, StarType, PlanetSubtype, Installation, BodyResource, UserResource, FactoryWorker, MarketListing, Party, PartyMember, PartyRole, Residency, ResidencyApplication, StateElection, StateVote, StateFormationVote, ElectionCandidate, MinisterialAssignment, PlayerEmpire } from "./types";
-import { STAR_META, CONTEST_META, ECON_META, BODY_META, STAR_BASE_SIZE, getOrbitalSpeed, getBodyPosition, RESOURCE_META, RICHNESS_VALUES } from "./meta";
+import { STAR_META, CONTEST_META, ECON_META, BODY_META, STAR_BASE_SIZE, getOrbitalSpeed, getBodyPosition, RESOURCE_META, RICHNESS_VALUES, T2_RESOURCES, T3_RESOURCES } from "./meta";
 import { ShipConfiguration, DEFAULT_SHIP_CONFIG } from "./shipPresets";
 
 export type ViewMode = "galaxy" | "system" | "body" | "ship";
@@ -28,6 +28,8 @@ import avatar_alt2 from "@/assets/avatar_alt2.png";
 
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
+import { computeSkillBonus, SKILL_TREE, XP_REWARDS } from "./skills";
+import type { XPReason } from "./skills";
 
 export function useGalaxyApp(initialSeed = 20260423) {
   const [user, setUser] = useState<User | null>(null);
@@ -92,6 +94,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [systemId, setSystemId] = useState<string | null>(() => localStorage.getItem("systemId"));
   const [bodyId, setBodyId] = useState<string | null>(() => localStorage.getItem("bodyId"));
   const [hoverSystemId, setHoverSystemId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const [initialDataLoaded, setInitialDataLoaded] = useState(false);
   
@@ -108,6 +111,9 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [electionBallots, setElectionBallots] = useState<Record<string, string>>({});  // electionId -> candidateId voted for
   const [ministerialAssignments, setMinisterialAssignments] = useState<MinisterialAssignment[]>([]);
   const [userProfiles, setUserProfiles] = useState<Record<string, { name: string; avatar: string }>>({});
+  const [playerPartyIcon, setPlayerPartyIcon] = useState<string | undefined>();
+  const [playerPartyHue, setPlayerPartyHue] = useState<number | undefined>();
+  const [playerSkills, setPlayerSkills] = useState<string[]>([]); // unlocked skill IDs
 
   const [socialStats, setSocialStats] = useState({
     upvotesReceived: 0,
@@ -132,6 +138,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [bodyResources, setBodyResources] = useState<BodyResource[]>([]);
   const [userResources, setUserResources] = useState<UserResource[]>([]);
   const [currentJob, setCurrentJob] = useState<FactoryWorker | null>(null);
+  // factory_id -> resource_type -> amount in input storage
+  const [factoryInputStorage, setFactoryInputStorage] = useState<Record<string, Record<string, number>>>({});
   const [articles, setArticles] = useState<any[]>([]);
   const [cargoCapacity, setCargoCapacity] = useState(500);
   const [marketListings, setMarketListings] = useState<MarketListing[]>([]);
@@ -201,7 +209,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
         // Load Profile
         const { data: profile } = await supabase
           .from('profiles')
-          .select('*')
+          .select('*, party_members(party_id, parties(logo_symbol, hue))')
           .eq('id', user.id)
           .single();
 
@@ -212,6 +220,17 @@ export function useGalaxyApp(initialSeed = 20260423) {
           setPlayerXP(profile.xp);
           setSc(profile.credits);
           setCargoCapacity(profile.cargo_capacity ?? 500);
+          setIsAdmin(profile.is_admin ?? false);
+
+          // Extract party info
+          const partyMember = profile.party_members?.[0];
+          if (partyMember?.parties) {
+            setPlayerPartyIcon(partyMember.parties.logo_symbol);
+            setPlayerPartyHue(partyMember.parties.hue);
+          } else {
+            setPlayerPartyIcon(undefined);
+            setPlayerPartyHue(undefined);
+          }
         }
 
         // Load Inventory
@@ -341,6 +360,13 @@ export function useGalaxyApp(initialSeed = 20260423) {
         if (exploration && exploration.length > 0) {
           setExploredSystemIds(new Set(exploration.map(e => e.system_id)));
         }
+
+        // Load unlocked skills
+        const { data: skills } = await supabase
+          .from('player_skills')
+          .select('skill_id')
+          .eq('user_id', user.id);
+        if (skills) setPlayerSkills(skills.map(s => s.skill_id));
       } catch (err) {
         console.error("Error loading user data:", err);
       } finally {
@@ -722,9 +748,22 @@ export function useGalaxyApp(initialSeed = 20260423) {
       .from('articles')
       .select(`
         *, 
-        profiles(commander_name),
+        profiles(
+          commander_name, 
+          avatar_url, 
+          level,
+          party_members(parties(logo_symbol, hue))
+        ),
         article_votes(user_id, vote_type),
-        article_comments(*, profiles(commander_name))
+        article_comments(
+          *, 
+          profiles(
+            commander_name, 
+            avatar_url, 
+            level,
+            party_members(parties(logo_symbol, hue))
+          )
+        )
       `)
       .order('created_at', { ascending: false });
     
@@ -817,6 +856,25 @@ export function useGalaxyApp(initialSeed = 20260423) {
       .select('*', { count: 'exact', head: true })
       .eq('user_id', user.id);
     if (count !== null) setFleetCount(count);
+
+    // 9. Fetch factory input storage for all user-owned T2/T3 factories
+    if (uFact && uFact.length > 0) {
+      const t2t3Ids = uFact.filter(f => (f.tier ?? 1) >= 2).map(f => f.id);
+      if (t2t3Ids.length > 0) {
+        const { data: inputRows } = await supabase
+          .from('factory_input_storage')
+          .select('*')
+          .in('factory_id', t2t3Ids);
+        if (inputRows) {
+          const grouped: Record<string, Record<string, number>> = {};
+          for (const row of inputRows) {
+            if (!grouped[row.factory_id]) grouped[row.factory_id] = {};
+            grouped[row.factory_id][row.resource_type] = row.amount;
+          }
+          setFactoryInputStorage(grouped);
+        }
+      }
+    }
   }, [user, systemId, system]);
 
   const logAction = useCallback(async (type: string, title: string, description?: string) => {
@@ -827,9 +885,34 @@ export function useGalaxyApp(initialSeed = 20260423) {
       title,
       description
     });
-    // Optimistic refresh would be nice but simple refetch is safer for now
     fetchEconomyData();
   }, [user, fetchEconomyData]);
+
+  /** Award XP via the server-side grant_xp RPC and update local state. */
+  const grantXP = useCallback(async (reason: XPReason, bonusFlat = 0) => {
+    if (!user) return;
+    const base = XP_REWARDS[reason] ?? 0;
+    // Apply skill bonuses
+    const flatBonus = computeSkillBonus('level_xp_bonus', playerSkills);
+    const multiplier = 1 + flatBonus; // level_xp_bonus is stored as 0.05 per skill
+    const total = Math.round((base + bonusFlat) * multiplier);
+    if (total <= 0) return;
+    const { data, error } = await supabase.rpc('grant_xp', {
+      p_user_id: user.id,
+      p_amount: total,
+      p_reason: reason
+    });
+    if (error) { console.warn('XP grant failed:', error.message); return; }
+    const result = data as { xp: number; level: number; leveled_up: boolean; xp_gained: number };
+    setPlayerXP(result.xp);
+    setPlayerLevel(result.level);
+    if (result.leveled_up) {
+      toast.success(`🎖 Level Up! Now Level ${result.level}`, {
+        description: `You gained a new skill point. Open the Skill Tree to spend it.`
+      });
+    }
+  }, [user, playerSkills]);
+
 
   const initiateJump = useCallback((targetId: string) => {
     if (travel) return; // Already moving
@@ -921,9 +1004,11 @@ export function useGalaxyApp(initialSeed = 20260423) {
     } else {
       toast.success("Article broadcasted!", { description: "Your message is propagating through the subspace relay." });
       logAction('article_post', `Broadcasting: ${title}`, `Neural broadcast transmitted to the ${type} relay network.`);
+      const bonus = computeSkillBonus('article_xp_bonus', playerSkills);
+      grantXP('article_published', bonus);
       fetchEconomyData();
     }
-  }, [user, playerSystemId, galaxy, fetchEconomyData]);
+  }, [user, playerSystemId, galaxy, fetchEconomyData, logAction, grantXP, playerSkills]);
 
   const voteArticle = useCallback(async (articleId: string, voteType: 1 | -1) => {
     if (!user) return;
@@ -1128,51 +1213,109 @@ export function useGalaxyApp(initialSeed = 20260423) {
       return;
     }
 
-    const cost = 5000;
+    // Determine tier from RESOURCE_META
+    const meta = RESOURCE_META[resourceType as keyof typeof RESOURCE_META];
+    const tier = meta?.tier ?? 1;
+
+    // Tiered build costs: T1=5000, T2=20000, T3=75000
+    const TIER_COSTS = { 1: 5000, 2: 20000, 3: 75000 };
+    const cost = TIER_COSTS[tier as 1|2|3] ?? 5000;
+
     if (sc < cost) {
-      toast.error("Insufficient Credits!", { description: `Building a factory requires ${cost} SC.` });
+      toast.error("Insufficient Credits!", { description: `Building a T${tier} factory requires ${cost.toLocaleString()} SC.` });
       return;
     }
 
-    // Find the deposit's richness on this body for resource seeding
-    const deposit = body.deposits.find(d => d.resource === resourceType);
-    const richnessKey = deposit?.richness ?? 'moderate';
-    const richnessValue = { trace: 1, moderate: 2, significant: 3, rich: 4, abundant: 5 }[richnessKey] ?? 2;
-    const maxAmount = richnessValue * 500;
+    // T2/T3 don't need a body deposit — they process stored materials
+    // T1 needs a planetary deposit
+    if (tier === 1) {
+      const hasDeposit = body.deposits.some(d => d.resource === resourceType && !d.depleted);
+      if (!hasDeposit) {
+        toast.error("No deposit found", { description: `This body has no ${resourceType} deposit available for extraction.` });
+        return;
+      }
+    }
 
-    const { error } = await supabase.from('factories').insert({
+    const { data: newFactory, error } = await supabase.from('factories').insert({
       system_id: playerSystemId,
       body_id: body.id,
       owner_id: user.id,
       resource_type: resourceType,
-      type: `${resourceType} Extractor`,
+      type: `${resourceType} ${tier === 1 ? 'Extractor' : tier === 2 ? 'Refinery' : 'Fabricator'}`,
       wage: 50,
-      jobs_available: 5
-    });
+      jobs_available: 5,
+      tier
+    }).select().single();
 
-    if (!error) {
-      // Seed the body_resources row if it doesn't already exist, so the work RPC can find it
-      await supabase.from('body_resources').upsert({
-        body_id: body.id,
-        resource_type: resourceType,
-        current_amount: maxAmount,
-        max_amount: maxAmount,
-        richness_value: richnessValue,
-        last_replenished_at: new Date().toISOString()
-      }, { onConflict: 'body_id,resource_type', ignoreDuplicates: true });
+    if (!error && newFactory) {
+      if (tier === 1) {
+        // Seed body_resources for T1 so work RPC can find it
+        const deposit = body.deposits.find(d => d.resource === resourceType);
+        const richnessKey = deposit?.richness ?? 'moderate';
+        const richnessValue = { trace: 1, moderate: 2, significant: 3, rich: 4, abundant: 5 }[richnessKey] ?? 2;
+        await supabase.from('body_resources').upsert({
+          body_id: body.id,
+          resource_type: resourceType,
+          current_amount: richnessValue * 500,
+          max_amount: richnessValue * 500,
+          richness_value: richnessValue,
+          last_replenished_at: new Date().toISOString()
+        }, { onConflict: 'body_id,resource_type', ignoreDuplicates: true });
+      } else {
+        // Pre-seed input storage rows for T2/T3 so they appear immediately
+        const inputs = (meta as any).inputs as { resource: string; qty: number }[];
+        for (const inp of inputs) {
+          await supabase.from('factory_input_storage').upsert({
+            factory_id: newFactory.id,
+            resource_type: inp.resource,
+            amount: 0
+          }, { onConflict: 'factory_id,resource_type', ignoreDuplicates: true });
+        }
+      }
       
-      logAction('factory_build', `Factory Commissioned: ${resourceType}`, `Established a new ${resourceType} extraction facility on ${body.name}.`);
+      logAction('factory_build', `T${tier} Factory Commissioned: ${resourceType}`,
+        `Established a new ${resourceType} ${tier === 1 ? 'extraction' : tier === 2 ? 'refinery' : 'fabrication'} facility on ${body.name}.`);
+      const buildBonus = computeSkillBonus('factory_build_discount', playerSkills); // not additive to XP here
+      grantXP('factory_built');
     }
 
     if (error) {
       toast.error("Build failed", { description: error.message });
     } else {
       setSc(prev => prev - cost);
-      toast.success("Factory constructed!", { description: `${resourceType} extraction operations commenced.` });
-      
+      toast.success("Factory constructed!", { description: `T${tier} ${resourceType} facility is now operational.` });
       fetchEconomyData();
     }
-  }, [user, fetchEconomyData]);
+  }, [user, body, playerSystemId, sc, factories, logAction, fetchEconomyData, grantXP, playerSkills]);
+
+  const depositFactoryInput = useCallback(async (factoryId: string, resourceType: string, amount: number) => {
+    if (!user) return;
+    const { error } = await supabase.rpc('deposit_factory_input', {
+      p_user_id: user.id,
+      p_factory_id: factoryId,
+      p_resource_type: resourceType,
+      p_amount: amount
+    });
+    if (error) {
+      toast.error("Deposit failed", { description: error.message });
+    } else {
+      toast.success(`Deposited ${amount}× ${resourceType}`, { description: "Materials transferred to factory input storage." });
+      // Refresh local state
+      const { data: inputs } = await supabase
+        .from('factory_input_storage')
+        .select('*')
+        .eq('factory_id', factoryId);
+      if (inputs) {
+        setFactoryInputStorage(prev => ({
+          ...prev,
+          [factoryId]: Object.fromEntries(inputs.map(i => [i.resource_type, i.amount]))
+        }));
+      }
+      // Refresh cargo
+      const { data: inv } = await supabase.from('user_resources').select('*').eq('user_id', user.id);
+      if (inv) setUserResources(inv.map(r => ({ userId: r.user_id, resourceType: r.resource_type, amount: r.amount })));
+    }
+  }, [user]);
 
   const applyForJob = useCallback(async (factoryId: string) => {
     if (!user) return;
@@ -1181,9 +1324,9 @@ export function useGalaxyApp(initialSeed = 20260423) {
       return;
     }
 
-    const { error } = await supabase.from('factory_workers').insert({
-      user_id: user.id,
-      factory_id: factoryId
+    const { error } = await supabase.rpc('apply_for_job', {
+      p_user_id: user.id,
+      p_factory_id: factoryId
     });
 
     if (error) {
@@ -1191,8 +1334,9 @@ export function useGalaxyApp(initialSeed = 20260423) {
     } else {
       setCurrentJob({ userId: user.id, factoryId: factoryId, hiredAt: new Date().toISOString() } as any);
       toast.success("Job accepted!", { description: "You are now employed at this facility." });
+      fetchEconomyData(); // Refresh to show updated worker status/counts if needed
     }
-  }, [user, currentJob]);
+  }, [user, currentJob, fetchEconomyData]);
 
   const workJob = useCallback(async () => {
     if (!user || !currentJob) return;
@@ -1223,8 +1367,12 @@ export function useGalaxyApp(initialSeed = 20260423) {
       if (inv) setUserResources(inv.map(r => ({ userId: r.user_id, resourceType: r.resource_type, amount: r.amount })));
       
       toast.success("Work shift completed", { description: "Wages deposited to your account." });
+      const wageBonus = computeSkillBonus('factory_wage_bonus', playerSkills);
+      const xpBonus = computeSkillBonus('factory_xp_bonus', playerSkills);
+      if (wageBonus > 0) setSc(prev => prev + wageBonus);
+      grantXP('factory_worked', xpBonus);
     }
-  }, [user, currentJob, ap, fetchEconomyData]);
+  }, [user, currentJob, ap, fetchEconomyData, grantXP, playerSkills]);
 
   const collectFactory = useCallback(async (factoryId: string) => {
     if (!user) return;
@@ -1282,6 +1430,24 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const claimResidency = useCallback(async (bodyId: string, isClaimable: boolean) => {
     if (!user) return;
     
+    // Check if the body/system is restricted
+    const sysId = bodyId.includes('-') ? bodyId.split('-')[0] : bodyId; // Standard body ID format is systemId-index
+    const isSanctum = sysId.startsWith('sys-inner-') || sysId === 'sys-center';
+    
+    // Find body to check type
+    const bodyObj = galaxy.bodyById[bodyId];
+    const isAsteroid = bodyObj?.type === 'asteroid';
+
+    if (isSanctum) {
+      toast.error("Residency prohibited", { description: "The Sanctum systems are under NPC jurisdiction. No permanent residency permits are issued." });
+      return;
+    }
+
+    if (isAsteroid) {
+      toast.error("Residency prohibited", { description: "Asteroid belts are not suitable for permanent residency." });
+      return;
+    }
+
     if (isClaimable) {
       const { error } = await supabase.from('residencies').upsert({
         user_id: user.id,
@@ -1295,6 +1461,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
         setUserResidency({ userId: user.id, bodyId, joinedAt: new Date().toISOString() });
         toast.success("Residency claimed!", { description: `You are now a resident of ${bodyId}.` });
         logAction('governance', 'Residency Established', `Registered permanent address at celestial body ${bodyId}.`);
+        const resBonus = computeSkillBonus('residency_xp_bonus', playerSkills);
+        grantXP('residency_claimed', resBonus);
       }
     } else {
       const { error } = await supabase.from('residency_applications').insert({
@@ -1312,7 +1480,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
         toast.success("Application submitted", { description: "Your residency request is awaiting approval." });
       }
     }
-  }, [user]);
+  }, [user, galaxy]);
 
   const voteForStateParty = useCallback(async (electionId: string, partyId: string) => {
     if (!user) return;
@@ -1439,6 +1607,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
           if (!next.has(targetId)) {
             next.add(targetId);
             logAction('exploration', `System Discovered: ${galaxy.systemById[targetId]?.name || targetId}`, `Successfully mapped the ${targetId} sector and established orbital reconnaissance.`);
+            const explorationBonus = computeSkillBonus('exploration_xp_bonus', playerSkills);
+            grantXP('system_explored', explorationBonus);
           }
           return next;
         });
@@ -1560,6 +1730,9 @@ export function useGalaxyApp(initialSeed = 20260423) {
     playerLevel,
     playerXP,
     playerAvatar,
+    playerPartyIcon,
+    playerPartyHue,
+    xpToNextLevel: playerLevel * 1000,
     setPlayerAvatar,
     shipConfig,
     setShipConfig,
@@ -1567,7 +1740,6 @@ export function useGalaxyApp(initialSeed = 20260423) {
     page,
     selectedEmpireId,
     setSelectedEmpireId,
-    xpToNextLevel: playerLevel * 1000,
     openSystem,
     selectSystem,
     openBody,
@@ -1614,6 +1786,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
     bodyResources,
     userResources,
     currentJob,
+    factoryInputStorage,
+    depositFactoryInput,
     buildFactory,
     applyForJob,
     workJob,
@@ -1658,6 +1832,36 @@ export function useGalaxyApp(initialSeed = 20260423) {
     ministerialAssignments,
     nextApTick,
     onlinePlayerCount,
+    isAdmin,
+
+    // XP & Skill Tree
+    playerSkills,
+    skillTree: SKILL_TREE,
+    grantXP,
+    unlockSkill: async (skillId: string) => {
+      if (!user) return;
+      const { data, error } = await supabase.rpc('unlock_skill', {
+        p_user_id: user.id,
+        p_skill_id: skillId
+      });
+      if (error) {
+        if (error.message.includes('insufficient_skill_points')) {
+          toast.error("Not enough skill points!", { description: "Reach a higher level to earn more skill points." });
+        } else if (error.message.includes('already_unlocked')) {
+          toast.error("Already unlocked!");
+        } else {
+          toast.error("Failed to unlock skill", { description: error.message });
+        }
+        return;
+      }
+      setPlayerSkills(prev => [...prev, skillId]);
+      const skill = SKILL_TREE.find(s => s.id === skillId);
+      toast.success(`Skill Unlocked: ${skill?.name}`, { description: skill?.effect });
+      // Apply immediate stat bonuses
+      if (skill?.bonus.key === 'cargo_capacity_bonus') {
+        setCargoCapacity(prev => prev + skill.bonus.value);
+      }
+    },
 
     initiateGovernance: async (bodyId: string) => {
       if (!user) return;
