@@ -15,14 +15,14 @@ export interface StarMeta {
 }
 
 export const BODY_META = {
-  terrestrial: { label: "Terrestrial", icon: "◉" },
-  gas_giant: { label: "Gas Giant", icon: "◎" },
-  moon: { label: "Moon", icon: "○" },
-  asteroid: { label: "Asteroid", icon: "◇" },
-  station: { label: "Station", icon: "⬡" },
-  jump_gate: { label: "Jump Gate", icon: "⬢" },
-  ship: { label: "Flagship", icon: "🚀" },
-  star: { label: "Star", icon: "★" },
+  terrestrial: { label: "Terrestrial", icon: "Globe" },
+  gas_giant: { label: "Gas Giant", icon: "CircleDot" },
+  moon: { label: "Moon", icon: "Moon" },
+  asteroid: { label: "Asteroid", icon: "Shapes" },
+  station: { label: "Station", icon: "Hexagon" },
+  jump_gate: { label: "Jump Gate", icon: "Hexagon" },
+  ship: { label: "Flagship", icon: "Rocket" },
+  star: { label: "Star", icon: "Sun" },
 } as const;
 
 export const STAR_BASE_SIZE: Record<StarType, number> = {
@@ -94,4 +94,27 @@ export const ECON_META = {
   recession: { label: "Recession", color: "text-warning" },
   blockaded: { label: "Blockaded", color: "text-destructive" },
   untapped: { label: "Untapped", color: "text-muted-foreground" },
+} as const;
+
+export const RESOURCE_META = {
+  "Helium-3": { factory: "h3_extractor", label: "H3 Extraction Hub", icon: "CircleDot", color: "#A5B4FC" },
+  "Energy Crystals": { factory: "crystal_resonator", label: "Crystal Resonator", icon: "Sparkles", color: "#F472B6" },
+  "Hydrogen": { factory: "hydrogen_siphon", label: "Hydrogen Siphon", icon: "Droplets", color: "#93C5FD" },
+  "Exotic Matter": { factory: "matter_stabilizer", label: "Matter Stabilizer", icon: "Orbit", color: "#C084FC" },
+  "Solar Energy": { factory: "solar_array", label: "Solar Array Node", icon: "Sun", color: "#FBBF24" },
+  "Radiogenic Elements": { factory: "isotope_separator", label: "Isotope Separator", icon: "Radiation", color: "#BEF264" },
+  "Ore": { factory: "mineral_refinery", label: "Mineral Refinery", icon: "Hammer", color: "#94A3B8" },
+  "Organics": { factory: "bio_vat", label: "Bio-Vat Colony", icon: "Leaf", color: "#4ADE80" },
+  "Rare Earths": { factory: "lanthanide_forge", label: "Lanthanide Forge", icon: "Gem", color: "#F87171" },
+  "Silicates": { factory: "silicate_kiln", label: "Silicate Kiln", icon: "Mountain", color: "#E2C499" },
+  "Water Ice": { factory: "cryo_melter", label: "Cryo-Melter", icon: "Snowflake", color: "#BAE6FD" },
+  "Exotic Technology": { factory: "tech_lab", label: "Xenon Tech Lab", icon: "Cpu", color: "#22D3EE" },
+} as const;
+
+export const RICHNESS_VALUES = {
+  "trace": 1,
+  "moderate": 2,
+  "significant": 3,
+  "rich": 4,
+  "abundant": 5,
 } as const;

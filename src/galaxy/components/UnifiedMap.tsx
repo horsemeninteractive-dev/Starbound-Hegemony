@@ -303,6 +303,7 @@ interface Props {
   fxVolume?: number;
   arrival?: { fromId: string; startTime: number; duration: number } | null;
   otherPlayers?: any[];
+  userResidency?: any | null;
 }
 
 /** 
@@ -338,7 +339,7 @@ function MapContent({
   onSelectSystem, onSelectBody, onHoverSystem, hoverSystemId, 
   fogOfWar, exploredSystemIds, knownSystemIds, systemMatchesFilter,
   currentSystemId, playerBodyId, travel, isMobilePanelExpanded, containerRef, graphicsQuality, shipConfig, fxVolume = 0.5,
-  arrival, otherPlayers
+  arrival, otherPlayers, userResidency
 }: Props & { containerRef: React.RefObject<HTMLDivElement> }) {
   const { camera, gl } = useThree();
   const controlsRef = useRef<CameraControls>(null);
@@ -620,6 +621,8 @@ function MapContent({
             isExplored={!fogOfWar || exploredSystemIds.has(s.id)}
             isKnown={!fogOfWar || knownSystemIds.has(s.id)}
             isPlayerHere={s.id === currentSystemId}
+            isPlayerResident={userResidency?.systemId === s.id}
+            userResidency={userResidency}
             isMobilePanelExpanded={isMobilePanelExpanded}
             quality={graphicsQuality}
             listener={listener}
@@ -723,7 +726,7 @@ function ContestStatusRing({ contest }: { contest: ContestState }) {
   );
 }
 
-function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocused, focusedBodyId, onSelect, onSelectBody, filters, isExplored, isKnown, isPlayerHere, isMobilePanelExpanded, quality, listener }: {
+function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocused, focusedBodyId, onSelect, onSelectBody, filters, isExplored, isKnown, isPlayerHere, isPlayerResident, userResidency, isMobilePanelExpanded, quality, listener }: {
   system: StarSystem;
   galaxy: Galaxy;
   view: ViewMode;
@@ -737,6 +740,8 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
   isExplored: boolean;
   isKnown: boolean;
   isPlayerHere: boolean;
+  isPlayerResident?: boolean;
+  userResidency?: any | null;
   isMobilePanelExpanded: boolean;
   quality: "low" | "medium" | "high";
   listener: THREE.AudioListener | null;
@@ -912,6 +917,8 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
                 quality={quality}
                 galaxy={galaxy}
                 isSystemExplored={explored}
+                isPlayerResident={userResidency?.bodyId === b.id}
+                userResidency={userResidency}
                 listener={listener}
               />
             ))}
@@ -1009,8 +1016,13 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
               style={{ opacity: 0 }}
             >
               {isPlayerHere && (
-                <div className="flex items-center justify-center w-3 h-3 bg-cyan-400 rounded-full animate-pulse">
+                <div className="flex items-center justify-center w-3 h-3 bg-cyan-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,211,238,0.5)]">
                   <div className="w-1 h-1 bg-white rounded-full" />
+                </div>
+              )}
+              {isPlayerResident && (
+                <div className="flex items-center justify-center w-3.5 h-3.5 bg-amber-500 rounded-sm rotate-45 border border-white/40 shadow-[0_0_10px_rgba(245,158,11,0.6)]">
+                  <div className="w-1.5 h-1.5 bg-white rounded-full -rotate-45" />
                 </div>
               )}
               {isKnown && (
@@ -1099,7 +1111,7 @@ function TerritoryMarker({ body, visualSize, galaxy }: { body: Body; visualSize:
   );
 }
 
-function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, onSelectBody, focusedBodyId, starWorldPos, starType, filters, isMobilePanelExpanded, quality, galaxy, isSystemExplored = true, listener }: {
+function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, onSelectBody, focusedBodyId, starWorldPos, starType, filters, isMobilePanelExpanded, quality, galaxy, isSystemExplored = true, isPlayerResident, userResidency, listener }: {
   body: Body;
   parentBody: Body | null;
   view: ViewMode;
@@ -1115,6 +1127,8 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
   quality: "low" | "medium" | "high";
   galaxy: Galaxy;
   isSystemExplored?: boolean;
+  isPlayerResident?: boolean;
+  userResidency?: any | null;
   listener: THREE.AudioListener | null;
 }) {
   const { camera } = useThree();
@@ -1533,6 +1547,11 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
       {view !== "galaxy" && filters.layers.has("objectLabels") && (
         <Html position={[0, 0, 0]} center zIndexRange={[100, 0]} style={{ pointerEvents: "none" }}>
           <div ref={labelRef} className={`px-1.5 py-0.5 flex items-center gap-1.5 bg-black/40 backdrop-blur-[2px] border border-white/5 rounded-sm pointer-events-none whitespace-nowrap ${!isSystemExplored ? 'opacity-50 grayscale' : ''}`}>
+            {isPlayerResident && (
+              <div className="flex items-center justify-center w-2.5 h-2.5 bg-amber-500 rounded-sm rotate-45 border border-white/40 shadow-[0_0_8px_rgba(245,158,11,0.6)]">
+                <div className="w-1 h-1 bg-white rounded-full -rotate-45" />
+              </div>
+            )}
             <span 
               className="font-mono-hud text-[7px] leading-none uppercase"
               style={{ 
@@ -1574,6 +1593,8 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
               quality={quality}
               galaxy={galaxy}
               isSystemExplored={isSystemExplored}
+              isPlayerResident={userResidency?.bodyId === m.id}
+              userResidency={userResidency}
               listener={listener}
             />
           </group>
@@ -2477,9 +2498,18 @@ function PlayerFleetVisual({
 
         <mesh
           ref={hitboxRef}
-          onClick={(e) => { e.stopPropagation(); onSelect?.(); }}
-          onPointerOver={() => { document.body.style.cursor = "pointer"; }}
-          onPointerOut={() => { document.body.style.cursor = "default"; }}
+          onClick={(e) => { 
+            if (view === 'galaxy') return;
+            e.stopPropagation(); 
+            onSelect?.(); 
+          }}
+          onPointerOver={() => { 
+            if (view === 'galaxy') return;
+            document.body.style.cursor = "pointer"; 
+          }}
+          onPointerOut={() => { 
+            document.body.style.cursor = "default"; 
+          }}
         >
           <sphereGeometry args={[0.25, 16, 16]} />
           <meshBasicMaterial transparent opacity={0} depthWrite={false} />

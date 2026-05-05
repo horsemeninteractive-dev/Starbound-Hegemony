@@ -95,112 +95,7 @@ const GOVERNMENT_TYPES: GovernmentType[] = [
 ];
 
 function buildEmpires(rng: Rng): Empire[] {
-  const count = 36;
-  const empires: Empire[] = [];
-  const usedTags = new Set<string>();
-
-  for (let i = 0; i < count; i++) {
-    const pre = pick(rng, EMPIRE_PREFIXES);
-    const noun = pick(rng, EMPIRE_NOUNS);
-    const name = `${pre} ${noun}`;
-    
-    // Generate a unique 3-letter tag
-    let tag = (pre[0] + noun[0] + noun[noun.length - 1]).toUpperCase();
-    if (usedTags.has(tag)) tag = (pre[0] + pre[1] + noun[0]).toUpperCase();
-    if (usedTags.has(tag)) tag = (pre[0] + noun[0] + String.fromCharCode(65 + (i % 26))).toUpperCase();
-    usedTags.add(tag);
-
-    const hue = (i * (360 / count)) % 360;
-    
-    // Generate Government
-    const factionsCount = randInt(rng, 2, 4);
-    const factions = [];
-    let totalAssigned = 0;
-    const totalSeats = pick(rng, [20, 30, 40, 60]);
-    
-    for (let f = 0; f < factionsCount; f++) {
-      const isLast = f === factionsCount - 1;
-      const count = isLast ? totalSeats - totalAssigned : randInt(rng, Math.floor(totalSeats / 6), totalSeats - totalAssigned - (factionsCount - f - 1) * 2);
-      totalAssigned += count;
-      factions.push({
-        id: `fac-${f}`,
-        name: pick(rng, PARTIES),
-        color: `hsl(${(hue + f * 40) % 360} 70% 50%)`,
-        count
-      });
-    }
-
-      const occupancyRate = rng() < 0.75 ? 1.0 : (0.4 + rng() * 0.5); // 75% full, 25% partial
-      
-      // Keep track of names used in this empire's government to ensure uniqueness
-      const usedNames = new Set<string>();
-      const pickUniqueName = () => {
-        let name = pick(rng, OFFICIAL_NAMES);
-        let attempts = 0;
-        while (usedNames.has(name) && attempts < 50) {
-          name = pick(rng, OFFICIAL_NAMES);
-          attempts++;
-        }
-        usedNames.add(name);
-        return name;
-      };
-
-      const president = rng() < occupancyRate ? { name: pickUniqueName(), role: "President", party: factions[0].name } : null;
-      const vicePresident = rng() < occupancyRate ? { name: pickUniqueName(), role: "Vice President", party: factions[1]?.name || factions[0].name } : null;
-      const ministers = Array.from({ length: 4 }).map(() => {
-        return rng() < occupancyRate ? {
-          name: pickUniqueName(),
-          role: pick(rng, ROLES),
-          party: pick(rng, factions).name
-        } : null;
-      }).filter(m => m !== null) as any[];
-
-      // Seats generation
-      const seats = [];
-      const occupiedCount = Math.floor(totalSeats * (rng() < 0.75 ? 1.0 : (0.4 + rng() * 0.5)));
-      
-      let factionIdx = 0;
-      let factionCountTracker = 0;
-      for (let s = 0; s < totalSeats; s++) {
-        if (factionCountTracker >= factions[factionIdx].count && factionIdx < factions.length - 1) {
-          factionIdx++;
-          factionCountTracker = 0;
-        }
-        
-        const isOccupied = s < occupiedCount;
-        seats.push({ 
-          id: s, 
-          // If not occupied, it doesn't belong to a party
-          factionId: isOccupied ? factions[factionIdx].id : undefined,
-          occupantName: isOccupied ? pickUniqueName() : undefined
-        });
-        factionCountTracker++;
-      }
-
-      empires.push({
-        id: `emp-${i}`,
-        name,
-        tag,
-        hue,
-        logo: {
-          symbol: pick(rng, LOGO_SYMBOLS),
-          pattern: pick(rng, LOGO_PATTERNS),
-          secondaryHue: (hue + 180) % 360,
-        },
-        government: {
-          president: president as any,
-          vicePresident: vicePresident as any,
-          ministers: ministers,
-          council: {
-            totalSeats,
-            factions,
-            seats
-          },
-          type: pick(rng, GOVERNMENT_TYPES)
-        }
-      });
-  }
-  return empires;
+  return [];
 }
 
 /** Place sectors as gaussian blobs in a disk; then drop systems inside each sector. */
@@ -456,7 +351,7 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
       hue: Math.floor(rng() * 360),
       isShielded,
       ownerId: null,
-      population: type === "terrestrial" ? Math.floor(rng() * 12000) / 10 : 0,
+      population: 0,
       deposits: pickResources(rng, type),
       economy: weightedPick(rng, ECON_WEIGHTS),
       children: [],
@@ -513,7 +408,7 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
         ownerId: null,
         population: 0,
         deposits: moonSubtype === "molten" 
-          ? [{ resource: "Ore", richness: "moderate", depleted: false }, { resource: "Crystals", richness: "trace", depleted: false }]
+          ? [{ resource: "Ore", richness: "moderate", depleted: false }, { resource: "Radiogenic Elements", richness: "trace", depleted: false }]
           : [{ resource: "Ore", richness: "trace", depleted: false }, { resource: "Silicates", richness: "moderate", depleted: false }],
         economy: "untapped",
         temperature: moonTemp,
@@ -622,8 +517,8 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
       size: 0.6,
       hue: stationHue, // Used for light colors
       ownerId: null,
-      population: Math.floor(rng() * 40) / 10,
-      deposits: [{ resource: "Trade Hub", richness: "abundant", depleted: false }],
+      population: 0,
+      deposits: [],
       economy: "stable",
       temperature: 290,
       habitabilityZone: "temperate",
@@ -638,8 +533,8 @@ function generateBodies(rng: Rng, systemId: string, systemName: string, starType
 
 function pickResources(rng: Rng, type: BodyType): ResourceDeposit[] {
   const pool = type === "gas_giant"
-    ? ["Helium-3", "Energy Crystals", "Hydrogen"]
-    : ["Ore", "Organics", "Rare Earths", "Silicates", "Water Ice"];
+    ? ["Helium-3", "Energy Crystals", "Hydrogen", "Exotic Matter", "Solar Energy", "Radiogenic Elements"]
+    : ["Ore", "Organics", "Rare Earths", "Silicates", "Water Ice", "Exotic Technology", "Radiogenic Elements", "Energy Crystals"];
   const count = randInt(rng, 1, 3);
   const out: ResourceDeposit[] = [];
   const richnessLevels: ResourceDeposit["richness"][] = ["trace", "moderate", "significant", "rich", "abundant"];
@@ -786,115 +681,13 @@ a.gates.push({ id: `${lane.id}-g0`, systemId: a.id, targetSystemId: b.id, ownerI
 }
 
 function assignOwnership(rng: Rng, systems: StarSystem[], empires: Empire[]) {
-  const remaining = new Set(
-    systems
-      .filter((s) => s.id !== "sys-center" && !s.id.startsWith("sys-inner-"))
-      .map((s) => s.id)
-  );
-  
-  for (const emp of empires) {
-    const seed = pick(rng, [...remaining]);
-    if (!seed) continue;
-    
-    // Claim a blob of systems — empires are now more aggressive
-    const claimSize = randInt(rng, 8, 16);
-    const queue = [seed];
-    const claimedInThisBlob: string[] = [];
-    
-    while (queue.length && claimedInThisBlob.length < claimSize) {
-      const id = queue.shift()!;
-      if (id === "sys-center" || id.startsWith("sys-inner-")) continue;
-      const sys = systems.find((s) => s.id === id)!;
-      if (!sys) continue;
-
-      // Even if already 'claimed' by someone else's seed, we can still contest it
-      const alreadyClaimed = !remaining.has(id);
-      
-      // Ownership types: High Control or Heavy Contestation
-      const mode = rng();
-      
-      for (const body of sys.bodies) {
-        if (body.type === "terrestrial" || body.type === "gas_giant" || body.type === "station") {
-          // If the system was already claimed, we have a high chance of creating a contested environment
-          if (alreadyClaimed) {
-            if (rng() < 0.4) {
-              body.ownerId = emp.id; // Ninja some bodies
-              body.name = pick(rng, BODY_PROPER);
-            }
-          } else {
-            // New territory
-            if (mode > 0.4) {
-              // SOLID CONTROL (90% ownership of bodies)
-              if (rng() < 0.9) {
-                body.ownerId = emp.id;
-                body.name = pick(rng, BODY_PROPER);
-              }
-            } else {
-              // SHARED CONTROL
-              if (rng() < 0.5) {
-                body.ownerId = emp.id;
-                body.name = pick(rng, BODY_PROPER);
-              }
-              else if (rng() < 0.4) {
-                const other = empires[randInt(rng, 0, empires.length - 1)];
-                body.ownerId = other.id;
-                body.name = pick(rng, BODY_PROPER);
-              }
-            }
-          }
-        }
-      }
-
-      // Rename system if dominated by one empire
-      const ownerCounts: Record<string, number> = {};
-      for (const b of sys.bodies) {
-        if (b.ownerId) ownerCounts[b.ownerId] = (ownerCounts[b.ownerId] || 0) + 1;
-      }
-      let topOwner = "";
-      let maxBodies = 0;
-      for (const [oid, count] of Object.entries(ownerCounts)) {
-        if (count > maxBodies) {
-          maxBodies = count;
-          topOwner = oid;
-        }
-      }
-      if (topOwner && maxBodies >= sys.bodies.length * 0.5) {
-        const ownerEmp = empires.find(e => e.id === topOwner);
-        if (ownerEmp) {
-          sys.ownerId = topOwner;
-        }
-      }
-
-      if (remaining.has(id)) {
-        remaining.delete(id);
-        claimedInThisBlob.push(id);
-      }
-
-      // Expand to neighbours (even if already claimed, to create friction)
-      const neighbours = systems
-        .map((o) => {
-          const d = Math.hypot(o.pos[0] - sys.pos[0], o.pos[2] - sys.pos[2]);
-          return [o.id, d] as const;
-        })
-        .filter(n => n[0] !== id && n[1] < 800)
-        .sort((a, b) => a[1] - b[1])
-        .slice(0, 3);
-      
-      for (const [nid] of neighbours) {
-        if (!queue.includes(nid) && (remaining.has(nid) || rng() < 0.3)) {
-          queue.push(nid);
-        }
-      }
-    }
-  }
-
-  // Compute contestation per system
+  // All bodies start unclaimed and neutral in the new governance model.
   for (const sys of systems) {
-    const owners = new Set<string>();
-    for (const b of sys.bodies) if (b.ownerId) owners.add(b.ownerId);
-    if (owners.size === 0) sys.contest = (remaining.has(sys.id) || sys.id === "sys-center" || sys.id.startsWith("sys-inner-")) ? "frontier" : "anarchic";
-    else if (owners.size === 1) sys.contest = "controlled";
-    else sys.contest = "contested";
+    sys.ownerId = null;
+    for (const b of sys.bodies) {
+       b.ownerId = null;
+    }
+    sys.contest = (sys.id === "sys-center" || sys.id.startsWith("sys-inner-")) ? "frontier" : "anarchic";
   }
 }
 
@@ -1122,6 +915,15 @@ export function generateGalaxy(seed: number = 42, opts?: {
 
   const systemById = Object.fromEntries(systems.map((s) => [s.id, s]));
   const sectorById = Object.fromEntries(sectors.map((s) => [s.id, s]));
+  const bodyById: Record<string, Body> = {};
+  for (const s of systems) {
+    for (const b of s.bodies) {
+      bodyById[b.id] = b;
+      if (b.children) {
+        for (const c of b.children) bodyById[c.id] = c;
+      }
+    }
+  }
 
-  return { seed, sectors, systems, hyperlanes, empires, systemById, sectorById };
+  return { seed, sectors, systems, hyperlanes, empires, systemById, sectorById, bodyById };
 }

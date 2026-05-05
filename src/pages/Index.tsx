@@ -23,9 +23,16 @@ import { CommanderOnboarding } from "@/galaxy/components/CommanderOnboarding";
 import { ShipCustomizer } from "@/galaxy/components/ShipCustomizer";
 import { type ShipConfiguration } from "@/galaxy/shipPresets";
 import { AuthScreen } from "@/galaxy/components/AuthScreen";
+import { MarketView } from "@/galaxy/components/MarketView";
+import { FactoriesView } from "@/galaxy/components/FactoriesView";
+import { FleetsView } from "@/galaxy/components/FleetsView";
+import { ArticlesView } from "@/galaxy/components/ArticlesView";
+import { ProfileView } from "@/galaxy/components/ProfileView";
+import { PartyView } from "@/galaxy/components/PartyView";
 import { useAudio } from "@/galaxy/useAudio";
 import { ChangelogModal } from "@/galaxy/components/ChangelogModal";
 import { CreditsScreen } from "@/galaxy/components/CreditsScreen";
+import { RESOURCE_META } from "@/galaxy/meta";
 import logo from "@/assets/logo.png";
 
 const ICON_MAP: Record<string, any> = {
@@ -40,8 +47,7 @@ const Index = () => {
   const [transitionKey, setTransitionKey] = useState(0);
   
   // Track user interaction for audio unlocking
-  const [hasInteracted, setHasInteracted] = useState(!app.onboardingCompleted);
-  const [guestMode, setGuestMode] = useState(false);
+  const [hasInteracted, setHasInteracted] = useState(false);
   
   // Track view changes to trigger the "Processing" indicator
   useEffect(() => {
@@ -84,7 +90,7 @@ const Index = () => {
   const { 
     openSystem, backToGalaxy, backToSystem, openBody, openShip, 
     galaxy, fogOfWar, exploredSystemIds, setPage, 
-    setPlayerName, setPlayerAvatar, setOnboardingCompleted
+    setPlayerName, setPlayerAvatar
   } = app;
 
   const handleSelectSystem = useCallback(withLoading((id: string) => {
@@ -130,18 +136,7 @@ const Index = () => {
     }
   }), [withLoading, playClick, playAlert, openSystem, openShip, openBody, galaxy, fogOfWar, exploredSystemIds]);
 
-  const handleOnboardingComplete = (name: string, avatar: string, shipConfig: ShipConfiguration) => {
-    setPlayerName(name);
-    setPlayerAvatar(avatar);
-    app.setShipConfig(shipConfig);
-    setOnboardingCompleted(true);
-    setHasInteracted(true);
-    
-    // Resume Web Audio Context for Three.js Positional Audio
-    if (THREE.AudioContext.getContext().state === 'suspended') {
-      THREE.AudioContext.getContext().resume();
-    }
-  };
+
 
   const circles = useMemo(() => app.systemMatchesFilter, [app]);
 
@@ -149,7 +144,7 @@ const Index = () => {
   const [pageKey, setPageKey] = useState(0);
   const [scanning, setScanning] = useState(false);
   const prevPage = useRef(app.page);
-  const navigateTo = (page: "map" | "profile" | "articles" | "factories" | "fleets" | "party" | "skills", extra?: () => void) => {
+  const navigateTo = (page: "map" | "profile" | "articles" | "market" | "factories" | "fleets" | "party" | "skills", extra?: () => void) => {
     if (page === prevPage.current && !extra) return;
     setScanning(true);
     setTimeout(() => {
@@ -159,7 +154,8 @@ const Index = () => {
     }, 200);
   };
 
-  const isGameReady = (app.user || guestMode) && app.onboardingCompleted;
+  const isGameReady = !!app.user && !!app.vesselId;
+  const isInitialLoading = app.sessionLoading || (!app.initialDataLoaded && !!app.user);
 
   // Apply theme class to document root for global inheritance
   useEffect(() => {
@@ -194,6 +190,7 @@ const Index = () => {
           onOpenProfile={() => navigateTo("profile")}
           onOpenMap={() => navigateTo("map")}
           onOpenArticles={() => navigateTo("articles")}
+          onOpenMarket={() => navigateTo("market")}
           onOpenFactories={() => navigateTo("factories")}
           onOpenFleets={() => navigateTo("fleets")}
           onOpenParty={() => navigateTo("party")}
@@ -202,6 +199,8 @@ const Index = () => {
           onOpenCredits={() => setIsCreditsOpen(true)}
           ap={app.ap}
           sc={app.sc}
+          cargoCapacity={app.cargoCapacity}
+          cargoUsed={app.userResources.reduce((sum, r) => sum + r.amount, 0)}
           playerName={app.playerName}
           playerLevel={app.playerLevel}
           playerXP={app.playerXP}
@@ -222,6 +221,8 @@ const Index = () => {
           onPlayClick={playClick}
           isGameReady={isGameReady}
           shipName={app.shipConfig.name}
+          nextApTick={app.nextApTick}
+          onlinePlayerCount={app.onlinePlayerCount}
         />
       </div>
 
@@ -261,6 +262,7 @@ const Index = () => {
                     fxVolume={app.audioEnabled ? app.fxVolume : 0}
                     arrival={app.arrival}
                     otherPlayers={app.otherPlayers}
+                    userResidency={app.userResidency}
                   />
                 </Suspense>
               </div>
@@ -280,7 +282,7 @@ const Index = () => {
               <DataProcessingIndicator isBusy={isTransitioning} />
 
               <div className="absolute top-0 right-0 bottom-0 left-0 pointer-events-none z-[100]">
-                 <Sonner />
+                 <Sonner closeButton />
               </div>
 
               {/* HUD Overlay within Map (Bottom Controls) */}
@@ -363,6 +365,23 @@ const Index = () => {
                       travel={app.travel}
                       initiateTravelToBody={app.initiateTravelToBody}
                       currentTime={app.currentTime}
+                      factories={app.factories}
+                      bodyResources={app.bodyResources}
+                      userResources={app.userResources}
+                      currentJob={app.currentJob}
+                      onBuildFactory={app.buildFactory}
+                      onApplyForJob={app.applyForJob}
+                      onWorkJob={app.workJob}
+                      onLeaveJob={app.leaveJob}
+                      onCollect={app.collectFactory}
+                      onUpgrade={app.upgradeFactory}
+                      onSaveSettings={app.updateFactorySettings}
+                      userId={app.user?.id || null}
+                      userResidency={app.userResidency}
+                      residencyApplications={app.residencyApplications}
+                      onClaimResidency={app.claimResidency}
+                      bodyGovernance={app.bodyGovernance}
+                      onInitiateGovernance={app.initiateGovernance}
                     />
                 )}
                 {app.view === "ship" && (
@@ -381,6 +400,16 @@ const Index = () => {
           </>
           ) : app.page === "profile" ? (
             <ProfileView app={app} onPlayClick={playClick} />
+          ) : app.page === "party" ? (
+            <PartyView app={app} />
+          ) : app.page === "market" ? (
+            <MarketView app={app} onPlayClick={playClick} />
+          ) : app.page === "factories" ? (
+            <FactoriesView app={app} onPlayClick={playClick} />
+          ) : app.page === "fleets" ? (
+            <FleetsView app={app} onPlayClick={playClick} />
+          ) : app.page === "articles" ? (
+            <ArticlesView app={app} onPlayClick={playClick} />
           ) : app.page === "empire" ? (
             <EmpireView app={app} onPlayClick={playClick} />
           ) : (
@@ -390,25 +419,13 @@ const Index = () => {
                     <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 border-b border-primary/20 pb-10">
                      <div className="flex items-center gap-5">
                         <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg shadow-[0_0_20px_hsl(var(--primary)/0.1)]">
-                           {app.page === "articles" && <Newspaper size={32} className="text-primary" />}
-                           {app.page === "factories" && <Factory size={32} className="text-primary" />}
-                           {app.page === "fleets" && <Rocket size={32} className="text-primary" />}
-                           {app.page === "party" && <UsersIcon size={32} className="text-primary" />}
                            {app.page === "skills" && <Sparkles size={32} className="text-primary" />}
                         </div>
                         <div>
                            <h1 className="font-display text-2xl sm:text-4xl text-primary text-glow uppercase tracking-[0.2em]">
-                              {app.page === "articles" && "Communication Hub"}
-                              {app.page === "factories" && "Industrial Complex"}
-                              {app.page === "fleets" && "Strategic Command"}
-                              {app.page === "party" && "Political Center"}
                               {app.page === "skills" && "Neural Uplink"}
                            </h1>
                            <p className="font-mono-hud text-[10px] sm:text-xs text-muted-foreground uppercase tracking-[0.3em] mt-2">
-                              {app.page === "articles" && "Hegemony Information Service"}
-                              {app.page === "factories" && "Production & Supply Chain Management"}
-                              {app.page === "fleets" && "Fleet Deployment & Logistics"}
-                              {app.page === "party" && "Internal Relations & Governance"}
                               {app.page === "skills" && "Tier 4 Doctrine Training"}
                            </p>
                         </div>
@@ -424,167 +441,6 @@ const Index = () => {
 
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                      <div className="lg:col-span-2 space-y-8">
-                        {app.page === "articles" && (
-                          <div className="space-y-6">
-                            {[
-                              { title: "He-3 Output Record Reached", date: "3024.12.18", author: "Ministry of Industry", excerpt: "New extraction techniques at the Centauri Alpha hub have resulted in a 40% increase in fuel refinement efficiency.", category: "Economy" },
-                              { title: "Jump Gate Maintenance Scheduled", date: "3024.12.17", author: "Hegemony Transport", excerpt: "Fleet admirals warn of brief FTL delays as core stabilizers undergo bi-annual calibration.", category: "Logistics" },
-                              { title: "Economic Shift: SC Value Rises", date: "3024.12.15", author: "Central Bank", excerpt: "The Standard Credit has strengthened against local outer-rim currencies following the latest resource reports.", category: "Finance" },
-                              { title: "Sector 7 Border Tensions", date: "3024.12.12", author: "Imperial Intelligence", excerpt: "Unidentified signatures detected near the nebula rim. Border patrol presence increased in adjacent systems.", category: "Security" }
-                            ].map((article, i) => (
-                              <article key={i} className="hud-panel p-6 border border-primary/20 bg-primary/5 hover:bg-primary/10 transition-all cursor-pointer group">
-                                <div className="flex justify-between items-start mb-3">
-                                  <div className="flex items-center gap-3">
-                                    <span className="font-mono-hud text-[10px] text-primary/60">{article.date}</span>
-                                    <span className="px-1.5 py-0.5 bg-primary/10 text-primary font-mono-hud text-[8px] rounded border border-primary/20 uppercase">{article.category}</span>
-                                  </div>
-                                  <span className="font-mono-hud text-[10px] text-muted-foreground">{article.author}</span>
-                                </div>
-                                <h3 className="font-display text-lg text-primary group-hover:text-glow transition-all uppercase tracking-wider mb-2">{article.title}</h3>
-                                <p className="font-mono-hud text-xs text-muted-foreground leading-relaxed italic">"{article.excerpt}"</p>
-                                <div className="mt-4 flex items-center gap-2">
-                                  <div className="h-px flex-1 bg-primary/10" />
-                                  <span className="font-display text-[8px] text-primary tracking-[0.2em] uppercase opacity-60 group-hover:opacity-100 transition-opacity">Read Full Transmission</span>
-                                  <div className="h-px w-4 bg-primary/20" />
-                                </div>
-                              </article>
-                            ))}
-                          </div>
-                        )}
-
-                        {app.page === "factories" && (
-                          <div className="space-y-6">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                              <StatCard label="Total Output" value={142} unit="MT/H" icon={BarChart} color="primary" />
-                              <StatCard label="Efficiency" value={98} unit="%" icon={TrendingUp} color="success" />
-                              <StatCard label="Active Lines" value={12} unit="" icon={Zap} color="primary" />
-                            </div>
-                            <div className="hud-panel border border-primary/20 bg-primary/5 overflow-hidden">
-                              <div className="p-4 border-b border-primary/20 bg-primary/10 flex justify-between items-center">
-                                <h3 className="font-display text-xs uppercase tracking-widest text-primary">Active Facilities</h3>
-                                <button className="font-mono-hud text-[10px] text-primary hover:underline uppercase">Manage All</button>
-                              </div>
-                              <table className="w-full text-left border-collapse">
-                                <thead className="bg-primary/5">
-                                  <tr>
-                                    <th className="p-4 font-display text-[9px] uppercase tracking-widest text-muted-foreground">Facility</th>
-                                    <th className="p-4 font-display text-[9px] uppercase tracking-widest text-muted-foreground text-center">Load</th>
-                                    <th className="p-4 font-display text-[9px] uppercase tracking-widest text-muted-foreground text-center">Status</th>
-                                    <th className="p-4 font-display text-[9px] uppercase tracking-widest text-muted-foreground text-right">Yield</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="font-mono-hud text-[10px] uppercase">
-                                  {[
-                                    { name: "Centauri Mine Alpha", load: 85, status: "Active", yield: "4.2 He-3/h" },
-                                    { name: "Rigel Silicate Works", load: 0, status: "Idle", yield: "0.0 Si/h" },
-                                    { name: "Nebula Refinery IV", load: 92, status: "Active", yield: "12.8 Fuel/h" },
-                                    { name: "Sanctum Fabricator", load: 45, status: "Active", yield: "2.1 Units/h" }
-                                  ].map((facility, i) => (
-                                    <tr key={i} className="border-b border-primary/10 hover:bg-white/5 transition-colors group">
-                                      <td className="p-4 font-display text-[11px] text-primary group-hover:text-glow">{facility.name}</td>
-                                      <td className="p-4 text-center">
-                                        <div className="w-16 h-1 w-full bg-primary/10 rounded-full mx-auto overflow-hidden">
-                                          <div className="h-full bg-primary" style={{ width: `${facility.load}%` }} />
-                                        </div>
-                                      </td>
-                                      <td className={`p-4 text-center ${facility.status === "Active" ? "text-success" : "text-muted-foreground opacity-50"}`}>
-                                        {facility.status}
-                                      </td>
-                                      <td className="p-4 text-right text-primary/80">{facility.yield}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        )}
-
-                        {app.page === "fleets" && (
-                          <div className="space-y-6">
-                            <div className="flex justify-between items-center mb-4">
-                              <div className="space-y-1">
-                                <h3 className="font-display text-xs uppercase tracking-[0.2em] text-primary/60">Fleet Manifest</h3>
-                                <p className="font-mono-hud text-[8px] text-muted-foreground uppercase">Strategic Deployment & Vessel Customization</p>
-                              </div>
-                              <button 
-                                onClick={() => { playClick(); app.setPage("shipyard"); }}
-                                className="px-6 py-2.5 border-2 border-primary bg-primary/10 text-primary font-mono-hud text-[11px] uppercase tracking-[0.2em] hover:bg-primary hover:text-background transition-all shadow-[0_0_20px_hsl(var(--primary)/0.2)] flex items-center gap-2 group"
-                              >
-                                <Rocket size={14} className="group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform" />
-                                <span>Shipyard Registry</span>
-                              </button>
-                            </div>
-
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-                              {[
-                                { label: "Total Ships", val: "14" },
-                                { label: "Capital Ships", val: "2" },
-                                { label: "Escorts", val: "8" },
-                                { label: "Auxiliary", val: "4" }
-                              ].map(s => (
-                                <div key={s.label} className="hud-panel p-3 border border-primary/10 bg-primary/5 text-center">
-                                  <div className="text-xl font-display text-primary">{s.val}</div>
-                                  <div className="text-[8px] font-mono-hud text-muted-foreground uppercase mt-1">{s.label}</div>
-                                </div>
-                              ))}
-                            </div>
-                            
-                            <div className="space-y-4">
-                              {[
-                                { 
-                                  name: app.shipConfig.name.toUpperCase(), 
-                                  class: "Commander Flagship", 
-                                  status: app.travel ? "In Transit" : "Stationary", 
-                                  pos: app.galaxy.systemById[app.playerSystemId]?.name || "Deep Space", 
-                                  hull: 100, 
-                                  shield: 100 
-                                },
-                                { name: "HGV-02 SENTINEL", class: "Aegis-Class Defender", status: "Patrolling", pos: "Inner Ring", hull: 92, shield: 85 },
-                                { name: "HGV-08 BROADSWORD", class: "Hammer-Class Corvette", status: "Docked", pos: "Centauri Hub", hull: 100, shield: 100 }
-                              ].map((ship, i) => (
-                                <div key={i} className="hud-panel p-6 border border-primary/20 bg-primary/5 flex flex-col sm:flex-row items-center gap-6 group hover:border-primary/40 transition-all">
-                                  <div className="w-20 h-20 bg-primary/10 border border-primary/20 rounded flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-all">
-                                    <Rocket size={36} className="text-primary/40 group-hover:text-primary/60" />
-                                  </div>
-                                  <div className="flex-1 w-full">
-                                    <div className="flex justify-between items-start mb-4">
-                                      <div>
-                                        <h4 className="font-display text-lg text-primary tracking-widest group-hover:text-glow">{ship.name}</h4>
-                                        <p className="font-mono-hud text-[10px] text-muted-foreground uppercase">{ship.class}</p>
-                                      </div>
-                                      <span className="font-mono-hud text-[8px] bg-primary text-background px-2 py-0.5 rounded font-bold uppercase tracking-widest">{ship.status}</span>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-                                      <div className="space-y-2">
-                                        <div className="flex justify-between items-center text-[9px] font-mono-hud">
-                                          <span className="text-muted-foreground uppercase">Hull Integrity</span>
-                                          <span className="text-foreground">{ship.hull}%</span>
-                                        </div>
-                                        <div className="h-1 bg-primary/10 rounded-full overflow-hidden">
-                                          <div className="h-full bg-success" style={{ width: `${ship.hull}%` }} />
-                                        </div>
-                                      </div>
-                                      <div className="space-y-2">
-                                        <div className="flex justify-between items-center text-[9px] font-mono-hud">
-                                          <span className="text-muted-foreground uppercase">Shield Strength</span>
-                                          <span className="text-foreground">{ship.shield}%</span>
-                                        </div>
-                                        <div className="h-1 bg-primary/10 rounded-full overflow-hidden">
-                                          <div className="h-full bg-cyan-400" style={{ width: `${ship.shield}%` }} />
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <div className="mt-4 flex items-center justify-between">
-                                      <span className="font-mono-hud text-[9px] text-muted-foreground uppercase tracking-widest">Current Sector: <span className="text-primary">{ship.pos}</span></span>
-                                      <button className="px-3 py-1 bg-primary/10 border border-primary/20 text-primary font-mono-hud text-[9px] uppercase tracking-widest hover:bg-primary/20 transition-all">Open Helm</button>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
                         {app.page === "shipyard" && (
                           <div className="space-y-4 flex-1 flex flex-col min-h-0">
                             <div className="flex justify-between items-center mb-2 shrink-0">
@@ -679,67 +535,7 @@ const Index = () => {
                           </div>
                         )}
 
-                        {app.page === "party" && (
-                          <div className="space-y-6">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                              <div className="hud-panel p-6 border border-primary/20 bg-primary/5">
-                                <h3 className="font-display text-[10px] uppercase tracking-widest text-primary mb-6">Current Affiliation</h3>
-                                <div className="flex items-center gap-6 p-4 border border-primary/10 bg-primary/5 rounded">
-                                  <div className="w-16 h-16 bg-primary/20 border border-primary/30 rounded-full flex items-center justify-center">
-                                    <UsersIcon size={32} className="text-primary" />
-                                  </div>
-                                  <div>
-                                    <h4 className="font-display text-lg text-primary tracking-widest uppercase">Independent</h4>
-                                    <p className="font-mono-hud text-[10px] text-muted-foreground uppercase mt-1">Status: Unaffiliated</p>
-                                  </div>
-                                </div>
-                                <div className="mt-8 space-y-4">
-                                  <div className="flex justify-between items-center text-[10px] font-mono-hud">
-                                    <span className="text-muted-foreground uppercase">Political Favor</span>
-                                    <span className="text-primary">Neutral (0)</span>
-                                  </div>
-                                  <div className="h-1.5 bg-primary/10 rounded-full overflow-hidden">
-                                    <div className="h-full bg-primary" style={{ width: "50%" }} />
-                                  </div>
-                                </div>
-                              </div>
-                              
-                              <div className="hud-panel p-6 border border-primary/20 bg-primary/5">
-                                <h3 className="font-display text-[10px] uppercase tracking-widest text-primary mb-6">Council Decisions</h3>
-                                <div className="space-y-4">
-                                  {[
-                                    { vote: "Prop 382: Fuel Taxation", date: "3024.11.22", res: "Passed" },
-                                    { vote: "Prop 391: Sector 4 Relief", date: "3024.11.18", res: "Failed" }
-                                  ].map((v, i) => (
-                                    <div key={i} className="p-3 border border-primary/10 bg-primary/5 rounded flex justify-between items-center">
-                                      <div>
-                                        <div className="font-display text-[10px] text-foreground tracking-widest uppercase">{v.vote}</div>
-                                        <div className="font-mono-hud text-[8px] text-muted-foreground mt-1">{v.date}</div>
-                                      </div>
-                                      <span className={`font-mono-hud text-[8px] uppercase ${v.res === "Passed" ? "text-success" : "text-destructive"}`}>{v.res}</span>
-                                    </div>
-                                  ))}
-                                  <button className="w-full py-2 border border-primary/20 text-muted-foreground font-mono-hud text-[10px] uppercase tracking-widest hover:text-primary transition-all">View All Propositions</button>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="hud-panel p-12 border border-primary/20 bg-primary/5 text-center relative overflow-hidden group">
-                               <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,hsl(var(--primary)/0.03)_0%,transparent_70%)]" />
-                               <UsersIcon size={48} className="text-primary mx-auto mb-6 opacity-30 group-hover:scale-110 transition-transform duration-500" />
-                               <h3 className="font-display text-xl text-primary tracking-widest mb-4 uppercase">Political Influence Restricted</h3>
-                               <p className="font-mono-hud text-xs text-muted-foreground max-w-sm mx-auto uppercase leading-loose text-balance">
-                                 Membership in the Hegemony Strategic Council is currently by invitation only. 
-                                 Maintain a Level 20 command rating and 15,000+ favor for evaluation by the Inner Sanctum.
-                               </p>
-                               <div className="mt-8 flex justify-center gap-1 opacity-20">
-                                 {[...Array(8)].map((_, i) => <div key={i} className="w-8 h-1 bg-primary" />)}
-                               </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {!["articles", "factories", "fleets", "skills", "party"].includes(app.page) && (
+                        {!["skills", "shipyard"].includes(app.page) && (
                           <div className="hud-panel p-12 border border-primary/20 bg-primary/5 flex flex-col items-center justify-center text-center gap-6 relative overflow-hidden">
                              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,hsl(var(--primary)/0.05)_0%,transparent_70%)]" />
                              <div className="w-16 h-16 rounded-full border border-primary/40 flex items-center justify-center animate-pulse">
@@ -795,9 +591,9 @@ const Index = () => {
                               </div>
                            </div>
                         </div>
-                     </div>
                   </div>
-               </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -887,7 +683,7 @@ const Index = () => {
         )}
       </AnimatePresence>
 
-      <Sonner position="top-right" theme="dark" closeButton />
+      {app.page !== "map" && <Sonner position="top-right" theme="dark" closeButton />}
 
       {/* Mobile Tactical Panel Overlay */}
       {app.page === "map" && (
@@ -912,17 +708,16 @@ const Index = () => {
       {/* Screen Overlays */}
       <AnimatePresence>
         {/* Onboarding Screen - Overlay everything */}
-        {!app.onboardingCompleted && (guestMode || app.user) && (
+        {app.user && !app.vesselId && app.initialDataLoaded && (
           <motion.div 
             key="onboarding"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 1 }}
-            className="fixed inset-0 z-[200]"
+            className="fixed inset-0 z-[400]"
           >
             <CommanderOnboarding 
-              onComplete={handleOnboardingComplete} 
+              onComplete={app.completeOnboarding}
               playClick={playClick}
               playSuccess={playSuccess}
               playType={playType}
@@ -930,8 +725,9 @@ const Index = () => {
           </motion.div>
         )}
 
+
         {/* Authentication Screen - Priority 1 */}
-        {!app.user && !guestMode && !app.sessionLoading && (
+        {!app.user && !app.sessionLoading && (
           <motion.div 
             key="auth"
             initial={{ opacity: 0 }}
@@ -941,7 +737,7 @@ const Index = () => {
             className="fixed inset-0 z-[300]"
           >
             <AuthScreen 
-              onSuccess={() => setGuestMode(true)} 
+              onSuccess={() => {}} 
               playClick={playClick}
               playSuccess={playSuccess}
             />
@@ -949,7 +745,7 @@ const Index = () => {
         )}
 
         {/* Welcome Screen for returning users to unlock Audio Context */}
-        {app.onboardingCompleted && !hasInteracted && (
+        {app.user && !hasInteracted && (
           <motion.div 
             key="welcome"
             initial={{ opacity: 0 }}
@@ -1269,6 +1065,25 @@ function MobileHUD({
                 travel={app.travel}
                 initiateTravelToBody={app.initiateTravelToBody}
                 currentTime={app.currentTime}
+                factories={app.factories}
+                bodyResources={app.bodyResources}
+                userResources={app.userResources}
+                currentJob={app.currentJob}
+                onBuildFactory={app.buildFactory}
+                onApplyForJob={app.applyForJob}
+                onWorkJob={app.workJob}
+                onLeaveJob={app.leaveJob}
+                onCollect={app.collectFactory}
+                onUpgrade={app.upgradeFactory}
+                onSaveSettings={app.updateFactorySettings}
+                userId={app.user?.id || null}
+                userResidency={app.userResidency}
+                residencyApplications={app.residencyApplications}
+                onClaimResidency={app.claimResidency}
+                bodyGovernance={app.bodyGovernance}
+                onInitiateGovernance={app.initiateGovernance}
+                isExplored={!app.fogOfWar || app.exploredSystemIds.has(app.system.id)}
+                isVisited={app.exploredBodyIds.has(`${app.system.id}:${app.body.id}`)}
               />
             )}
             {app.view === "ship" && (
@@ -1324,323 +1139,6 @@ function MobileHUD({
   );
 }
 
-function ProfileView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: () => void }) {
-  const [activeTab, setActiveTab] = useState("Overview");
-  
-  const TABS = [
-    { label: "Overview", icon: UserIcon },
-    { label: "Assets", icon: Coins },
-    { label: "Reputation", icon: UsersIcon },
-    { label: "Logbook", icon: Newspaper },
-    { label: "Doctrines", icon: Sparkles },
-  ];
-
-  return (
-    <div className="flex-1 flex flex-col sm:flex-row bg-background/40 backdrop-blur-sm animate-fade-in overflow-hidden">
-      {/* Profile Sidebar */}
-      <aside className="w-full sm:w-[320px] border-b sm:border-b-0 sm:border-r border-primary/20 flex flex-col bg-primary/5 animate-in slide-in-from-left duration-500 shrink-0">
-        <div className="p-3 sm:p-6 border-b border-primary/20 flex flex-row sm:flex-col items-center justify-center sm:justify-start gap-4">
-          <div className="relative">
-            <div className="w-12 h-12 sm:w-24 sm:h-24 rounded-full border-2 sm:border-4 border-primary/30 overflow-hidden shadow-[0_0_20px_hsl(var(--primary)/0.2)]">
-              <img src={app.playerAvatar} alt="" className="w-full h-full object-cover" />
-            </div>
-            <div className="absolute -bottom-1 -right-1 sm:-bottom-2 sm:-right-2 bg-primary text-background font-display text-[10px] sm:text-lg px-1 sm:px-2 rounded border border-background">
-              {app.playerLevel}
-            </div>
-          </div>
-          <div className="flex flex-col text-left sm:text-center min-w-0">
-            <h2 className="font-display text-base sm:text-2xl text-primary text-glow uppercase tracking-[0.1em] truncate">{app.playerName}</h2>
-            <p className="font-mono-hud text-[8px] sm:text-[10px] text-muted-foreground uppercase tracking-[0.2em] sm:tracking-[0.3em] truncate">Commander</p>
-          </div>
-        </div>
-
-        <nav className="p-1 sm:p-2 flex flex-row sm:flex-col gap-1 overflow-x-auto sm:overflow-y-auto no-scrollbar">
-            {TABS.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.label}
-                  onClick={() => {
-                    setActiveTab(tab.label);
-                    onPlayClick();
-                  }}
-                  className={`flex items-center gap-1.5 sm:gap-3 px-2 sm:px-4 py-1.5 sm:py-3 rounded transition-all whitespace-nowrap ${
-                    activeTab === tab.label 
-                      ? "bg-primary/20 text-primary border border-primary/40 shadow-[inset_0_0_10px_hsl(var(--primary)/0.1)]" 
-                      : "text-muted-foreground hover:text-primary hover:bg-primary/5 border border-transparent"
-                  }`}
-                >
-                  <Icon size={14} className="sm:w-[18px] sm:h-[18px]" />
-                  <span className="font-display text-[10px] sm:text-sm uppercase tracking-widest">{tab.label}</span>
-                </button>
-              );
-            })}
-        </nav>
-      </aside>
-
-      {/* Profile Main Content Area */}
-      <main className="flex-1 flex flex-col overflow-hidden relative">
-        <div className="absolute inset-0 pointer-events-none scanline opacity-10" />
-        
-        <div className="flex-1 overflow-y-auto p-3 sm:p-10 custom-scrollbar relative z-10">
-          <div className="max-w-4xl mx-auto">
-            {activeTab === "Overview" && (
-              <div className="space-y-6 sm:space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                {/* Currency Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <StatCard label="Action Potential" value={Math.floor(app.ap)} unit="AP" icon={Zap} color="primary" />
-                  <StatCard label="Total Net Worth" value={Math.floor(app.sc).toLocaleString()} unit="SC" icon={Coins} color="warning" />
-                  <StatCard label="Void Tokens" value={0} unit="VT" icon={Hexagon} color="purple" />
-                </div>
-
-                {/* Exploration Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <StatCard label="Systems Discovered" value={app.exploredSystemIds.size} unit="SYS" icon={Globe} color="success" />
-                  <StatCard label="Active Fleets" value={14} unit="FLT" icon={Rocket} color="primary" />
-                </div>
-
-                {/* Status Snapshot */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <div className="hud-panel p-6 border border-primary/20 bg-primary/5">
-                    <div className="flex items-center gap-3 mb-6">
-                      <Shield className="text-primary" size={20} />
-                      <h3 className="font-display text-xs uppercase tracking-[0.2em] text-primary">Current Status</h3>
-                    </div>
-                    <div className="space-y-4">
-                      <div className="flex justify-between items-center bg-background/20 p-3 rounded">
-                        <span className="font-mono-hud text-[10px] text-muted-foreground uppercase">Hegemony Status</span>
-                        <span className="font-display text-[10px] text-success uppercase tracking-widest px-2 py-0.5 border border-success/40 rounded">Active Service</span>
-                      </div>
-                      <div className="flex justify-between items-center bg-background/20 p-3 rounded">
-                        <span className="font-mono-hud text-[10px] text-muted-foreground uppercase">Bounty Priority</span>
-                        <span className="font-display text-[10px] text-primary uppercase tracking-widest px-2 py-0.5 border border-primary/40 rounded">None</span>
-                      </div>
-                      <div className="flex justify-between items-center bg-background/20 p-3 rounded">
-                        <span className="font-mono-hud text-[10px] text-muted-foreground uppercase">Next Requisition</span>
-                        <span className="font-display text-[10px] text-warning uppercase">24h 12m 04s</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="hud-panel p-6 border border-primary/20 bg-primary/5">
-                    <div className="flex items-center gap-3 mb-6">
-                      <TrendingUp className="text-primary" size={20} />
-                      <h3 className="font-display text-xs uppercase tracking-[0.2em] text-primary">Performance</h3>
-                    </div>
-                    <div className="h-24 flex items-end justify-between gap-1">
-                      {[40, 20, 60, 80, 45, 90, 100].map((h, i) => (
-                        <div 
-                          key={i} 
-                          className="flex-1 bg-primary/20 relative group"
-                          style={{ height: `${h}%` }}
-                        >
-                          <div className="absolute inset-0 bg-primary opacity-0 group-hover:opacity-40 transition-opacity" />
-                          <div className="absolute bottom-full left-0 right-0 mb-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <span className="font-mono-hud text-[6px] text-primary text-center block">{h}%</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex justify-between mt-2">
-                       <span className="font-mono-hud text-[6px] text-muted-foreground uppercase">Projected Output</span>
-                       <span className="font-mono-hud text-[6px] text-success uppercase">+12.4% Weekly</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Career Timeline Mock */}
-                <section className="space-y-6">
-                  <div className="flex items-center gap-4">
-                    <div className="h-px flex-1 bg-primary/20" />
-                    <h3 className="font-display text-sm uppercase tracking-[0.3em] text-primary/60">Recent Activity</h3>
-                    <div className="h-px flex-1 bg-primary/20" />
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <LogEntry date="3024.12.01" event="Commissioned as Hegemony Commander" type="milestone" />
-                    <LogEntry date="3024.12.05" event="First jump to Alpha Centauri completed" type="flight" />
-                    <LogEntry date="3024.12.12" event="Achieved Level 5 Command Rating" type="milestone" />
-                  </div>
-                </section>
-              </div>
-            )}
-
-            {activeTab === "Assets" && (
-              <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="flex items-center justify-between border-b border-primary/20 pb-4">
-                  <div>
-                    <h3 className="font-display text-lg uppercase tracking-widest text-primary">Managed Assets</h3>
-                    <p className="font-mono-hud text-[10px] text-muted-foreground uppercase mt-1">Ships, Factories & Holdings</p>
-                  </div>
-                  <div className="text-right">
-                    <span className="font-mono-hud text-[10px] text-muted-foreground uppercase block">Available Liquidity</span>
-                    <span className="font-display text-xl text-warning text-glow">{Math.floor(app.sc).toLocaleString()} SC</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="hud-panel p-4 border border-primary/10 bg-primary/5 group hover:border-primary/40 transition-all">
-                    <div className="flex items-center gap-3 mb-4">
-                      <Rocket size={20} className="text-primary" />
-                      <span className="font-display text-xs uppercase tracking-widest">HGV-01 "Vanguard"</span>
-                      <span className="ml-auto font-mono-hud text-[8px] px-2 py-0.5 bg-success/20 text-success rounded">OPERATIONAL</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-[9px] font-mono-hud uppercase text-muted-foreground">
-                      <span>Type: Fast Explorer</span>
-                      <span>Hulls: 100%</span>
-                      <span>FTL Drive: Mk II</span>
-                      <span>Fuel: 84%</span>
-                    </div>
-                  </div>
-                  
-                  <div className="hud-panel p-4 border border-primary/10 bg-primary/5 group hover:border-primary/40 transition-all opacity-50">
-                    <div className="flex items-center gap-3 mb-4 text-muted-foreground">
-                      <Anchor size={20} />
-                      <span className="font-display text-xs uppercase tracking-widest">Mining Outpost Alpha</span>
-                      <span className="ml-auto font-mono-hud text-[8px] px-2 py-0.5 bg-destructive/20 text-destructive rounded">OFFLINE</span>
-                    </div>
-                    <p className="text-[8px] font-mono-hud text-center italic text-muted-foreground/60">Establish ownership to activate asset telemetry</p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeTab === "Reputation" && (
-              <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-primary/10 border border-primary/20 rounded">
-                    <Award size={24} className="text-primary" />
-                  </div>
-                  <div>
-                    <h3 className="font-display text-lg uppercase tracking-widest text-primary">Faction Standing</h3>
-                    <p className="font-mono-hud text-[10px] text-muted-foreground uppercase mt-1">Diplomatic Influence Matrix</p>
-                  </div>
-                </div>
-
-                <div className="space-y-6">
-                  {[
-                    { name: "Hegemony High Command", value: 85, color: "text-primary" },
-                    { name: "Independent Outer Rim", value: 12, color: "text-warning" },
-                    { name: "Corporate Syndicate", value: 45, color: "text-success" },
-                    { name: "Lost Colonies Envoy", value: -20, color: "text-destructive" },
-                  ].map((f) => (
-                    <div key={f.name} className="space-y-2">
-                      <div className="flex justify-between items-center text-[10px] font-display uppercase tracking-widest">
-                        <span className={f.color}>{f.name}</span>
-                        <span>{f.value > 0 ? "+" : ""}{f.value}</span>
-                      </div>
-                      <div className="h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/10">
-                        <div 
-                          className={`h-full opacity-60 ${f.value > 0 ? "bg-primary" : "bg-destructive"}`}
-                          style={{ 
-                            width: `${Math.abs(f.value)}%`,
-                            marginLeft: f.value < 0 ? `${100 - Math.abs(f.value)}%` : "0"
-                          }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {activeTab === "Logbook" && (
-              <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="flex items-center justify-between border-b border-primary/20 pb-4">
-                  <div className="flex items-center gap-3">
-                    <History size={20} className="text-primary" />
-                    <h3 className="font-display text-lg uppercase tracking-widest text-primary">Chronological Registry</h3>
-                  </div>
-                  <span className="font-mono-hud text-[8px] text-muted-foreground uppercase">Archives: 3024.12.01 - Present</span>
-                </div>
-
-                <div className="space-y-8 relative">
-                   <div className="absolute left-[70px] sm:left-[84px] top-4 bottom-4 w-px bg-primary/10" />
-                   {[
-                     { date: "3024.12.15", title: "Anomaly Detected", desc: "Scientific scans in the Veil sector returned unusual hyper-spatial echoes.", type: "intel" },
-                     { date: "3024.12.12", title: "Rank Promotion", desc: "Command Rating increased to Level 5. Basic orbital strike clearance granted.", type: "rank" },
-                     { date: "3024.12.05", title: "Expansion Milestone", desc: "Confirmed landing on New Terra. Atmospheric sensors nominal.", type: "discovery" },
-                     { date: "3024.12.01", title: "Deployment Active", desc: "Initialized neural uplink for Starbound Hegemony Fleet Operations.", type: "system" },
-                   ].map((entry, i) => (
-                     <div key={i} className="flex gap-4 sm:gap-8 items-start relative group">
-                        <div className="font-mono-hud text-[8px] sm:text-[10px] text-primary/40 pt-1 w-14 sm:w-20 shrink-0 text-right">{entry.date}</div>
-                        <div className="w-2 h-2 rounded-full bg-primary/40 group-hover:bg-primary transition-colors mt-1.5 shrink-0 z-10" />
-                        <div className="flex-1 bg-primary/5 border border-primary/10 p-4 rounded-lg group-hover:border-primary/30 transition-all">
-                           <div className="flex justify-between items-center mb-1">
-                              <h4 className="font-display text-xs uppercase tracking-widest text-primary">{entry.title}</h4>
-                              <span className="text-[7px] font-mono-hud px-1.5 py-0.5 bg-primary/10 text-primary/60 rounded">{entry.type}</span>
-                           </div>
-                           <p className="text-[9px] font-mono-hud text-muted-foreground leading-relaxed">{entry.desc}</p>
-                        </div>
-                     </div>
-                   ))}
-                </div>
-              </div>
-            )}
-
-            {activeTab === "Doctrines" && (
-              <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-primary/20 pb-6">
-                  <div className="flex items-center gap-3">
-                    <Sparkles size={28} className="text-primary animate-pulse" />
-                    <div>
-                      <h3 className="font-display text-lg uppercase tracking-widest text-primary">Neural Doctrines</h3>
-                      <p className="font-mono-hud text-[10px] text-muted-foreground uppercase mt-1">Unlockable Expertise & Tactics</p>
-                    </div>
-                  </div>
-                  <div className="px-3 py-1.5 bg-primary border border-primary/40 text-background rounded font-mono-hud text-[10px] font-bold tracking-widest">
-                    Available Credits: 2
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {[
-                    { name: "Hyper-Efficiency", cost: 1, desc: "Reduces fuel consumption by 15% when jumping between adjacent systems.", active: true, icon: Zap },
-                    { name: "Market Dominance", cost: 2, desc: "Sell ores at a 10% premium in Hegemony controlled sectors.", active: false, icon: TrendingUp },
-                    { name: "Deep Scans", cost: 1, desc: "Increases exploration rewards and anomaly detection radius by 25%.", active: true, icon: Globe },
-                    { name: "Combat Stance", cost: 3, desc: "Unlocks offensive drone capability for planetary extraction protection.", active: false, icon: Shield },
-                  ].map((node) => {
-                    const Icon = node.icon;
-                    return (
-                      <button 
-                      key={node.name}
-                      className={`hud-panel p-4 border flex items-start gap-4 text-left transition-all relative overflow-hidden ${
-                        node.active 
-                          ? "bg-primary/10 border-primary/40 shadow-[inset_0_0_15px_rgba(16,185,129,0.1)]" 
-                          : "bg-white/5 border-white/10 opacity-60 hover:opacity-100 hover:border-white/30"
-                      }`}
-                    >
-                      <div className={`p-2 rounded ${node.active ? "bg-primary text-background" : "bg-white/10 text-muted-foreground"}`}>
-                          <Icon size={18} />
-                      </div>
-                      <div className="flex flex-col gap-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className={`font-display text-[10px] uppercase tracking-widest ${node.active ? "text-primary" : "text-foreground"}`}>
-                            {node.name}
-                          </span>
-                          {!node.active && <span className="font-mono-hud text-[8px] text-warning shrink-0">{node.cost} SP</span>}
-                        </div>
-                        <p className="font-mono-hud text-[9px] text-muted-foreground leading-snug line-clamp-2">
-                          {node.desc}
-                        </p>
-                      </div>
-                      {node.active && (
-                        <div className="absolute -top-1 -right-1 bg-primary px-2 py-0.5 transform rotate-1 text-[6px] font-bold font-mono-hud uppercase tracking-widest">
-                          Active
-                        </div>
-                      )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </main>
-    </div>
-  );
-}
 
 
 function EmpireLogo({ empire, size = 120 }: { empire: Empire; size?: number }) {
@@ -1653,7 +1151,7 @@ function EmpireLogo({ empire, size = 120 }: { empire: Empire; size?: number }) {
        {/* Background Hexagon with Pattern */}
        <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)]">
           <defs>
-            <pattern id={`pattern-${empire.id}`} patternUnits="userSpaceOnUse" width="10" height="10">
+            <pattern id={`pattern-${empire.id.replace(/:/g, '-')}`} patternUnits="userSpaceOnUse" width="10" height="10">
                {empire.logo.pattern === 'grid' && <path d="M 10 0 L 0 0 0 10" fill="none" stroke={primaryColor} strokeWidth="0.5" opacity="0.3" />}
                {empire.logo.pattern === 'dots' && <circle cx="2" cy="2" r="1" fill={primaryColor} opacity="0.3" />}
                {empire.logo.pattern === 'waves' && <path d="M 0 5 Q 2.5 0 5 5 T 10 5" fill="none" stroke={primaryColor} strokeWidth="0.5" opacity="0.3" />}
@@ -1663,7 +1161,7 @@ function EmpireLogo({ empire, size = 120 }: { empire: Empire; size?: number }) {
           </defs>
           <path 
             d="M50 5 L90 27.5 L90 72.5 L50 95 L10 72.5 L10 27.5 Z" 
-            fill={`url(#pattern-${empire.id})`}
+            fill={`url(#pattern-${empire.id.replace(/:/g, '-')})`}
             className="transition-all duration-700"
           />
           <path 
@@ -1861,12 +1359,53 @@ function CouncilHemicycle({ empire }: { empire: Empire }) {
 }
 
 function EmpireView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: () => void }) {
-  const empire = app.galaxy.empires.find(e => e.id === app.selectedEmpireId);
+  const [activeTab, setActiveTab] = useState<"overview" | "parliament" | "government" | "laws" | "diplomacy">("overview");
+  const [newEmpireName, setNewEmpireName] = useState("");
+  const [newEmpireTag, setNewEmpireTag] = useState("");
+  let empire = app.galaxy.empires.find(e => e.id === app.selectedEmpireId);
+  if (!empire) {
+    empire = app.playerEmpires.find(e => e.id === app.selectedEmpireId);
+  }
+
+  // Handle provisional body-based governments
+  const bodyId = app.selectedEmpireId;
+  const gov = bodyId ? app.bodyGovernance[bodyId] : null;
+  
+  if (!empire && gov && gov.status === 'governed') {
+    const body = app.galaxy.bodyById[bodyId!];
+    empire = {
+      id: bodyId!,
+      name: (body?.name || "Unknown") + " Provisional Authority",
+      tag: "PROV",
+      hue: 200,
+      logo: { symbol: 'Shield', pattern: 'grid', secondaryHue: 20 },
+      government: { 
+        type: 'Provisional Council', 
+        president: null, 
+        vicePresident: null, 
+        ministers: [], 
+        council: { totalSeats: 20, factions: [], seats: [] } 
+      }
+    } as any as Empire;
+  }
+
   if (!empire) return <div className="p-20 text-center text-primary font-display uppercase tracking-widest animate-pulse">Sovereign Data Encrypted</div>;
 
   const systemsOwned = app.galaxy.systems.filter(s => s.bodies.some(b => b.ownerId === empire.id));
   const bodiesOwned = app.galaxy.systems.flatMap(s => s.bodies).filter(b => b.ownerId === empire.id);
   const totalPop = bodiesOwned.reduce((sum, b) => sum + b.population, 0);
+
+  const activeElection = app.activeElections.find(e => e.stateId === empire.id);
+  const hasVoted = app.userVotes.some(v => v.electionId === activeElection?.id);
+  const empireData = app.playerEmpiresFull.find(e => e.id === empire.id);
+  const empirePhase = empireData?.phase ?? 'active';
+  const isLeader = empireData?.leaderId === app.user?.id;
+  const activeElectionCandidates = app.electionCandidates.filter(c => c.electionId === activeElection?.id);
+  const myElectionBallot = activeElection ? app.electionBallots[activeElection.id] : null;
+  const empireMinsters = app.ministerialAssignments.filter(m => m.empireId === empire.id);
+  const MINISTERIAL_ROLES = ['Minister of Finance', 'Minister of Defense', 'Minister of Foreign Affairs', 'Minister of Justice', 'Minister of Industry'];
+  const electionTimeLeft = activeElection ? Math.max(0, new Date(activeElection.endTime).getTime() - Date.now()) : 0;
+  const electionExpired = activeElection && electionTimeLeft <= 0;
 
   return (
     <div className="flex-1 flex flex-col bg-background/40 backdrop-blur-sm animate-fade-in overflow-hidden relative">
@@ -1897,108 +1436,136 @@ function EmpireView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: () => v
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar">
-        <div className="max-w-6xl mx-auto space-y-12">
-          {/* Key Stats */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <StatCard label="Territorial Systems" value={systemsOwned.length} unit="SYS" icon={Globe} />
-            <StatCard label="Managed Bodies" value={bodiesOwned.length} unit="BOD" icon={Cpu} color="success" />
-            <StatCard label="Gross Population" value={totalPop.toFixed(1)} unit="M" icon={UsersIcon} color="warning" />
-            <StatCard label="Industrial Rating" value={(bodiesOwned.length * 1.4).toFixed(1)} unit="IDX" icon={Factory} color="primary" />
-          </div>
+      {/* Tabs */}
+      <div className="px-6 border-b border-primary/20 bg-background/20 flex gap-1 overflow-x-auto no-scrollbar">
+        {[
+          { id: 'overview', label: 'State Overview', icon: LayoutGrid },
+          { id: 'parliament', label: 'Parliament', icon: Scale },
+          { id: 'government', label: 'Cabinet', icon: Crown },
+          { id: 'laws', label: 'Legislation', icon: BookOpen },
+          { id: 'diplomacy', label: 'Diplomacy', icon: Globe },
+        ].map(tab => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`flex items-center gap-2 px-6 py-4 font-display text-[10px] uppercase tracking-widest transition-all border-b-2 ${
+                activeTab === tab.id 
+                  ? 'border-primary text-primary bg-primary/5' 
+                  : 'border-transparent text-muted-foreground hover:text-primary hover:bg-primary/5'
+              }`}
+            >
+              <Icon size={14} />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Intel Section */}
-            <div className="lg:col-span-2 space-y-8">
-               {/* Government / Council Section */}
-               <div className="hud-panel p-8 border border-primary/20 bg-primary/5 relative overflow-hidden">
-                  <h3 className="font-display text-sm uppercase tracking-[0.3em] text-primary mb-10 flex items-center gap-2">
-                    <Scale size={16} />
-                    High Council Representation
-                  </h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
-                    <div className="space-y-6">
-                      <CouncilHemicycle empire={empire} />
-                      <div className="flex flex-wrap justify-center gap-4">
-                        {empire.government.council.factions.map(f => {
-                          const outerCount = empire.government.council.seats.filter(s => s.factionId === f.id && !!s.occupantName).length;
-                          const innerCount = [
-                            empire.government.president,
-                            empire.government.vicePresident,
-                            ...empire.government.ministers
-                          ].filter(m => m && m.party === f.name).length;
-                          const actualCount = outerCount + innerCount;
-                          
-                          if (actualCount === 0) return null;
-                          
-                          return (
-                            <div key={f.id} className="flex items-center gap-2">
-                              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: f.color }} />
-                              <span className="font-mono-hud text-[8px] uppercase text-muted-foreground">{f.name} ({actualCount})</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    
-                    <div className="space-y-6">
-                      <div className="p-4 border border-primary/10 bg-background/20 rounded space-y-4">
-                        <div className="flex items-center gap-3">
-                          <div className={`p-2 rounded ${empire.government.president ? 'bg-primary/20 text-primary' : 'bg-white/5 text-muted-foreground'}`}>
-                            {empire.government.type.includes("monarchy") || empire.government.type.includes("Dictator") ? <ShieldAlert size={18} /> : <Crown size={18} />}
-                          </div>
-                          <div>
-                            <div className="text-[10px] font-mono-hud text-primary uppercase tracking-widest">
-                              {empire.government.type.includes("Dictator") || empire.government.type.includes("party") || empire.government.type.includes("monarchy") ? "Head of State" : "President"}
-                            </div>
-                            <div className={`text-sm font-display uppercase tracking-widest ${!empire.government.president && 'opacity-30'}`}>
-                              {empire.government.president?.name || "VACANT"}
-                            </div>
-                            {empire.government.president && (
-                              <div className="text-[8px] font-mono-hud text-muted-foreground uppercase">{empire.government.president.party}</div>
-                            )}
+      <div className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar relative z-10">
+        <div className="max-w-6xl mx-auto">
+          {activeTab === "overview" && (
+            <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              {/* Key Stats */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <StatCard label="Territorial Systems" value={systemsOwned.length} unit="SYS" icon={Globe} />
+                <StatCard label="Managed Bodies" value={bodiesOwned.length} unit="BOD" icon={Cpu} color="success" />
+                <StatCard label="Gross Population" value={totalPop.toFixed(1)} unit="M" icon={UsersIcon} color="warning" />
+                <StatCard label="Industrial Rating" value={(bodiesOwned.length * 1.4).toFixed(1)} unit="IDX" icon={Factory} color="primary" />
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Intel Section */}
+                <div className="lg:col-span-2 space-y-8">
+                   {/* Government / Council Section */}
+                   <div className="hud-panel p-8 border border-primary/20 bg-primary/5 relative overflow-hidden">
+                      <h3 className="font-display text-sm uppercase tracking-[0.3em] text-primary mb-10 flex items-center gap-2">
+                        <Scale size={16} />
+                        High Council Representation
+                      </h3>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+                        <div className="space-y-6">
+                          <CouncilHemicycle empire={empire} />
+                          <div className="flex flex-wrap justify-center gap-4">
+                            {empire.government.council.factions.map(f => {
+                              const outerCount = empire.government.council.seats.filter(s => s.factionId === f.id && !!s.occupantName).length;
+                              const innerCount = [
+                                empire.government.president,
+                                empire.government.vicePresident,
+                                ...empire.government.ministers
+                              ].filter(m => m && m.party === f.name).length;
+                              const actualCount = outerCount + innerCount;
+                              
+                              if (actualCount === 0) return null;
+                              
+                              return (
+                                <div key={f.id} className="flex items-center gap-2">
+                                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: f.color }} />
+                                  <span className="font-mono-hud text-[8px] uppercase text-muted-foreground">{f.name} ({actualCount})</span>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                         
-                        <div className="flex items-center gap-3">
-                          <div className={`p-2 rounded ${empire.government.vicePresident ? 'bg-primary/10 text-primary/70' : 'bg-white/5 text-muted-foreground'}`}>
-                            <UsersIcon size={18} />
-                          </div>
-                          <div>
-                            <div className="text-[10px] font-mono-hud text-primary/70 uppercase tracking-widest">Vice President</div>
-                            <div className={`text-sm font-display uppercase tracking-widest ${!empire.government.vicePresident && 'opacity-30'}`}>
-                              {empire.government.vicePresident?.name || "VACANT"}
+                        <div className="space-y-6">
+                          <div className="p-4 border border-primary/10 bg-background/20 rounded space-y-4">
+                            <div className="flex items-center gap-3">
+                              <div className={`p-2 rounded ${empire.government.president ? 'bg-primary/20 text-primary' : 'bg-white/5 text-muted-foreground'}`}>
+                                {empire.government.type.includes("monarchy") || empire.government.type.includes("Dictator") ? <ShieldAlert size={18} /> : <Crown size={18} />}
+                              </div>
+                              <div>
+                                <div className="text-[10px] font-mono-hud text-primary uppercase tracking-widest">
+                                  {empire.government.type.includes("Dictator") || empire.government.type.includes("party") || empire.government.type.includes("monarchy") ? "Head of State" : "President"}
+                                </div>
+                                <div className={`text-sm font-display uppercase tracking-widest ${!empire.government.president && 'opacity-30'}`}>
+                                  {empire.government.president?.name || "VACANT"}
+                                </div>
+                                {empire.government.president && (
+                                  <div className="text-[8px] font-mono-hud text-muted-foreground uppercase">{empire.government.president.party}</div>
+                                )}
+                              </div>
                             </div>
-                            {empire.government.vicePresident && (
-                              <div className="text-[8px] font-mono-hud text-muted-foreground uppercase">{empire.government.vicePresident.party}</div>
-                            )}
+                            
+                            <div className="flex items-center gap-3">
+                              <div className={`p-2 rounded ${empire.government.vicePresident ? 'bg-primary/10 text-primary/70' : 'bg-white/5 text-muted-foreground'}`}>
+                                <UsersIcon size={18} />
+                              </div>
+                              <div>
+                                <div className="text-[10px] font-mono-hud text-primary/70 uppercase tracking-widest">Vice President</div>
+                                <div className={`text-sm font-display uppercase tracking-widest ${!empire.government.vicePresident && 'opacity-30'}`}>
+                                  {empire.government.vicePresident?.name || "VACANT"}
+                                </div>
+                                {empire.government.vicePresident && (
+                                  <div className="text-[8px] font-mono-hud text-muted-foreground uppercase">{empire.government.vicePresident.party}</div>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </div>
+                      
+                      <div className="mt-12 pt-8 border-t border-primary/10">
+                        <h4 className="text-[10px] font-mono-hud text-primary/40 uppercase tracking-[0.4em] mb-6">Cabinet Ministers</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {empire.government.ministers.map((m, i) => {
+                            const partyColor = empire.government.council.factions.find(f => f.name === m.party)?.color || "hsl(var(--primary) / 0.4)";
+                            return (
+                              <div key={i} className="flex items-center gap-3 p-3 border border-primary/5 bg-white/5 rounded">
+                                <div className="w-3 h-3 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.5)] shrink-0" style={{ backgroundColor: partyColor }} />
+                                <div className="min-w-0">
+                                  <div className="text-[8px] font-mono-hud text-primary/60 uppercase truncate">{m.role}</div>
+                                  <div className="text-[10px] font-display uppercase truncate">{m.name}</div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  
-                  <div className="mt-12 pt-8 border-t border-primary/10">
-                    <h4 className="text-[10px] font-mono-hud text-primary/40 uppercase tracking-[0.4em] mb-6">Cabinet Ministers</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {empire.government.ministers.map((m, i) => {
-                        const partyColor = empire.government.council.factions.find(f => f.name === m.party)?.color || "hsl(var(--primary) / 0.4)";
-                        return (
-                          <div key={i} className="flex items-center gap-3 p-3 border border-primary/5 bg-white/5 rounded">
-                            <div className="w-3 h-3 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.5)] shrink-0" style={{ backgroundColor: partyColor }} />
-                            <div className="min-w-0">
-                              <div className="text-[8px] font-mono-hud text-primary/60 uppercase truncate">{m.role}</div>
-                              <div className="text-[10px] font-display uppercase truncate">{m.name}</div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-               </div>
-
-               <div className="hud-panel p-8 border border-primary/20 bg-primary/5 relative overflow-hidden">
+                <div className="hud-panel p-8 border border-primary/20 bg-primary/5 relative overflow-hidden">
                   <div className="absolute top-0 right-0 p-2 opacity-10">
                     <History size={120} className="text-primary" />
                   </div>
@@ -2078,8 +1645,501 @@ function EmpireView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: () => v
                   Note: Access to full strategic dossiers requires Level 10 Hegemony clearance.
                 </p>
               </div>
+              </div>
             </div>
           </div>
+        )}
+
+          {activeTab === "parliament" && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="hud-panel p-8 border border-primary/20 bg-primary/5">
+                <h3 className="font-display text-sm uppercase tracking-[0.3em] text-primary mb-10 flex items-center gap-2">
+                  <Scale size={16} />
+                  State Council & Parliamentary Distribution
+                </h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+                  <div className="space-y-6">
+                    <CouncilHemicycle empire={empire} />
+                  </div>
+                  <div className="space-y-6">
+                     <div className="bg-background/40 p-6 rounded border border-primary/10">
+                        <div className="text-[10px] font-mono-hud text-primary uppercase tracking-[0.2em] mb-4">Legislative Composition</div>
+                        <div className="space-y-4">
+                           {empire.government.council.factions.map(f => {
+                             const seats = empire.government.council.seats.filter(s => s.factionId === f.id && !!s.occupantName).length;
+                             const percent = (seats / empire.government.council.totalSeats) * 100;
+                             return (
+                               <div key={f.id} className="space-y-2">
+                                 <div className="flex justify-between text-[10px] font-mono-hud uppercase">
+                                    <span className="text-muted-foreground">{f.name}</span>
+                                    <span className="text-foreground">{seats} Seats ({percent.toFixed(0)}%)</span>
+                                 </div>
+                                 <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                                    <div className="h-full shadow-[0_0_8px_rgba(0,0,0,0.5)]" style={{ backgroundColor: f.color, width: `${percent}%` }} />
+                                 </div>
+                               </div>
+                             );
+                           })}
+                        </div>
+                     </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="hud-panel p-8 border border-primary/20 bg-primary/5">
+                <div className="flex items-center justify-between mb-8">
+                  <h3 className="font-display text-sm uppercase tracking-[0.3em] text-primary flex items-center gap-2">
+                    <UsersIcon size={16} />
+                    Active Election Cycle
+                  </h3>
+                  {activeElection && (
+                    <div className="flex items-center gap-2 px-3 py-1 bg-success/10 border border-success/20 rounded">
+                       <div className="w-1.5 h-1.5 bg-success rounded-full animate-pulse" />
+                       <span className="text-[9px] font-mono-hud text-success uppercase tracking-widest">
+                         {activeElection.electionType === 'parliamentary' ? 'Primary Election Live' : 'Leader Election Live'}
+                       </span>
+                    </div>
+                  )}
+                </div>
+
+                {activeElection ? (
+                  <div className="space-y-8">
+                    {/* Phase banner */}
+                    <div className={`p-4 rounded border text-center ${activeElection.electionType === 'parliamentary' ? 'bg-primary/10 border-primary/20' : 'bg-warning/10 border-warning/20'}`}>
+                      <div className="text-[8px] font-mono-hud uppercase tracking-widest text-muted-foreground mb-1">
+                        {activeElection.electionType === 'parliamentary' ? 'Phase 1 of 2' : 'Phase 2 of 2'}
+                      </div>
+                      <div className={`text-sm font-display uppercase tracking-widest ${activeElection.electionType === 'parliamentary' ? 'text-primary' : 'text-warning'}`}>
+                        {activeElection.electionType === 'parliamentary' ? 'Primary Parliamentary Election' : 'Head of State Election'}
+                      </div>
+                      <div className="text-[9px] font-mono-hud text-muted-foreground mt-2">
+                        {activeElection.electionType === 'parliamentary'
+                          ? 'Parties compete for council seats. Register your party and invite residents to vote.'
+                          : 'Nominate yourself and campaign for Head of State. The top vote-getter wins.'}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                       <div className="p-4 bg-background/20 border border-primary/10 rounded">
+                          <div className="text-[8px] font-mono-hud text-muted-foreground uppercase mb-1">Election Type</div>
+                          <div className="text-xs font-display text-primary uppercase tracking-widest">{activeElection.electionType === 'parliamentary' ? 'Primary' : 'Presidential'}</div>
+                       </div>
+                       <div className="p-4 bg-background/20 border border-primary/10 rounded">
+                          <div className="text-[8px] font-mono-hud text-muted-foreground uppercase mb-1">Time Remaining</div>
+                          <div className="text-xs font-display text-warning uppercase tracking-widest">
+                            {electionExpired ? 'Elapsed — Awaiting resolution' : (Math.floor(electionTimeLeft / 3600000) + 'h ' + Math.floor((electionTimeLeft % 3600000) / 60000) + 'm')}
+                          </div>
+                       </div>
+                       <div className="p-4 bg-background/20 border border-primary/10 rounded">
+                          <div className="text-[8px] font-mono-hud text-muted-foreground uppercase mb-1">Your Status</div>
+                          <div className={`text-xs font-display uppercase tracking-widest ${myElectionBallot ? 'text-success' : 'text-destructive'}`}>
+                            {myElectionBallot ? 'Ballot Cast' : 'No Vote Registered'}
+                          </div>
+                       </div>
+                    </div>
+
+                    {/* Candidates / voting */}
+                    {activeElection.electionType === 'parliamentary' ? (
+                      <div className="space-y-6">
+                        <div className="h-px bg-primary/10 w-full" />
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-[10px] font-mono-hud text-primary/60 uppercase tracking-[0.3em]">Registered Parties</h4>
+                          <div className="flex gap-4">
+                            {electionExpired && (
+                              <button onClick={() => app.resolveElection(activeElection.id)} className="px-4 py-2 bg-success text-background hover:bg-success/80 font-display text-[9px] uppercase tracking-widest transition-all rounded shadow-[0_0_20px_rgba(34,197,94,0.3)]">
+                                Certify Results & Form Council
+                              </button>
+                            )}
+                            {app.parties.some(p => p.headId === app.user?.id && p.regionId === empire.id) && !activeElectionCandidates.some(c => app.parties.find(p => p.id === c.partyId)?.headId === app.user?.id) && (
+                              <button onClick={() => {
+                                const myParty = app.parties.find(p => p.headId === app.user?.id && p.regionId === empire.id);
+                                if (myParty) app.registerPartyForElection(activeElection.id, myParty.id);
+                              }} className="px-4 py-2 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-display text-[9px] uppercase tracking-widest transition-all rounded">
+                                Register My Party
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {activeElectionCandidates.length === 0 ? (
+                          <div className="py-10 text-center border border-dashed border-primary/20 rounded text-[10px] font-mono-hud text-muted-foreground uppercase italic">No parties registered yet</div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {activeElectionCandidates.map(cand => {
+                              const party = app.parties.find(p => p.id === cand.partyId);
+                              const voted = myElectionBallot === cand.id;
+                              return party ? (
+                                <button key={cand.id} onClick={() => !myElectionBallot && app.voteInElection(activeElection.id, cand.id)}
+                                  className={`hud-panel p-5 border transition-all text-left group relative overflow-hidden ${voted ? 'border-success/40 bg-success/5' : 'border-primary/20 hover:border-primary/60 bg-background/40 hover:bg-primary/5'}`}>
+                                  <div className="flex items-center gap-4 mb-3">
+                                    <div className="w-10 h-10 rounded border border-primary/20 flex items-center justify-center bg-background" style={{ borderLeft: `4px solid hsl(${party.hue || 0} 70% 55%)` }}>
+                                      <UsersIcon size={20} style={{ color: `hsl(${party.hue || 0} 70% 55%)` }} />
+                                    </div>
+                                    <div>
+                                      <div className="text-xs font-display uppercase tracking-widest">{party.name}</div>
+                                      <div className="text-[8px] font-mono-hud text-muted-foreground uppercase">{party.tag}</div>
+                                    </div>
+                                  </div>
+                                  <div className="flex justify-between text-[8px] font-mono-hud uppercase mb-2">
+                                    <span className="text-muted-foreground">Votes</span>
+                                    <span className="text-primary">{cand.voteCount}</span>
+                                  </div>
+                                  <div className={`w-full py-2 font-display text-[9px] uppercase tracking-widest text-center rounded transition-all ${voted ? 'bg-success/20 text-success' : 'bg-primary/10 text-primary group-hover:bg-primary group-hover:text-background'}`}>
+                                    {voted ? 'Voted' : myElectionBallot ? 'Ballot Cast' : 'Cast Ballot'}
+                                  </div>
+                                </button>
+                              ) : null;
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-6">
+                        <div className="h-px bg-warning/10 w-full" />
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-[10px] font-mono-hud text-warning/60 uppercase tracking-[0.3em]">Candidates for Head of State</h4>
+                          <div className="flex gap-4">
+                            {electionExpired && (
+                              <button onClick={() => app.resolveElection(activeElection.id)} className="px-4 py-2 bg-success text-background hover:bg-success/80 font-display text-[9px] uppercase tracking-widest transition-all rounded shadow-[0_0_20px_rgba(34,197,94,0.3)]">
+                                Certify Election & Inaugurate Leader
+                              </button>
+                            )}
+                            {!activeElectionCandidates.some(c => c.userId === app.user?.id) && (
+                              <button onClick={() => app.nominateForLeaderElection(activeElection.id)}
+                                className="px-4 py-2 bg-warning/10 hover:bg-warning/20 border border-warning/30 text-warning font-display text-[9px] uppercase tracking-widest transition-all rounded">
+                                Nominate Myself
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {activeElectionCandidates.length === 0 ? (
+                          <div className="py-10 text-center border border-dashed border-warning/20 rounded text-[10px] font-mono-hud text-muted-foreground uppercase italic">No candidates yet — nominate yourself</div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {activeElectionCandidates.map(cand => {
+                              const voted = myElectionBallot === cand.id;
+                              const isMe = cand.userId === app.user?.id;
+                              return (
+                                <button key={cand.id} onClick={() => !myElectionBallot && !isMe && app.voteInElection(activeElection.id, cand.id)}
+                                  className={`hud-panel p-5 border transition-all text-left ${voted ? 'border-success/40 bg-success/5' : 'border-warning/20 hover:border-warning/60 bg-background/40'}`}>
+                                  <div className="flex items-center gap-4 mb-3">
+                                    <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${cand.userId}`} alt="" className="w-10 h-10 rounded-full border border-warning/20" />
+                                    <div>
+                                      <div className="text-xs font-display uppercase tracking-widest text-warning">{isMe ? 'You' : 'Candidate'}</div>
+                                      <div className="text-[8px] font-mono-hud text-muted-foreground uppercase">{cand.voteCount} votes</div>
+                                    </div>
+                                  </div>
+                                  <div className={`w-full py-2 font-display text-[9px] uppercase tracking-widest text-center rounded ${voted ? 'bg-success/20 text-success' : isMe ? 'bg-warning/5 text-warning/40 cursor-default' : 'bg-warning/10 text-warning hover:bg-warning/20'}`}>
+                                    {voted ? 'Voted' : isMe ? 'Your Candidacy' : myElectionBallot ? 'Ballot Cast' : 'Vote For'}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {electionExpired && (
+                      <div className="pt-4 border-t border-primary/10">
+                        <button onClick={() => app.resolveElection(activeElection.id)}
+                          className="w-full py-3 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-display text-[10px] uppercase tracking-widest transition-all rounded">
+                          Resolve Election & Advance Phase
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="py-20 text-center border border-dashed border-primary/20 rounded flex flex-col items-center justify-center">
+                     <UsersIcon size={32} className="text-primary/20 mb-4" />
+                     <div className="text-[10px] font-mono-hud text-muted-foreground uppercase tracking-[0.3em] italic">
+                       {empirePhase === 'active' ? 'State Assembly is stable. No active elections.' :
+                        empirePhase === 'primary' ? 'Primary election starting — check back shortly.' :
+                        empirePhase === 'leader' ? 'Leader election starting — check back shortly.' :
+                        'Governance pending state formation.'}
+                     </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "government" && (
+            <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
+               <div className="hud-panel p-8 border border-primary/20 bg-primary/5">
+                  <div className="flex items-center justify-between mb-8">
+                    <h3 className="font-display text-sm uppercase tracking-[0.3em] text-primary flex items-center gap-2">
+                      <Crown size={16} />
+                      Executive Branch &amp; Cabinet
+                    </h3>
+                    {empirePhase === 'active' ? (
+                      <div className="px-3 py-1 bg-success/10 border border-success/20 rounded text-[9px] font-mono-hud text-success uppercase tracking-widest">Fully Governed</div>
+                    ) : (
+                      <div className="px-3 py-1 bg-warning/10 border border-warning/20 rounded text-[9px] font-mono-hud text-warning uppercase tracking-widest animate-pulse">{empirePhase === 'primary' ? 'Primary Elections' : empirePhase === 'leader' ? 'Leader Election' : 'Formation'}</div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                     <div className="space-y-6">
+                        {/* Head of State */}
+                        <div className="p-6 border border-primary/20 bg-background/40 rounded-lg relative overflow-hidden group">
+                           <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity"><Shield size={80} /></div>
+                           <div className="text-[10px] font-mono-hud text-primary uppercase tracking-[0.4em] mb-4">Head of State</div>
+                           {empireData?.leaderId ? (
+                             <div className="flex items-center gap-6">
+                               <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${empireData.leaderId}`} alt="" className="w-16 h-16 rounded-full border-2 border-primary/30" />
+                               <div>
+                                 <div className="text-xl font-display uppercase tracking-wider text-glow">
+                                   {empireData.leaderId === app.user?.id ? app.playerName || 'You' : (app.userProfiles[empireData.leaderId!]?.name || 'Commander')}
+                                 </div>
+                                 <div className="text-[10px] font-mono-hud text-muted-foreground uppercase tracking-widest">
+                                   {empireData.leaderId === app.user?.id ? 'You are Head of State' : 'Head of State'}
+                                 </div>
+                               </div>
+                             </div>
+                           ) : (
+                             <div className="flex items-center gap-4 opacity-50">
+                               <div className="w-16 h-16 rounded-full border-2 border-dashed border-primary/20 flex items-center justify-center"><Crown size={24} className="text-primary/30" /></div>
+                               <div>
+                                 <div className="text-xl font-display uppercase tracking-wider">VACANT</div>
+                                 <div className="text-[10px] font-mono-hud text-muted-foreground uppercase tracking-widest">
+                                   {empirePhase === 'leader' ? 'Leader election in progress' : 'Awaiting election results'}
+                                 </div>
+                               </div>
+                             </div>
+                           )}
+                        </div>
+                     </div>
+
+                     {/* Ministers */}
+                     <div className="space-y-4">
+                        <div className="text-[10px] font-mono-hud text-primary uppercase tracking-[0.4em] mb-4 border-b border-primary/10 pb-4 flex items-center justify-between">
+                          <span>Appointed Ministers</span>
+                          {isLeader && <span className="text-primary/40 text-[8px]">You may appoint</span>}
+                        </div>
+                        <div className="grid grid-cols-1 gap-3">
+                          {MINISTERIAL_ROLES.map(role => {
+                            const assignment = empireMinsters.find(m => m.roleName === role);
+                            return (
+                              <div key={role} className="flex items-center justify-between p-4 border border-primary/10 bg-background/20 rounded hover:border-primary/30 transition-all group">
+                                 <div className="flex items-center gap-4">
+                                    <div className="w-8 h-8 rounded-full border border-primary/20 overflow-hidden bg-background group-hover:scale-110 transition-transform">
+                                      {assignment ? (
+                                        <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${assignment.userId}`} alt="" className="w-full h-full object-cover" />
+                                      ) : (
+                                        <div className="w-full h-full flex items-center justify-center opacity-20"><UsersIcon size={14} /></div>
+                                      )}
+                                    </div>
+                                    <div>
+                                       <div className="text-[9px] font-mono-hud text-primary/60 uppercase">{role}</div>
+                                       <div className="text-xs font-display uppercase tracking-wider">
+                                         {assignment ? (assignment.userId === app.user?.id ? 'You' : assignment.userName || 'Commander') : 'Vacant'}
+                                       </div>
+                                    </div>
+                                 </div>
+                                 <div className="flex items-center gap-2">
+                                   {assignment && isLeader && (
+                                     <button onClick={() => app.removeMinisterialRole(assignment.id)} className="text-[8px] font-mono-hud text-destructive/60 hover:text-destructive uppercase transition-colors">Remove</button>
+                                   )}
+                                   {!assignment && isLeader && (
+                                     <button onClick={() => {
+                                       const userId = prompt('Enter player User ID to appoint:');
+                                       if (userId) app.assignMinisterialRole(empire.id, userId, role);
+                                     }} className="text-[8px] font-mono-hud text-primary/40 hover:text-primary uppercase transition-colors">Appoint</button>
+                                   )}
+                                 </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                     </div>
+                  </div>
+               </div>
+            </div>
+          )}
+          {activeTab === "laws" && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+               <div className="hud-panel p-8 border border-primary/20 bg-primary/5">
+                  <div className="flex items-center justify-between mb-10">
+                     <h3 className="font-display text-sm uppercase tracking-[0.3em] text-primary flex items-center gap-2">
+                       <BookOpen size={16} />
+                       Active Legislation & Decrees
+                     </h3>
+                     <button className="px-4 py-2 border border-primary/30 hover:bg-primary/10 text-primary font-display text-[9px] uppercase tracking-widest transition-all rounded">
+                        Propose New Law
+                     </button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                     {empire.id in app.bodyGovernance && app.bodyGovernance[empire.id].status === 'governed' && (() => {
+                       const referendum = app.formationReferendums.find(r => r.bodyId === empire.id);
+                       const myBallot = referendum ? app.userFormationBallots[referendum.id] : null;
+                       const isResident = app.userResidency?.bodyId === empire.id;
+                       const timeLeft = referendum ? Math.max(0, new Date(referendum.endsAt).getTime() - Date.now()) : 0;
+                       const hoursLeft = Math.floor(timeLeft / 3600000);
+                       const minutesLeft = Math.floor((timeLeft % 3600000) / 60000);
+                       const expired = referendum && timeLeft <= 0;
+                       return (
+                         <div className="p-6 border-2 border-warning/30 bg-warning/5 rounded group relative overflow-hidden">
+                           <div className="absolute top-0 right-0 p-4 opacity-5"><Crown size={64} /></div>
+                           <div className="flex items-center justify-between mb-4">
+                             <div className="flex items-center gap-3">
+                               <div className="px-2 py-0.5 rounded font-mono-hud text-[8px] uppercase tracking-widest bg-warning/20 text-warning animate-pulse">
+                                 {referendum ? 'Referendum Active' : 'State Formation Decree'}
+                               </div>
+                               <span className="text-[8px] font-mono-hud text-muted-foreground uppercase">Sovereignty</span>
+                             </div>
+                             <span className="text-[7px] font-mono-hud text-warning/60 uppercase">Ref: PRV-001</span>
+                           </div>
+                           {!referendum ? (
+                             <>
+                               <h4 className="text-base font-display uppercase tracking-widest mb-2 text-warning">Found State</h4>
+                               <p className="text-[10px] font-mono-hud text-muted-foreground leading-relaxed mb-6">
+                                 Propose the formation of a sovereign state. All residents vote over 24 hours. A majority YES triggers primary parliamentary elections, followed by a head of state election.
+                               </p>
+                               {isResident ? (
+                                 <div className="space-y-4 max-w-md relative z-10">
+                                   <input type="text" placeholder="State Name (e.g. Terran Mandate)"
+                                     value={newEmpireName} onChange={(e) => setNewEmpireName(e.target.value)}
+                                     className="w-full bg-background/50 border border-warning/20 rounded px-3 py-2 text-xs font-display uppercase tracking-wider text-warning placeholder:text-warning/30 focus:outline-none focus:border-warning/60"
+                                   />
+                                   <div className="flex gap-4">
+                                     <input type="text" placeholder="TAG (3-4 chars)" maxLength={4}
+                                       value={newEmpireTag} onChange={(e) => setNewEmpireTag(e.target.value)}
+                                       className="w-28 bg-background/50 border border-warning/20 rounded px-3 py-2 text-xs font-display uppercase tracking-widest text-warning placeholder:text-warning/30 focus:outline-none focus:border-warning/60"
+                                     />
+                                     <button onClick={() => {
+                                       if (!newEmpireName || !newEmpireTag) { toast.error('Provide both a state name and tag.'); return; }
+                                       app.proposeStateFormation(empire.id, newEmpireName, newEmpireTag.toUpperCase(), Math.floor(Math.random() * 360));
+                                     }} className="flex-1 bg-warning/10 hover:bg-warning/20 border border-warning/40 text-warning font-display text-[10px] uppercase tracking-widest transition-all rounded py-2">
+                                       Open Referendum
+                                     </button>
+                                   </div>
+                                 </div>
+                               ) : (
+                                 <p className="text-[10px] font-mono-hud text-destructive">Only residents may propose state formation.</p>
+                               )}
+                             </>
+                           ) : (
+                             <>
+                               <h4 className="text-base font-display uppercase tracking-widest mb-1 text-warning">{referendum.empireName} [{referendum.empireTag}]</h4>
+                               <p className="text-[10px] font-mono-hud text-muted-foreground mb-6">Active referendum — residents are voting on state formation.</p>
+                               <div className="grid grid-cols-3 gap-4 mb-6">
+                                 <div className="p-4 bg-success/10 border border-success/20 rounded text-center">
+                                   <div className="text-2xl font-display text-success">{referendum.yesVotes}</div>
+                                   <div className="text-[8px] font-mono-hud text-muted-foreground uppercase mt-1">Yes</div>
+                                 </div>
+                                 <div className="p-4 bg-destructive/10 border border-destructive/20 rounded text-center">
+                                   <div className="text-2xl font-display text-destructive">{referendum.noVotes}</div>
+                                   <div className="text-[8px] font-mono-hud text-muted-foreground uppercase mt-1">No</div>
+                                 </div>
+                                 <div className="p-4 bg-warning/10 border border-warning/20 rounded text-center">
+                                   <div className="text-lg font-display text-warning">{expired ? 'Elapsed' : (hoursLeft + 'h ' + minutesLeft + 'm')}</div>
+                                   <div className="text-[8px] font-mono-hud text-muted-foreground uppercase mt-1">Remaining</div>
+                                 </div>
+                               </div>
+                               {!myBallot && isResident && !expired && (
+                                 <div className="flex gap-4">
+                                   <button onClick={() => app.voteOnFormation(referendum.id, 'yes')} className="flex-1 py-3 bg-success/10 hover:bg-success/20 border border-success/40 text-success font-display text-[10px] uppercase tracking-widest transition-all rounded">Vote YES</button>
+                                   <button onClick={() => app.voteOnFormation(referendum.id, 'no')} className="flex-1 py-3 bg-destructive/10 hover:bg-destructive/20 border border-destructive/40 text-destructive font-display text-[10px] uppercase tracking-widest transition-all rounded">Vote NO</button>
+                                 </div>
+                               )}
+                               {myBallot && (
+                                 <div className={'text-center py-3 rounded border text-[10px] font-mono-hud uppercase tracking-widest ' + (myBallot === 'yes' ? 'bg-success/10 border-success/30 text-success' : 'bg-destructive/10 border-destructive/30 text-destructive')}>
+                                   Ballot Cast: {myBallot.toUpperCase()} — Awaiting result
+                                 </div>
+                               )}
+                               {expired && (
+                                 <button onClick={() => app.resolveFormationReferendum(referendum.id)} className="w-full mt-4 py-3 bg-warning/20 hover:bg-warning/30 border border-warning/40 text-warning font-display text-[10px] uppercase tracking-widest transition-all rounded shadow-[0_0_20px_rgba(234,179,8,0.2)]">
+                                   Certify Result & Form State
+                                 </button>
+                               )}
+                               {!isResident && <p className="text-[10px] font-mono-hud text-muted-foreground mt-4">Only residents may vote.</p>}
+                             </>
+                           )}
+                         </div>
+                       );
+                     })()}
+                     {[
+                       { title: "Planetary Resource Tax", desc: "Sets the baseline industrial export tax for all territorial bodies to 15%.", status: "Active", type: "Economic" },
+                       { title: "Inter-System Transit Levy", desc: "Implements a 50 SC fee for FTL travel into sovereign space for non-residents.", status: "Proposed", type: "Security" },
+                       { title: "Industrial Minimum Wage", desc: "Mandates a floor of 450 SC per shift for all state-certified factories.", status: "Active", type: "Labor" },
+                       { title: "Territorial Expansion Act", desc: "Authorizes the deployment of automated outposts to unclaimed sectors in the outer rim.", status: "Voting", type: "Expansion" }
+                     ].map((law, i) => (
+                       <div key={i} className="p-6 border border-primary/10 bg-background/20 rounded group hover:border-primary/40 transition-all">
+                          <div className="flex items-center justify-between mb-3">
+                             <div className="flex items-center gap-3">
+                                <div className={`px-2 py-0.5 rounded font-mono-hud text-[8px] uppercase tracking-widest ${
+                                  law.status === "Active" ? "bg-success/20 text-success" : 
+                                  law.status === "Voting" ? "bg-warning/20 text-warning animate-pulse" : 
+                                  "bg-primary/20 text-primary"
+                                }`}>
+                                  {law.status}
+                                </div>
+                                <span className="text-[8px] font-mono-hud text-muted-foreground uppercase">{law.type}</span>
+                             </div>
+                             <span className="text-[7px] font-mono-hud text-primary/40 uppercase">Ref: LEG-2024-{1000 + i}</span>
+                          </div>
+                          <h4 className="text-base font-display uppercase tracking-widest mb-2 group-hover:text-primary transition-colors">{law.title}</h4>
+                          <p className="text-[10px] font-mono-hud text-muted-foreground leading-relaxed">{law.desc}</p>
+                       </div>
+                     ))}
+                  </div>
+               </div>
+            </div>
+          )}
+
+          {activeTab === "diplomacy" && (
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+               <div className="hud-panel p-8 border border-primary/20 bg-primary/5">
+                  <div className="flex items-center justify-between mb-10">
+                     <h3 className="font-display text-sm uppercase tracking-[0.3em] text-primary flex items-center gap-2">
+                       <Globe size={16} />
+                       Diplomatic Relations & Expansion
+                     </h3>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                     <div className="space-y-6">
+                        <div className="p-6 border border-primary/10 bg-background/20 rounded">
+                           <h4 className="text-sm font-display uppercase tracking-widest mb-2 text-primary flex items-center gap-2">
+                             <Target size={14} />
+                             Territorial Annexation
+                           </h4>
+                           <p className="text-[10px] font-mono-hud text-muted-foreground leading-relaxed mb-6">
+                              Expand sovereign borders by annexing neighboring independent regions. Requires a majority vote in parliament and a significant expenditure of State Capital (SC) to integrate the new territory.
+                           </p>
+                           <button className="w-full bg-primary/10 hover:bg-primary/20 border border-primary/40 text-primary font-display text-[9px] uppercase tracking-widest py-2 rounded transition-all">
+                              Propose Annexation
+                           </button>
+                        </div>
+                     </div>
+
+                     <div className="space-y-6">
+                        <div className="p-6 border border-warning/10 bg-warning/5 rounded">
+                           <h4 className="text-sm font-display uppercase tracking-widest mb-2 text-warning flex items-center gap-2">
+                             <Shield size={14} />
+                             Inter-State Consolidation
+                           </h4>
+                           <p className="text-[10px] font-mono-hud text-warning/70 leading-relaxed mb-6">
+                              Merge with another sovereign state to form a larger Hegemonic bloc. This requires bilateral agreements between both Heads of State and a supermajority ratification in both parliaments.
+                           </p>
+                           <button className="w-full bg-warning/10 hover:bg-warning/20 border border-warning/40 text-warning font-display text-[9px] uppercase tracking-widest py-2 rounded transition-all">
+                              Draft Consolidation Treaty
+                           </button>
+                        </div>
+                     </div>
+                  </div>
+                  
+                  <div className="mt-8 pt-8 border-t border-primary/10">
+                     <h4 className="text-[10px] font-mono-hud text-primary/40 uppercase tracking-[0.4em] mb-6">Active Treaties</h4>
+                     <div className="py-12 text-center border border-dashed border-primary/20 rounded">
+                        <div className="text-[10px] font-mono-hud text-muted-foreground uppercase tracking-[0.3em] italic">No active diplomatic agreements found.</div>
+                     </div>
+                  </div>
+               </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

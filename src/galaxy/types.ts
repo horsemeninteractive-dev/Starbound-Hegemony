@@ -29,7 +29,8 @@ export type GovernmentType =
   | "Dominant-party"
   | "Dictatorship"
   | "One-party system"
-  | "Executive monarchy";
+  | "Executive monarchy"
+  | "Provisional Council";
 
 export interface Empire {
   id: string;
@@ -115,13 +116,53 @@ export interface ResourceDeposit {
 
 export interface Installation {
   id: string;
+  systemId: string;
   bodyId: string;
-  type: "extraction_rig" | "fabricator" | "assembly_array" | "shipyard" | "power_plant" | "warehouse" | "market_terminal" | "barracks";
-  ownerId: string;            // corp or empire
-  level: number;              // 1–5
-  workerCount: number;
-  inputBuffer:  Record<string, number>;
-  outputBuffer: Record<string, number>;
+  type: string;
+  resourceType: string;
+  ownerId: string | null;            // null for NPC
+  jobsAvailable: number;
+  wage: number;
+  isNpcOwned: boolean;
+  storage: number;
+  storageTier: number;
+  slotTier: number;
+  replenishTier: number;
+  // Derived
+  storageCapacity: number;           // computed from storageTier
+}
+
+export interface FactoryWorker {
+  userId: string;
+  factoryId: string;
+  hiredAt: string;
+}
+
+export interface BodyResource {
+  bodyId: string;
+  resourceType: string;
+  currentAmount: number;
+  maxAmount: number;
+  lastReplenishedAt: string;
+  richnessValue: number;
+}
+
+export interface UserResource {
+  userId: string;
+  resourceType: string;
+  amount: number;
+}
+
+export interface MarketListing {
+  id: string;
+  sellerId: string;
+  resourceType: string;
+  amount: number;
+  amountRemaining: number;
+  pricePerUnit: number;
+  createdAt: string;
+  expiresAt: string;
+  status: 'active' | 'sold' | 'expired' | 'cancelled';
 }
 
 export interface Corporation {
@@ -199,4 +240,128 @@ export interface Galaxy {
   /** Quick lookup. */
   systemById: Record<string, StarSystem>;
   sectorById: Record<string, Sector>;
+  bodyById: Record<string, Body>;
+}
+
+// --- Political Factions (Parties) ---
+
+export type PartyRole = "head" | "secretary" | "member";
+
+export interface PartyMember {
+  partyId: string;
+  userId: string;
+  role: PartyRole;
+  joinedAt: string;
+}
+
+export interface Party {
+  id: string;
+  name: string;
+  tag: string;
+  ideology: string;
+  description: string;
+  logoUrl?: string;
+  logoSymbol?: string;
+  hue?: number;
+  headId: string;
+  regionId: string;      // bodyId (planet/moon) where founded
+  dailyWage: number;     // SC daily wage
+  customWages: Record<string, number>; // userId -> SC amount
+  createdAt: string;
+}
+export interface Residency {
+  userId: string;
+  bodyId: string;
+  joinedAt: string;
+}
+
+export interface ResidencyApplication {
+  id: string;
+  userId: string;
+  bodyId: string;
+  status: 'pending' | 'approved' | 'rejected';
+  createdAt: string;
+}
+
+export interface StateElection {
+  id: string;
+  stateId: string;
+  electionType: 'parliamentary' | 'presidential';
+  startTime: string;
+  endTime: string;
+  status: 'upcoming' | 'active' | 'finished';
+}
+
+export interface StateVote {
+  electionId: string;
+  voterId: string;
+  candidatePartyId?: string;
+  candidateUserId?: string;
+}
+
+export interface StateFormationVote {
+  id: string;
+  bodyId: string;
+  empireName: string;
+  empireTag: string;
+  hue: number;
+  proposedBy: string;
+  endsAt: string;
+  status: 'pending' | 'passed' | 'failed';
+  yesVotes: number;
+  noVotes: number;
+  createdAt: string;
+}
+
+export interface StateFormationBallot {
+  referendumId: string;
+  voterId: string;
+  vote: 'yes' | 'no';
+}
+
+export interface BodyGovernanceEntry {
+  status: string;
+  electionEndTime: string | null;
+  formationReferendumId?: string | null;
+  empireId?: string | null;
+}
+
+export interface ElectionCandidate {
+  id: string;
+  electionId: string;
+  partyId?: string | null;
+  userId?: string | null;
+  voteCount: number;
+  registeredAt: string;
+}
+
+export interface ElectionBallot {
+  electionId: string;
+  voterId: string;
+  candidateId: string;
+}
+
+export interface MinisterialAssignment {
+  id: string;
+  empireId: string;
+  userId: string;
+  roleName: string;
+  appointedBy: string;
+  appointedAt: string;
+  // denormalized for display
+  userName?: string;
+  userAvatar?: string;
+}
+
+export interface PlayerEmpire {
+  id: string;
+  name: string;
+  tag: string;
+  hue: number;
+  founderId: string;
+  capitalBodyId: string;
+  phase: 'formation' | 'primary' | 'leader' | 'active';
+  leaderId?: string | null;
+  viceLeaderId?: string | null;
+  createdAt: string;
 }

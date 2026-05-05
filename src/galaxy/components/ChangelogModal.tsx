@@ -11,6 +11,20 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.2.1",
+    title: "Phase 2: Empire Governance",
+    date: "2026-05-04",
+    type: "feature",
+    changes: [
+      "Transitioned to Phase 2: Player-driven Galactic Lifecycle",
+      "Implemented Empire Formation Referendums and State Elections",
+      "Added Ministerial Appointment system for Imperial Heads of State",
+      "Integrated residency indicators with amber HUD markers on 3D map",
+      "Removed legacy 'mock' state data for a clean 'Day 1' player start",
+      "Optimized SystemNode performance during large-scale map zooms"
+    ]
+  },
+  {
     version: "0.1.21",
     title: "Cinematic Credits & UI Restyle",
     date: "2026-05-02",
@@ -320,7 +334,7 @@ export function ChangelogModal({ open, onOpenChange, onPlayClick }: { open: bool
             Acknowledge
           </button>
           <div className="font-mono-hud text-[8px] text-muted-foreground/30 uppercase tracking-[0.2em]">
-            Starbound Hegemony · Build v0.1.21-sb
+            Starbound Hegemony · Build v0.2.1-sb
           </div>
         </div>
       </div>

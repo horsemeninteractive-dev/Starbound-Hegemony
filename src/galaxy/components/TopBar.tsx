@@ -20,6 +20,7 @@ interface Props {
   onOpenProfile: () => void;
   onOpenMap: () => void;
   onOpenArticles?: () => void;
+  onOpenMarket?: () => void;
   onOpenFactories?: () => void;
   onOpenFleets?: () => void;
   onOpenParty?: () => void;
@@ -29,6 +30,8 @@ interface Props {
   ap: number;
   sc: number;
   vt?: number;
+  cargoCapacity?: number;
+  cargoUsed?: number;
   playerName: string;
   playerLevel: number;
   playerXP: number;
@@ -49,26 +52,30 @@ interface Props {
   onPlayClick?: () => void;
   isGameReady?: boolean;
   shipName?: string;
+  nextApTick?: number;
+  onlinePlayerCount?: number;
 }
 
-import { Eye, EyeOff, Zap, Globe, Compass, Radio, RefreshCcw, BatteryFull } from "lucide-react";
+import { Eye, EyeOff, Zap, Globe, Compass, Radio, RefreshCcw, BatteryFull, ShoppingCart } from "lucide-react";
 
 const GAME_MENU = [
-  { icon: Globe, label: "Galaxy Map", desc: "Celestial navigation", route: "map" },
-  { icon: Newspaper, label: "Articles", desc: "Galactic news feed", route: "articles" },
-  { icon: Factory, label: "Factories", desc: "Production lines", route: "factories" },
-  { icon: Rocket, label: "Fleets", desc: "Fleet command", route: "fleets" },
-  { icon: Users, label: "Party", desc: "Political party", route: "party" },
-  { icon: User, label: "Profile", desc: "Commander profile", route: "profile" },
-  { icon: Settings, label: "Settings", desc: "Preferences", route: "settings" },
+  { icon: Globe, label: "Galaxy Map", desc: "Celestial navigation", route: "map", disabled: false },
+  { icon: Newspaper, label: "Articles", desc: "Galactic news feed", route: "articles", disabled: false },
+  { icon: ShoppingCart, label: "Market", desc: "Galactic Trade Hub", route: "market", disabled: false },
+  { icon: Factory, label: "Factories", desc: "Production lines", route: "factories", disabled: false },
+  { icon: Rocket, label: "Fleets", desc: "Fleet command", route: "fleets", disabled: false },
+  { icon: Users, label: "Party", desc: "Political party", route: "party", disabled: false },
+  { icon: User, label: "Profile", desc: "Commander profile", route: "profile", disabled: false },
+  { icon: Settings, label: "Settings", desc: "Preferences", route: "settings", disabled: false },
 ];
 
 export function TopBar({ 
-  onOpenSettings, onOpenProfile, onOpenMap, onOpenArticles, 
+  onOpenSettings, onOpenProfile, onOpenMap, onOpenArticles, onOpenMarket,
   onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills, onOpenChangelog, onOpenCredits,
-  ap, sc, vt = 0, playerName, playerLevel, playerXP, xpToNextLevel, playerAvatar,
+  ap, sc, vt = 0, cargoCapacity = 500, cargoUsed = 0, playerName, playerLevel, playerXP, xpToNextLevel, playerAvatar,
   fogOfWar, setFogOfWar, instantJump, setInstantJump,
-  playerSystemName, playerSystemId, travel, arrival, currentTime, galaxy, onReset, onSetAp, onPlayClick, isGameReady = true, shipName
+  playerSystemName, playerSystemId, travel, arrival, currentTime, galaxy, onReset, onSetAp, onPlayClick, isGameReady = true, shipName,
+  nextApTick, onlinePlayerCount = 1
 }: Props) {
   // Game menu state - Radix Sheet handles escape/outside-click automatically
   const [menuOpen, setMenuOpen] = useState(false);
@@ -147,7 +154,13 @@ export function TopBar({
               <span className="font-display text-[10px] sm:text-[11px] uppercase tracking-wider text-primary text-glow truncate max-w-[120px] lg:max-w-[none]">
                 {playerName}
               </span>
-              <span className="font-mono-hud text-[7px] sm:text-[8px] text-muted-foreground uppercase tracking-tighter whitespace-nowrap">LVL {playerLevel}</span>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_5px_emerald]" />
+                  <span className="font-mono-hud text-[7px] text-emerald-400/80 uppercase tracking-tighter">{onlinePlayerCount} ONL</span>
+                </div>
+                <span className="font-mono-hud text-[7px] sm:text-[8px] text-muted-foreground uppercase tracking-tighter whitespace-nowrap">LVL {playerLevel}</span>
+              </div>
             </div>
             
             {/* XP Progress Bar */}
@@ -211,7 +224,14 @@ export function TopBar({
           <div className="flex items-center gap-1 sm:gap-2 px-1 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-primary bg-primary/5 sm:min-w-0">
             <ZapIcon size={12} className="text-primary animate-pulse sm:w-3.5 sm:h-3.5" fill="currentColor" />
             <div className="flex flex-col leading-none">
-              <span className="text-[9px] sm:text-[11px] text-primary font-bold tracking-wider">{Math.floor(ap)}</span>
+              <div className="flex items-baseline gap-1">
+                <span className="text-[9px] sm:text-[11px] text-primary font-bold tracking-wider">{Math.floor(ap)}</span>
+                {nextApTick && ap < 240 && (
+                  <span className="text-[6px] text-primary/40 font-mono-hud">
+                    {Math.floor((nextApTick - currentTime) / 1000)}s
+                  </span>
+                )}
+              </div>
               <span className="hidden sm:block text-[7px] text-primary/60 uppercase tracking-widest font-mono-hud">Action Points</span>
             </div>
           </div>
@@ -234,6 +254,17 @@ export function TopBar({
                 {vt.toLocaleString()}
               </span>
               <span className="hidden sm:block text-[7px] text-purple-400/60 uppercase tracking-widest font-mono-hud">Void Tokens</span>
+            </div>
+          </div>
+
+          {/* Cargo Hold */}
+          <div className={`flex items-center gap-1 sm:gap-2 px-1 sm:px-3 py-0.5 sm:py-1.5 border-l-2 sm:min-w-0 bg-info/10 border-info`}>
+            <BatteryFull size={12} className="text-info sm:w-3.5 sm:h-3.5" />
+            <div className="flex flex-col leading-none">
+              <span className={`text-[9px] sm:text-[11px] font-bold tracking-wider ${cargoUsed >= cargoCapacity ? 'text-warning' : 'text-info'}`}>
+                {cargoUsed}/{cargoCapacity}
+              </span>
+              <span className="hidden sm:block text-[7px] text-info/60 uppercase tracking-widest font-mono-hud">Cargo</span>
             </div>
           </div>
         </div>
@@ -330,18 +361,24 @@ export function TopBar({
                   if (item.route === "profile") onOpenProfile?.();
                   if (item.route === "map") onOpenMap?.();
                   if (item.route === "articles") onOpenArticles?.();
+                  if (item.route === "market") onOpenMarket?.();
                   if (item.route === "factories") onOpenFactories?.();
                   if (item.route === "fleets") onOpenFleets?.();
                   if (item.route === "party") onOpenParty?.();
                   if (item.route === "skills") onOpenSkills?.();
                 }}
-                className="flex items-center gap-4 px-4 py-4 text-left border border-transparent hover:border-primary/30 rounded-lg hover:bg-primary/10 transition group"
+                className={`flex items-center gap-4 px-4 py-4 text-left border rounded-lg transition group ${item.disabled ? 'opacity-40 grayscale border-transparent hover:border-primary/10' : 'border-transparent hover:border-primary/30 hover:bg-primary/10'}`}
               >
-                <item.icon size={22} className="text-primary/70 group-hover:text-primary shrink-0 transition-colors" />
+                <item.icon size={22} className={`${item.disabled ? 'text-muted-foreground' : 'text-primary/70 group-hover:text-primary'} shrink-0 transition-colors`} />
                 <div className="flex flex-col leading-tight min-w-0">
-                  <span className="font-display text-[14px] uppercase tracking-[0.2em] text-foreground group-hover:text-primary truncate transition-colors">
-                    {item.label}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={`font-display text-[14px] uppercase tracking-[0.2em] transition-colors ${item.disabled ? 'text-muted-foreground' : 'text-foreground group-hover:text-primary'} truncate`}>
+                      {item.label}
+                    </span>
+                    {item.disabled && (
+                      <span className="text-[7px] border border-muted-foreground/30 px-1 rounded text-muted-foreground font-mono-hud uppercase tracking-tighter">In Dev</span>
+                    )}
+                  </div>
                   <span className="font-mono-hud text-[10px] uppercase tracking-wider text-muted-foreground truncate mt-1">
                     {item.desc}
                   </span>
@@ -376,7 +413,7 @@ export function TopBar({
               </button>
             </div>
             <span className="font-mono-hud text-[7px] uppercase tracking-[0.25em] text-primary/30">
-              Starbound Hegemony OS v0.1.21
+              Starbound Hegemony OS v0.2.1
             </span>
           </div>
         </SheetContent>

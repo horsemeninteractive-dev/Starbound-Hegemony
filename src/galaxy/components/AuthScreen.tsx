@@ -191,25 +191,9 @@ export function AuthScreen({ onSuccess, playClick, playSuccess }: AuthScreenProp
               </button>
             </div>
 
-            <div className="flex items-center gap-4 py-1">
-              <div className="h-px flex-1 bg-primary/10" />
-              <span className="text-[7px] font-mono-hud text-primary/20 uppercase tracking-[0.2em]">OR</span>
-              <div className="h-px flex-1 bg-primary/10" />
-            </div>
-
-            <button
-              onClick={() => { playClick(); onSuccess(); }}
-              className="w-full py-2.5 border border-primary/20 text-primary/40 font-display text-xs uppercase tracking-[0.2em] hover:border-primary/40 hover:text-primary/60 transition-all bg-slate-950/40"
-            >
-              PROCEED AS GUEST (LOCAL ONLY)
-            </button>
-          </div>
-
-          <div className="pt-2 border-t border-primary/10 flex items-center justify-center">
-            <span className="text-[7px] font-mono-hud text-primary/20 uppercase tracking-[0.25em]">Encryption: AES-SCH-4096 // Connection: Secure</span>
-          </div>
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 }
