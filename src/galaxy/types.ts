@@ -123,6 +123,7 @@ export interface Installation {
   ownerId: string | null;            // null for NPC
   jobsAvailable: number;
   wage: number;
+  treasury: number;
   isNpcOwned: boolean;
   storage: number;
   storageTier: number;

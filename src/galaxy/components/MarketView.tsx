@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { ShoppingCart, Package, Tags, ArrowRight, AlertTriangle, LogOut, CheckCircle2, Factory, Coins as SC_Icon, Globe } from "lucide-react";
 import { GalaxyIcon } from "./ResourceIcon";
 import type { GalaxyApp } from "../useGalaxyApp";
-import { RESOURCE_META, BASE_PRICES, NPC_SELL_MULTIPLIER } from "../meta";
+import { RESOURCE_META, BASE_PRICES, NPC_SELL_MULTIPLIER, NPC_BUY_MULTIPLIER } from "../meta";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -39,6 +39,8 @@ export function MarketView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: 
   const [sellAmount, setSellAmount] = useState<number>(1);
   const [sellPrice, setSellPrice] = useState<number>(100);
   const [liqAmounts, setLiqAmounts] = useState<Record<string, number>>({});
+  const [reqAmounts, setReqAmounts] = useState<Record<string, number>>({});
+  const [reqTierFilter, setReqTierFilter] = useState<'ALL' | 'T1' | 'T2' | 'T3'>('ALL');
 
   const handleCreateListing = () => {
     if (!sellResource) {
@@ -278,8 +280,10 @@ export function MarketView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: 
                     <p className="col-span-full text-center font-mono-hud text-[10px] uppercase text-muted-foreground/60 py-4 italic">No resources available for liquidation.</p>
                   ) : (
                     app.userResources.map(res => {
-                      const basePrice = (BASE_PRICES as any)[res.resourceType] || 10;
-                      const npcPrice = Math.floor(basePrice * NPC_SELL_MULTIPLIER);
+                      const market = app.npcMarketState[res.resourceType];
+                      const currentMarketPrice = market ? market.currentPrice : ((BASE_PRICES as any)[res.resourceType] || 10);
+                      const basePrice = market ? market.basePrice : ((BASE_PRICES as any)[res.resourceType] || 10);
+                      const npcPrice = Math.floor(currentMarketPrice * NPC_SELL_MULTIPLIER);
                       const meta = (RESOURCE_META as any)[res.resourceType];
                       return (
                         <div key={res.resourceType} className="flex items-center justify-between p-3 bg-background/40 border border-primary/10 rounded group hover:border-primary/30 transition-all">
@@ -293,8 +297,13 @@ export function MarketView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: 
                             </div>
                           </div>
                           <div className="text-right flex flex-col items-end gap-1">
-                            <div className="text-[9px] font-mono-hud text-success uppercase flex items-center gap-1">
-                              <SC_Icon size={8} /> {npcPrice} / unit
+                            <div className="flex items-center gap-1.5">
+                              <div className="text-[9px] font-mono-hud text-success uppercase flex items-center gap-1">
+                                <SC_Icon size={8} /> {npcPrice} / unit
+                              </div>
+                              {currentMarketPrice < basePrice * 0.98 && (
+                                <span className="text-[10px] text-destructive animate-pulse" title="High Market Pressure (Price Depressed)">▼</span>
+                              )}
                             </div>
                             <div className="flex gap-1 items-center">
                               <div className="bg-background/50 border border-primary/20 rounded px-1.5 py-0.5 flex items-center h-6">
@@ -329,6 +338,101 @@ export function MarketView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: 
                       );
                     })
                   )}
+                </div>
+              </div>
+            </section>
+
+            {/* NPC Requisitions */}
+            <section className="space-y-6">
+              <div className="flex items-center gap-2">
+                <ShoppingCart size={18} className="text-primary" />
+                <h2 className="font-display text-lg uppercase tracking-widest text-primary">Hegemony Requisitions</h2>
+              </div>
+              <div className="hud-panel p-6 border border-primary/20 bg-primary/5">
+                
+                <div className="flex gap-2 mb-4">
+                  {['ALL', 'T1', 'T2', 'T3'].map(tier => (
+                    <Button
+                      key={tier}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { onPlayClick?.(); setReqTierFilter(tier as any); }}
+                      className={`h-7 text-[10px] font-bold uppercase tracking-widest px-4 ${reqTierFilter === tier ? 'bg-primary text-black hover:bg-primary/90' : 'text-muted-foreground'}`}
+                    >
+                      {tier === 'ALL' ? 'All Tiers' : tier}
+                    </Button>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {Object.keys(BASE_PRICES).filter(resType => {
+                    if (reqTierFilter === 'ALL') return true;
+                    const meta = (RESOURCE_META as any)[resType];
+                    if (!meta) return true;
+                    return `T${meta.tier}` === reqTierFilter;
+                  }).map(resType => {
+                    const market = app.npcMarketState[resType];
+                    const currentMarketPrice = market ? market.currentPrice : ((BASE_PRICES as any)[resType] || 10);
+                    const basePrice = market ? market.basePrice : ((BASE_PRICES as any)[resType] || 10);
+                    const npcBuyPrice = Math.ceil(currentMarketPrice * NPC_BUY_MULTIPLIER);
+                    const meta = (RESOURCE_META as any)[resType];
+                    const reqAmt = reqAmounts[resType] || 1;
+                    const canAfford = app.sc >= npcBuyPrice * reqAmt;
+                    const canFit = (app.cargoUsed + reqAmt) <= app.cargoCapacity;
+
+                    return (
+                      <div key={resType} className="flex flex-col gap-2 p-3 bg-background/40 border border-primary/10 rounded group hover:border-primary/30 transition-all">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div style={{ color: meta?.color }}>
+                              <GalaxyIcon name={meta?.icon} className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <div className="font-display text-[10px] uppercase tracking-widest text-primary">{resType}</div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="flex items-center gap-1.5 justify-end">
+                              <div className="text-[9px] font-mono-hud text-destructive uppercase flex items-center gap-1">
+                                <SC_Icon size={8} /> {npcBuyPrice} / unit
+                              </div>
+                              {currentMarketPrice > basePrice * 1.02 && (
+                                <span className="text-[10px] text-destructive animate-pulse" title="High Market Demand (Price Inflated)">▲</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="flex gap-1 items-center mt-2">
+                          <div className="bg-background/50 border border-primary/20 rounded px-1.5 py-0.5 flex items-center h-6 flex-1">
+                            <input 
+                              type="number" 
+                              min="1" 
+                              value={reqAmt}
+                              onChange={(e) => setReqAmounts({...reqAmounts, [resType]: parseInt(e.target.value) || 1})}
+                              className="bg-transparent text-right w-full text-primary font-bold outline-none text-[9px]"
+                            />
+                          </div>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            disabled={!canAfford || !canFit}
+                            className="h-6 text-[8px] uppercase font-bold tracking-[0.2em] px-2 flex-1"
+                            onClick={() => { 
+                              onPlayClick?.(); 
+                              if (reqAmt > 0) {
+                                app.buyFromNPC(resType, reqAmt, npcBuyPrice); 
+                              } else {
+                                toast.error("Invalid quantity");
+                              }
+                            }}
+                          >
+                            Requisition
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </section>

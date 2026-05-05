@@ -141,13 +141,14 @@ export function useGalaxyApp(initialSeed = 20260423) {
   // factory_id -> resource_type -> amount in input storage
   const [factoryInputStorage, setFactoryInputStorage] = useState<Record<string, Record<string, number>>>({});
   const [articles, setArticles] = useState<any[]>([]);
-  const [cargoCapacity, setCargoCapacity] = useState(500);
+  const [cargoCapacity, setCargoCapacity] = useState(5000);
   const [marketListings, setMarketListings] = useState<MarketListing[]>([]);
   const [userLogs, setUserLogs] = useState<any[]>([]);
   const [fleetCount, setFleetCount] = useState(0);
   const [parties, setParties] = useState<Party[]>([]);
   const [userParty, setUserParty] = useState<Party | null>(null);
   const [userPartyMember, setUserPartyMember] = useState<PartyMember | null>(null);
+  const [npcMarketState, setNpcMarketState] = useState<Record<string, { basePrice: number, currentPrice: number, lastUpdated: string }>>({});
   
   // Action Points Tick Logic
   const AP_REGEN_INTERVAL = 300000; // 5 minutes
@@ -170,6 +171,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
       type: f.type,
       resourceType: f.resource_type,
       wage: f.wage,
+      treasury: f.treasury ?? 0,
       jobsAvailable: f.jobs_available,
       maxJobs: f.max_jobs ?? 5,
       isNpcOwned: f.is_npc_owned,
@@ -221,7 +223,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
           setPlayerLevel(profile.level);
           setPlayerXP(profile.xp);
           setSc(profile.credits);
-          setCargoCapacity(profile.cargo_capacity ?? 500);
+          setCargoCapacity(profile.cargo_capacity ?? 5000);
           setIsAdmin(profile.is_admin ?? false);
 
           // Extract party info
@@ -773,6 +775,20 @@ export function useGalaxyApp(initialSeed = 20260423) {
       console.error("Subspace Relay Error:", artError.message);
     } else {
       setArticles(art || []);
+    }
+
+    // 2. Fetch dynamic NPC market state
+    const { data: npcMarket, error: marketError } = await supabase.from('npc_market_state').select('*');
+    if (!marketError && npcMarket) {
+      const marketMap = npcMarket.reduce((acc: any, curr: any) => {
+        acc[curr.resource_type] = {
+          basePrice: curr.base_price,
+          currentPrice: curr.current_price,
+          lastUpdated: curr.last_updated
+        };
+        return acc;
+      }, {});
+      setNpcMarketState(marketMap);
     }
 
     if (!user || !systemId) return;
@@ -1372,14 +1388,14 @@ export function useGalaxyApp(initialSeed = 20260423) {
       return;
     }
 
-    const { error } = await supabase.rpc('work_at_factory', {
+    const { data, error } = await supabase.rpc('work_at_factory', {
       p_user_id: user.id,
       p_factory_id: currentJob.factoryId,
       p_ap_cost: 5
     });
 
-    if (error) {
-      toast.error("Work failed", { description: error.message });
+    if (error || (data as any)?.error) {
+      toast.error("Work failed", { description: (data as any)?.error || error?.message });
     } else {
       setAp(prev => prev - 5);
       // We don't manually update SC/Resource here, we let the polling/profile sync handle it
@@ -1393,10 +1409,14 @@ export function useGalaxyApp(initialSeed = 20260423) {
       const { data: inv } = await supabase.from('user_resources').select('*').eq('user_id', user.id);
       if (inv) setUserResources(inv.map(r => ({ userId: r.user_id, resourceType: r.resource_type, amount: r.amount })));
       
-      toast.success("Work shift completed", { description: "Wages deposited to your account." });
-      const wageBonus = computeSkillBonus('factory_wage_bonus', playerSkills);
+      if (data) {
+        const result = data as { wage: number; resource_yield: number; resource_type: string };
+        toast.success(`Shift complete — +${result.wage} SC, +${result.resource_yield}× ${result.resource_type}`);
+      } else {
+        toast.success("Work shift completed", { description: "Wages deposited to your account." });
+      }
+      
       const xpBonus = computeSkillBonus('factory_xp_bonus', playerSkills);
-      if (wageBonus > 0) setSc(prev => prev + wageBonus);
       grantXP('factory_worked', xpBonus);
     }
   }, [user, currentJob, ap, fetchEconomyData, grantXP, playerSkills]);
@@ -1453,6 +1473,29 @@ export function useGalaxyApp(initialSeed = 20260423) {
       fetchEconomyData();
     }
   }, [user, fetchEconomyData]);
+
+  const depositToFactoryTreasury = useCallback(async (factoryId: string, amount: number) => {
+    if (!user || amount <= 0 || sc < amount) return;
+    
+    // Optimistic UI update
+    setSc(prev => prev - amount);
+    setUserFactories(prev => prev.map(f => f.id === factoryId ? { ...f, treasury: (f.treasury || 0) + amount } : f));
+    
+    const { error } = await supabase.rpc('deposit_to_factory_treasury', {
+      p_user_id: user.id,
+      p_factory_id: factoryId,
+      p_amount: amount
+    });
+    
+    if (error) {
+      toast.error("Deposit failed", { description: error.message });
+      // Revert optimistic update
+      setSc(prev => prev + amount);
+      setUserFactories(prev => prev.map(f => f.id === factoryId ? { ...f, treasury: (f.treasury || 0) - amount } : f));
+    } else {
+      toast.success("Deposit successful", { description: `Deposited ${amount} SC to factory treasury.` });
+    }
+  }, [user, sc]);
 
   const claimResidency = useCallback(async (bodyId: string, isClaimable: boolean) => {
     if (!user) return;
@@ -1583,6 +1626,31 @@ export function useGalaxyApp(initialSeed = 20260423) {
       if (inv) setUserResources(inv.map(r => ({ userId: r.user_id, resourceType: r.resource_type, amount: r.amount })));
     }
   }, [user, fetchEconomyData]);
+
+  const buyFromNPC = useCallback(async (resourceType: string, amount: number, pricePerUnit: number) => {
+    if (!user) return;
+    const totalCost = amount * pricePerUnit;
+    if (sc < totalCost) {
+      toast.error("Insufficient Funds", { description: "You cannot afford this requisition." });
+      return;
+    }
+    const { error } = await supabase.rpc('buy_from_npc', {
+      p_buyer_id: user.id,
+      p_resource_type: resourceType,
+      p_amount: amount,
+      p_price_per_unit: pricePerUnit
+    });
+    if (error) {
+      toast.error("Purchase failed", { description: error.message });
+    } else {
+      toast.success(`Requisitioned ${amount}× ${resourceType}`, { description: "Resources added to cargo hold." });
+      setSc(prev => prev - totalCost);
+      logAction('market_purchase_npc', `Requisition: ${amount} units`, `Procured ${amount} units of ${resourceType} from Hegemony supplies.`);
+      fetchEconomyData();
+      const { data: inv } = await supabase.from('user_resources').select('*').eq('user_id', user.id);
+      if (inv) setUserResources(inv.map(r => ({ userId: r.user_id, resourceType: r.resource_type, amount: r.amount })));
+    }
+  }, [user, sc, logAction, fetchEconomyData]);
 
   const sellToNPC = useCallback(async (resourceType: string, amount: number, pricePerUnit: number) => {
     if (!user) return;
@@ -1891,7 +1959,10 @@ export function useGalaxyApp(initialSeed = 20260423) {
     createMarketListing,
     cancelMarketListing,
     buyMarketListing,
+    depositToFactoryTreasury,
+    buyFromNPC,
     sellToNPC,
+    npcMarketState,
     articles: filteredArticles,
     allArticles: articles,
     socialStats,

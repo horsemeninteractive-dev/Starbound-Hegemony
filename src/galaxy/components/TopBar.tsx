@@ -439,7 +439,7 @@ export function TopBar({
               </button>
             </div>
             <span className="font-mono-hud text-[7px] uppercase tracking-[0.25em] text-primary/30">
-              Starbound Hegemony OS v0.2.2
+              Starbound Hegemony OS v0.2.3
             </span>
           </div>
         </SheetContent>

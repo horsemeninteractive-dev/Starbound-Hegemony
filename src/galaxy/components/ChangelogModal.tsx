@@ -11,6 +11,20 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.2.3",
+    title: "Economic Balance & Requisitions",
+    date: "2026-05-05",
+    type: "feature",
+    changes: [
+      "Added Hegemony Requisitions (NPC Buy-Path) to market with dynamic pricing scaling",
+      "Implemented quick-filters (T1/T2/T3) for market requisition lists",
+      "Fixed factory treasury deposits and exposed missing UI elements",
+      "Added 'Underfunded' alerts to paralyzed factory UI cards",
+      "Resolved false-positive success toasts when working at depleted factories",
+      "Increased default starting cargo capacity from 500 to 5,000 for improved player retention"
+    ]
+  },
+  {
     version: "0.2.2",
     title: "XP & Skill Progression",
     date: "2026-05-05",
@@ -349,7 +363,7 @@ export function ChangelogModal({ open, onOpenChange, onPlayClick }: { open: bool
             Acknowledge
           </button>
           <div className="font-mono-hud text-[8px] text-muted-foreground/30 uppercase tracking-[0.2em]">
-            Starbound Hegemony · Build v0.2.2-sb
+            Starbound Hegemony · Build v0.2.3-sb
           </div>
         </div>
       </div>

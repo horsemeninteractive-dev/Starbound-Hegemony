@@ -22,7 +22,7 @@ interface FactoriesViewProps {
 
 
 
-function FactoryRow({ f, galaxy, playerSystemId, playerBodyId, onCollect, onUpgrade, updateFactorySettings, onPlayClick }: any) {
+function FactoryRow({ f, galaxy, playerSystemId, playerBodyId, onCollect, onUpgrade, updateFactorySettings, depositToFactoryTreasury, onPlayClick }: any) {
   const rMeta = (RESOURCE_META as any)[f.resourceType];
   const system = galaxy.systemById[f.systemId];
   const body = system?.bodies.find((b: any) => b.id === f.bodyId) || (f.bodyId === "star" ? { name: system?.name } : null);
@@ -32,6 +32,7 @@ function FactoryRow({ f, galaxy, playerSystemId, playerBodyId, onCollect, onUpgr
   const [showSettings, setShowSettings] = useState(false);
   const [wageInput, setWageInput] = useState(String(f.wage));
   const [jobsInput, setJobsInput] = useState(String(f.jobsAvailable));
+  const [depositInput, setDepositInput] = useState("");
 
   const STORAGE_CAPACITY = [100, 300, 750, 2000, 5000];
   const storageCapacity = f.storageCapacity ?? STORAGE_CAPACITY[Math.min(f.storageTier ?? 0, 4)];
@@ -65,7 +66,12 @@ function FactoryRow({ f, galaxy, playerSystemId, playerBodyId, onCollect, onUpgr
           </div>
           <div className="text-right">
             <div className="text-[10px] font-bold text-success uppercase">{f.wage} SC / Shift</div>
-            <div className="text-[8px] text-muted-foreground uppercase mt-1">Occupancy: {(f.maxJobs || 5) - f.jobsAvailable} / {f.maxJobs || 5}</div>
+            <div className="text-[8px] text-muted-foreground uppercase mt-1 mb-1">Occupancy: {(f.maxJobs || 5) - f.jobsAvailable} / {f.maxJobs || 5}</div>
+            {f.treasury < f.wage && (
+              <div className="inline-block px-1.5 py-0.5 bg-destructive/10 border border-destructive/20 rounded text-[8px] font-bold text-destructive uppercase tracking-widest">
+                Underfunded
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -148,11 +154,40 @@ function FactoryRow({ f, galaxy, playerSystemId, playerBodyId, onCollect, onUpgr
               onClick={() => {
                 onPlayClick?.();
                 updateFactorySettings(f.id, Number(wageInput), Number(jobsInput));
-                setShowSettings(false);
               }}
             >
               Update Directives
             </Button>
+            
+            <div className="pt-2 border-t border-primary/20 space-y-2 mt-2">
+              <div className="flex justify-between items-center text-[9px]">
+                <span className="text-muted-foreground uppercase tracking-widest font-bold">Treasury Balance</span>
+                <span className="font-mono-hud text-white">{f.treasury} SC</span>
+              </div>
+              <div className="flex gap-2">
+                <input 
+                  type="number" 
+                  placeholder="Amount"
+                  value={depositInput} 
+                  onChange={(e) => setDepositInput(e.target.value)}
+                  className="flex-1 bg-black/60 border border-primary/20 rounded px-2 py-1 text-xs text-white focus:border-primary outline-none"
+                />
+                <Button 
+                  variant="outline"
+                  className="h-7 text-[9px] uppercase tracking-widest font-bold" 
+                  onClick={() => {
+                    onPlayClick?.();
+                    const amt = Number(depositInput);
+                    if (amt > 0) {
+                      depositToFactoryTreasury(f.id, amt);
+                      setDepositInput("");
+                    }
+                  }}
+                >
+                  Deposit
+                </Button>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -161,7 +196,7 @@ function FactoryRow({ f, galaxy, playerSystemId, playerBodyId, onCollect, onUpgr
 }
 
 export function FactoriesView({ app, onPlayClick }: FactoriesViewProps) {
-  const { userFactories, galaxy, collectFactory, upgradeFactory, updateFactorySettings, user, playerSystemId, playerBodyId } = app;
+  const { userFactories, galaxy, collectFactory, upgradeFactory, updateFactorySettings, depositToFactoryTreasury, user, playerSystemId, playerBodyId } = app;
   const userId = user?.id;
   const onCollect = collectFactory;
   const onUpgrade = upgradeFactory;
@@ -283,6 +318,7 @@ export function FactoriesView({ app, onPlayClick }: FactoriesViewProps) {
               onCollect={onCollect}
               onUpgrade={onUpgrade}
               updateFactorySettings={updateFactorySettings}
+              depositToFactoryTreasury={depositToFactoryTreasury}
               onPlayClick={onPlayClick}
             />
           ))
