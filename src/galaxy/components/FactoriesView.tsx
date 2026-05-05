@@ -65,7 +65,7 @@ function FactoryRow({ f, galaxy, playerSystemId, playerBodyId, onCollect, onUpgr
           </div>
           <div className="text-right">
             <div className="text-[10px] font-bold text-success uppercase">{f.wage} SC / Shift</div>
-            <div className="text-[8px] text-muted-foreground uppercase mt-1">{f.jobsAvailable} Open Positions</div>
+            <div className="text-[8px] text-muted-foreground uppercase mt-1">Occupancy: {(f.maxJobs || 5) - f.jobsAvailable} / {f.maxJobs || 5}</div>
           </div>
         </div>
       </div>
@@ -218,7 +218,7 @@ export function FactoriesView({ app, onPlayClick }: FactoriesViewProps) {
                 </div>
                 <div className="space-y-1">
                     <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">Active Workforce</span>
-                    <div className="text-sm font-mono-hud text-white">{userFactories.reduce((acc, f) => acc + (5 - f.jobsAvailable), 0)} / {userFactories.length * 5}</div>
+                    <div className="text-sm font-mono-hud text-white">{userFactories.reduce((acc, f) => acc + ((f.maxJobs || 5) - f.jobsAvailable), 0)} / {userFactories.reduce((acc, f) => acc + (f.maxJobs || 5), 0)}</div>
                 </div>
                 <div className="space-y-1">
                     <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">System Coverage</span>

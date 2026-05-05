@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { ShoppingCart, Package, Tags, ArrowRight, AlertTriangle, LogOut, CheckCircle2, Factory, Coins as SC_Icon, Globe } from "lucide-react";
 import { GalaxyIcon } from "./ResourceIcon";
 import type { GalaxyApp } from "../useGalaxyApp";
-import { RESOURCE_META } from "../meta";
+import { RESOURCE_META, BASE_PRICES, NPC_SELL_MULTIPLIER } from "../meta";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -127,7 +127,7 @@ export function MarketView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: 
                           </div>
                           <div>
                             <div className="font-display text-sm uppercase tracking-widest text-primary">{listing.resourceType}</div>
-                            <div className="font-mono-hud text-[10px] text-muted-foreground uppercase">From Commander: {listing.sellerId.substring(0, 6)}...</div>
+                            <div className="font-mono-hud text-[10px] text-muted-foreground uppercase">From Commander: {listing.sellerName || listing.sellerId.substring(0, 6) + "..."}</div>
                           </div>
                         </div>
                       </div>
@@ -262,6 +262,53 @@ export function MarketView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: 
                     <span className="font-display text-success flex items-center gap-1"><SC_Icon size={12} /> {(sellAmount * sellPrice).toLocaleString()} SC</span>
                   </div>
                 )}
+              </div>
+            </section>
+
+            {/* NPC Liquidation */}
+            <section className="space-y-6">
+              <div className="flex items-center gap-2">
+                <SC_Icon size={18} className="text-primary" />
+                <h2 className="font-display text-lg uppercase tracking-widest text-primary">Instant Liquidation</h2>
+              </div>
+              <div className="hud-panel p-6 border border-primary/20 bg-primary/5">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {app.userResources.length === 0 ? (
+                    <p className="col-span-full text-center font-mono-hud text-[10px] uppercase text-muted-foreground/60 py-4 italic">No resources available for liquidation.</p>
+                  ) : (
+                    app.userResources.map(res => {
+                      const basePrice = (BASE_PRICES as any)[res.resourceType] || 10;
+                      const npcPrice = Math.floor(basePrice * NPC_SELL_MULTIPLIER);
+                      const meta = (RESOURCE_META as any)[res.resourceType];
+                      return (
+                        <div key={res.resourceType} className="flex items-center justify-between p-3 bg-background/40 border border-primary/10 rounded group hover:border-primary/30 transition-all">
+                          <div className="flex items-center gap-3">
+                            <div style={{ color: meta?.color }}>
+                              <GalaxyIcon name={meta?.icon} className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <div className="font-display text-[10px] uppercase tracking-widest text-primary">{res.resourceType}</div>
+                              <div className="font-mono-hud text-[9px] text-muted-foreground uppercase">Qty: {res.amount}</div>
+                            </div>
+                          </div>
+                          <div className="text-right flex flex-col items-end gap-1">
+                            <div className="text-[9px] font-mono-hud text-success uppercase flex items-center gap-1">
+                              <SC_Icon size={8} /> {npcPrice} / unit
+                            </div>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="h-6 text-[8px] uppercase font-bold tracking-[0.2em] px-2"
+                              onClick={() => { onPlayClick?.(); (app as any).sellToNPC(res.resourceType, res.amount, npcPrice); }}
+                            >
+                              Liquidate
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
               </div>
             </section>
 

@@ -119,9 +119,9 @@ const SUBTYPE_ABBR: Record<string, string> = {
   asteroid: "AST",
 };
 
-/** e.g. planetName("ZET 66205", "toxic", 1) → "ZET 66205 B TOX" */
+/** e.g. planetName("ZET 66205", "toxic", 0) → "ZET 66205 B TOX" */
 export const planetName = (parentName: string, subtype: string, idx: number) => {
-  const letter = String.fromCharCode(65 + idx); // A, B, C…
+  const letter = String.fromCharCode(66 + idx); // B, C, D… (A is reserved for the star)
   const abbr = SUBTYPE_ABBR[subtype] || "UNK";
   return `${parentName} ${letter} ${abbr}`;
 };

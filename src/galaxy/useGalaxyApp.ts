@@ -171,11 +171,13 @@ export function useGalaxyApp(initialSeed = 20260423) {
       resourceType: f.resource_type,
       wage: f.wage,
       jobsAvailable: f.jobs_available,
+      maxJobs: f.max_jobs ?? 5,
       isNpcOwned: f.is_npc_owned,
       storage: f.storage ?? 0,
       storageTier,
       slotTier: f.slot_tier ?? 0,
       replenishTier: f.replenish_tier ?? 0,
+      tier: f.tier ?? 1,
       storageCapacity,
     };
   };
@@ -812,6 +814,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
       setMarketListings(listings.map(l => ({
         id: l.id,
         sellerId: l.seller_id,
+        sellerName: l.seller_name,
         resourceType: l.resource_type,
         amount: l.amount,
         amountRemaining: l.amount_remaining,
@@ -1556,6 +1559,27 @@ export function useGalaxyApp(initialSeed = 20260423) {
       if (inv) setUserResources(inv.map(r => ({ userId: r.user_id, resourceType: r.resource_type, amount: r.amount })));
     }
   }, [user, fetchEconomyData]);
+
+  const sellToNPC = useCallback(async (resourceType: string, amount: number, pricePerUnit: number) => {
+    if (!user) return;
+    const { error } = await supabase.rpc('sell_to_npc', {
+      p_user_id: user.id,
+      p_resource_type: resourceType,
+      p_amount: amount,
+      p_price_per_unit: pricePerUnit
+    });
+    if (error) {
+      toast.error("Trade failed", { description: error.message });
+    } else {
+      toast.success(`Sold ${amount}× ${resourceType} to Galactic NPC`, { description: `Gained ${(amount * pricePerUnit).toLocaleString()} SC.` });
+      fetchEconomyData();
+      const { data: profile } = await supabase.from('profiles').select('credits').eq('id', user.id).single();
+      if (profile) setSc(profile.credits);
+      const { data: inv } = await supabase.from('user_resources').select('*').eq('user_id', user.id);
+      if (inv) setUserResources(inv.map(r => ({ userId: r.user_id, resourceType: r.resource_type, amount: r.amount })));
+      grantXP('market_listing'); // Tiny XP for trade
+    }
+  }, [user, fetchEconomyData, grantXP]);
 
   const leaveJob = useCallback(async () => {
     if (!user || !currentJob) return;

@@ -177,3 +177,45 @@ export const RICHNESS_VALUES = {
   "abundant": 5,
 } as const;
 
+/** Base value per unit of each resource. Used for NPC buyback and market floor prices. */
+export const BASE_PRICES: Record<ResourceKey, number> = {
+  // T1
+  "Helium-3": 12,
+  "Energy Crystals": 15,
+  "Hydrogen": 8,
+  "Exotic Matter": 45,
+  "Solar Energy": 5,
+  "Radiogenic Elements": 25,
+  "Ore": 10,
+  "Organics": 12,
+  "Rare Earths": 35,
+  "Silicates": 10,
+  "Water Ice": 8,
+  "Exotic Technology": 50,
+  // T2
+  "Steel Alloy": 65,
+  "Plasma Cells": 75,
+  "Biofuel": 55,
+  "Rare Alloys": 110,
+  "Crystal Circuits": 120,
+  "Fusion Cores": 140,
+  "Nanomaterials": 160,
+  "Polymer Sheets": 70,
+  "Superconductors": 180,
+  "Dark Matter Gel": 200,
+  "Solar Capacitors": 90,
+  "Hydro-Gel": 60,
+  // T3
+  "Warp Drives": 1200,
+  "Hull Plating": 850,
+  "Neural Arrays": 1500,
+  "Quantum Reactors": 2200,
+  "Biotech Modules": 950,
+  "Xenotech Frames": 1100,
+};
+
+/** Multiplier for NPC buyback (players sell TO the NPC). Floor price. */
+export const NPC_SELL_MULTIPLIER = 0.65;
+/** Multiplier for NPC supply (players buy FROM the NPC). Ceiling price. */
+export const NPC_BUY_MULTIPLIER = 1.85;
+

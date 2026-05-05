@@ -128,6 +128,8 @@ export interface Installation {
   storageTier: number;
   slotTier: number;
   replenishTier: number;
+  tier: number;
+  maxJobs: number;
   // Derived
   storageCapacity: number;           // computed from storageTier
 }
@@ -156,6 +158,7 @@ export interface UserResource {
 export interface MarketListing {
   id: string;
   sellerId: string;
+  sellerName?: string;
   resourceType: string;
   amount: number;
   amountRemaining: number;

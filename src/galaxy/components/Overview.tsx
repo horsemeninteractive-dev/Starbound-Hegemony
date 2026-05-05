@@ -257,7 +257,7 @@ function formatLabel(raw: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function BodyOverview({
+  export function BodyOverview({
   body, 
   galaxy, 
   hideHeader, 
@@ -286,7 +286,9 @@ export function BodyOverview({
   residencyApplications,
   onClaimResidency,
   bodyGovernance,
-  onInitiateGovernance
+  onInitiateGovernance,
+  factoryInputStorage,
+  onDepositInput
 }: { 
   body: Body; 
   galaxy: Galaxy; 
@@ -310,15 +312,15 @@ export function BodyOverview({
   onLeaveJob: () => void;
   onCollect: (id: string) => void;
   onUpgrade: (id: string, type: 'storage' | 'slots' | 'replenish') => void;
-  onSaveSettings: (factoryId: string, wage: number, jobsAvailable: number) => Promise<void>;
-  factoryInputStorage: Record<string, Record<string, number>>;
-  onDepositInput: (factoryId: string, resource: string, amount: number) => void;
+  onSaveSettings: (id: string, wage: number, jobs: number) => void;
   userId: string | null;
   userResidency: Residency | null;
   residencyApplications: ResidencyApplication[];
-  onClaimResidency: (bodyId: string, instant: boolean) => void;
-  bodyGovernance: Record<string, { status: string, electionEndTime: string | null, empireId?: string | null }>;
-  onInitiateGovernance: (bodyId: string) => void;
+  onClaimResidency: (id: string, isClaimable: boolean) => void;
+  bodyGovernance: Record<string, any>;
+  onInitiateGovernance: (id: string) => void;
+  factoryInputStorage: Record<string, Record<string, number>>;
+  onDepositInput: (factoryId: string, resource: string, amount: number) => void;
 }) {
   const [activeTab, setActiveTab] = useState<"info" | "economy">("info");
   const owner = body.ownerId ? galaxy.empires.find((e) => e.id === body.ownerId) : null;
@@ -632,6 +634,8 @@ export function BodyOverview({
           onCollect={onCollect}
           onUpgrade={onUpgrade}
           onSaveSettings={onSaveSettings}
+          factoryInputStorage={factoryInputStorage}
+          onDepositInput={onDepositInput}
         />
       )}
     </Panel>
@@ -652,7 +656,7 @@ const REPLENISH_COST = [3000, 8000, 20000];
 function FactoryCard({
   f, currentJob, isAtThisBody, userId, onPlayClick,
   onWorkJob, onApplyForJob, onLeaveJob, onCollect, onUpgrade, onSaveSettings,
-  factoryInputStorage, onDepositInput, userResources
+  factoryInputStorage, onDepositInput, userResources, bodyName
 }: {
   f: Installation; currentJob: any; isAtThisBody: boolean; userId: string | null;
   onPlayClick?: () => void;
@@ -663,6 +667,7 @@ function FactoryCard({
   factoryInputStorage: Record<string, Record<string, number>>;
   onDepositInput: (factoryId: string, resource: string, amount: number) => void;
   userResources: UserResource[];
+  bodyName: string;
 }) {
   const rMeta = (RESOURCE_META as any)[f.resourceType];
   const isWorkingHere = currentJob?.factoryId === f.id;
@@ -747,7 +752,7 @@ function FactoryCard({
                     </div>
                     <span className="font-mono-hud text-primary">{currentInput} units</span>
                   </div>
-                  {isAtThisBody && userInCargo > 0 && (
+                  {isOwner && isAtThisBody && userInCargo > 0 && (
                     <div className="flex gap-1 mt-1">
                       <button 
                         onClick={() => onDepositInput(f.id, inp.resource, Math.min(userInCargo, 10))}
@@ -761,6 +766,16 @@ function FactoryCard({
                       >
                         All
                       </button>
+                    </div>
+                  )}
+                  {isOwner && !isAtThisBody && (
+                    <div className="text-[6px] text-warning/70 uppercase tracking-widest mt-1 italic leading-tight">
+                      Proximity Required: Visit {bodyName} to deposit
+                    </div>
+                  )}
+                  {!isOwner && (
+                    <div className="text-[6px] text-muted-foreground uppercase tracking-tighter mt-1">
+                      Restricted: Owner transport required
                     </div>
                   )}
                 </div>
@@ -1073,6 +1088,7 @@ function EconomyTab({
               factoryInputStorage={factoryInputStorage}
               onDepositInput={onDepositInput}
               userResources={userResources}
+              bodyName={body.name}
             />
           ))}
         </div>
