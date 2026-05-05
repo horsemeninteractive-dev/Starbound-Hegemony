@@ -1137,8 +1137,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
       region_id: playerBodyId
     }).select().single();
 
-    if (error) {
-      toast.error("Failed to create party", { description: error.message });
+    if (error || !party) {
+      toast.error("Failed to create party", { description: error?.message || "Internal registration failure." });
     } else {
       // Add head as member
       const { error: memberError } = await supabase.from('party_members').insert({
@@ -1148,7 +1148,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
       });
 
       if (memberError) {
-        toast.error("Failed to register as member", { description: memberError.message });
+        toast.error("Failed to register leadership role", { description: memberError.message });
+        return;
       }
 
       // Deduct credits in database
@@ -1162,6 +1163,28 @@ export function useGalaxyApp(initialSeed = 20260423) {
       } else {
         setSc(prev => prev - cost);
       }
+
+      // Manually update local state to reflect the new party membership immediately
+      setUserParty({
+        id: party.id,
+        name: party.name,
+        tag: party.tag,
+        ideology: party.ideology,
+        description: party.description,
+        logoSymbol: party.logo_symbol,
+        hue: party.hue,
+        headId: party.head_id,
+        regionId: party.region_id,
+        dailyWage: party.daily_wage,
+        customWages: party.custom_wages || {},
+        createdAt: party.created_at
+      });
+      setUserPartyMember({
+        partyId: party.id,
+        userId: user.id,
+        role: 'head',
+        joinedAt: new Date().toISOString()
+      });
 
       toast.success("Party established!", { description: `${name} [${tag}] has been registered with the Hegemony.` });
       logAction('party_create', `Founding: ${name}`, `Neural ideology broadcast as the head of ${name}.`);
@@ -1203,8 +1226,9 @@ export function useGalaxyApp(initialSeed = 20260423) {
     if (!user || !body) return;
     
     // Check for Sanctum systems (inner stars + center)
-    const isSanctum = playerSystemId.startsWith('sys-inner-') || playerSystemId === 'sys-center';
-    if (isSanctum) {
+    const isSanctum = body.systemId.startsWith('sys-inner-') || body.systemId === 'sys-center';
+    const residencyProhibited = isSanctum || body.type === 'asteroid' || body.type === 'gas_giant' || body.type === 'star';
+    if (residencyProhibited) {
       toast.error("Construction prohibited!", { description: "The Sanctum systems are under NPC jurisdiction." });
       return;
     }
@@ -1645,6 +1669,49 @@ export function useGalaxyApp(initialSeed = 20260423) {
     }
   }, [travel, currentTime, playerSystemId]);
 
+  // --- BACKGROUND PRE-CACHING ---
+  // During hyperspace jumps, use the transit time to pre-synthesize audio for the target system
+  useEffect(() => {
+    if (travel && travel.type === 'inter') {
+      const targetSystem = galaxy.systemById[travel.targetId];
+      if (!targetSystem) return;
+
+      const synthesizeNext = async () => {
+        // Find an un-cached body type in the destination system
+        const bodiesToCache = targetSystem.bodies.map(b => ({
+          type: b.type,
+          subtype: b.subtype,
+          starType: targetSystem.starType
+        }));
+        
+        // Also cache the star itself
+        bodiesToCache.push({ type: 'star', subtype: undefined, starType: targetSystem.starType });
+
+        // Get AudioContext (from global if available, or create a temporary one)
+        // Note: In a browser, we usually need a user gesture to start the real context, 
+        // but for offline synthesis (creating buffers) we can often use an OfflineAudioContext or a dormant one.
+        const ctx = (window as any)._galaxyAudioContext || new (window.AudioContext || (window as any).webkitAudioContext)();
+        if (!ctx) return;
+        (window as any)._galaxyAudioContext = ctx;
+
+        // Perform synthesis incrementally to avoid blocking the main thread even during jumps
+        for (const item of bodiesToCache) {
+          try {
+            // Import dynamically from UnifiedMap (if we export it)
+            const { createCelestialBuffer } = await import('./components/UnifiedMap');
+            createCelestialBuffer(ctx, item.type, item.subtype, item.starType);
+          } catch (e) {
+            console.warn("Pre-cache failed for", item.type, e);
+          }
+          // Small yield to allow UI/animations to stay smooth during jump
+          await new Promise(r => setTimeout(r, 10));
+        }
+      };
+
+      synthesizeNext();
+    }
+  }, [travel, galaxy]);
+
   // Clear arrival after duration
   useEffect(() => {
     if (arrival && currentTime >= arrival.startTime + arrival.duration) {
@@ -1824,6 +1891,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
     createMarketListing,
     cancelMarketListing,
     buyMarketListing,
+    sellToNPC,
     articles: filteredArticles,
     allArticles: articles,
     socialStats,

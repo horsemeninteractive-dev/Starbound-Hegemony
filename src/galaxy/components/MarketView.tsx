@@ -38,6 +38,7 @@ export function MarketView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: 
   const [sellResource, setSellResource] = useState<string>("");
   const [sellAmount, setSellAmount] = useState<number>(1);
   const [sellPrice, setSellPrice] = useState<number>(100);
+  const [liqAmounts, setLiqAmounts] = useState<Record<string, number>>({});
 
   const handleCreateListing = () => {
     if (!sellResource) {
@@ -295,14 +296,34 @@ export function MarketView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: 
                             <div className="text-[9px] font-mono-hud text-success uppercase flex items-center gap-1">
                               <SC_Icon size={8} /> {npcPrice} / unit
                             </div>
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              className="h-6 text-[8px] uppercase font-bold tracking-[0.2em] px-2"
-                              onClick={() => { onPlayClick?.(); (app as any).sellToNPC(res.resourceType, res.amount, npcPrice); }}
-                            >
-                              Liquidate
-                            </Button>
+                            <div className="flex gap-1 items-center">
+                              <div className="bg-background/50 border border-primary/20 rounded px-1.5 py-0.5 flex items-center h-6">
+                                <input 
+                                  type="number" 
+                                  min="1" 
+                                  max={res.amount} 
+                                  value={liqAmounts[res.resourceType] ?? res.amount}
+                                  onChange={(e) => setLiqAmounts({...liqAmounts, [res.resourceType]: parseInt(e.target.value) || 1})}
+                                  className="bg-transparent text-right w-10 text-primary font-bold outline-none text-[9px]"
+                                />
+                              </div>
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="h-6 text-[8px] uppercase font-bold tracking-[0.2em] px-2"
+                                onClick={() => { 
+                                  onPlayClick?.(); 
+                                  const amt = liqAmounts[res.resourceType] ?? res.amount;
+                                  if (amt > 0 && amt <= res.amount) {
+                                    app.sellToNPC(res.resourceType, amt, npcPrice); 
+                                  } else {
+                                    toast.error("Invalid quantity");
+                                  }
+                                }}
+                              >
+                                Liquidate
+                              </Button>
+                            </div>
                           </div>
                         </div>
                       );

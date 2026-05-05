@@ -118,7 +118,7 @@ export const RESOURCE_META = {
     inputs: [{ resource: "Helium-3", qty: 2 }, { resource: "Hydrogen", qty: 2 }] },
   "Biofuel":            { tier: 2, factory: "biofuel_vat",        label: "Biofuel Synthesizer",  icon: "FlaskConical", color: "#86EFAC",
     inputs: [{ resource: "Organics", qty: 2 }, { resource: "Water Ice", qty: 2 }] },
-  "Rare Alloys":        { tier: 2, factory: "rare_forge",         label: "Rare-Alloy Forge",     icon: "GemIcon",    color: "#FCA5A5",
+  "Rare Alloys":        { tier: 2, factory: "rare_forge",         label: "Rare-Alloy Forge",     icon: "Disc",       color: "#FCA5A5",
     inputs: [{ resource: "Rare Earths", qty: 2 }, { resource: "Ore", qty: 2 }] },
   "Crystal Circuits":   { tier: 2, factory: "circuit_press",      label: "Crystal Circuit Press",icon: "CircuitBoard", color: "#F9A8D4",
     inputs: [{ resource: "Energy Crystals", qty: 2 }, { resource: "Silicates", qty: 2 }] },
@@ -134,7 +134,7 @@ export const RESOURCE_META = {
     inputs: [{ resource: "Exotic Matter", qty: 2 }, { resource: "Water Ice", qty: 2 }] },
   "Solar Capacitors":   { tier: 2, factory: "solar_capacitor",    label: "Solar Capacitor Bank", icon: "BatteryCharging", color: "#FDE68A",
     inputs: [{ resource: "Solar Energy", qty: 2 }, { resource: "Energy Crystals", qty: 2 }] },
-  "Hydro-Gel":          { tier: 2, factory: "hydrogel_plant",     label: "Hydro-Gel Plant",      icon: "Droplets",   color: "#7DD3FC",
+  "Hydro-Gel":          { tier: 2, factory: "hydrogel_plant",     label: "Hydro-Gel Plant",      icon: "Waves",      color: "#7DD3FC",
     inputs: [{ resource: "Hydrogen", qty: 2 }, { resource: "Organics", qty: 2 }] },
 
   // ── T3: Manufactured Components (each requires 2 T2 inputs per work shift) ──
@@ -144,11 +144,11 @@ export const RESOURCE_META = {
     inputs: [{ resource: "Steel Alloy", qty: 3 }, { resource: "Rare Alloys", qty: 3 }] },
   "Neural Arrays":      { tier: 3, factory: "array_foundry",      label: "Neural Array Foundry", icon: "Network",    color: "#C4B5FD",
     inputs: [{ resource: "Crystal Circuits", qty: 3 }, { resource: "Superconductors", qty: 3 }] },
-  "Quantum Reactors":   { tier: 3, factory: "quantum_forge",      label: "Quantum Reactor Forge",icon: "Orbit",      color: "#6EE7B7",
+  "Quantum Reactors":   { tier: 3, factory: "quantum_forge",      label: "Quantum Reactor Forge",icon: "Hexagon",    color: "#6EE7B7",
     inputs: [{ resource: "Dark Matter Gel", qty: 3 }, { resource: "Solar Capacitors", qty: 3 }] },
   "Biotech Modules":    { tier: 3, factory: "biotech_lab",        label: "Biotech Module Lab",   icon: "Microscope", color: "#86EFAC",
     inputs: [{ resource: "Biofuel", qty: 3 }, { resource: "Hydro-Gel", qty: 3 }] },
-  "Xenotech Frames":    { tier: 3, factory: "xenotech_press",     label: "Xenotech Frame Press", icon: "Cpu",        color: "#22D3EE",
+  "Xenotech Frames":    { tier: 3, factory: "xenotech_press",     label: "Xenotech Frame Press", icon: "Shapes",     color: "#22D3EE",
     inputs: [{ resource: "Nanomaterials", qty: 3 }, { resource: "Polymer Sheets", qty: 3 }] },
 } as const;
 

@@ -340,7 +340,7 @@ function formatLabel(raw: string): string {
   const effectiveIsVisited = isVisited || isAtThisBody;
 
   const isSanctum = body.systemId.startsWith('sys-inner-') || body.systemId === 'sys-center';
-  const residencyProhibited = isSanctum || body.type === 'asteroid';
+  const residencyProhibited = isSanctum || body.type === 'asteroid' || body.type === 'gas_giant' || body.type === 'star';
 
   return (
     <Panel title={body.name} subtitle={BODY_META[body.type].label} hideHeader={hideHeader}>
@@ -514,7 +514,7 @@ function formatLabel(raw: string): string {
               )}
 
               {/* Local Governance Section */}
-              {!isShip && !isStar && isExplored && !body.ownerId && (
+              {!isShip && !isStar && isExplored && !body.ownerId && !residencyProhibited && (
                 <div className="mt-4 border-t border-primary/20 pt-4">
                   <SubTitle>Local Governance</SubTitle>
                   {bodyGovernance[body.id] ? (

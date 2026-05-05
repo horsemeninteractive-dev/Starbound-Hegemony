@@ -241,11 +241,12 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
         float fbm(vec3 p, int octaves) {
           float value = 0.0;
           float amplitude = 0.5;
+          const int maxOctaves = 8;
           int realOctaves = octaves;
           if (uQuality < 0.5) realOctaves = min(octaves, 2);
           else if (uQuality < 1.5) realOctaves = min(octaves, 4);
 
-          for (int i = 0; i < 8; i++) {
+          for (int i = 0; i < maxOctaves; i++) {
             if (i >= realOctaves) break;
             value += amplitude * snoise(p);
             p *= 2.0;

@@ -59,75 +59,105 @@ const createEngineBuffer = (ctx: AudioContext) => {
 };
 
 // --- CELESTIAL AUDIO SYNTHESIS ---
-const celestialBufferCache = new Map<string, AudioBuffer>();
+export const celestialBufferCache = new Map<string, AudioBuffer>();
 
-const createCelestialBuffer = (ctx: AudioContext, type: string, subtype?: string, starType?: string) => {
-  const cacheKey = `${type}-${subtype || 'none'}-${starType || 'none'}`;
+export const createCelestialBuffer = (ctx: AudioContext, type: string, subtype?: string, starType?: string) => {
+  // Use a simplified cache key for types that share auditory profiles to minimize redundant synthesis
+  let cacheKey = type;
+  if (type === 'star') cacheKey += `-${starType || 'none'}`;
+  else if (type === 'gate') cacheKey += `-${subtype || 'none'}`;
+  // For terrestrial/gas giants/moons/stations, the sound is usually the same regardless of subtype
+  
   if (celestialBufferCache.has(cacheKey)) {
     return celestialBufferCache.get(cacheKey)!;
   }
 
   const duration = 2.0;
-  const buffer = ctx.createBuffer(1, ctx.sampleRate * duration, ctx.sampleRate);
+  const sampleCount = ctx.sampleRate * duration;
+  const buffer = ctx.createBuffer(1, sampleCount, ctx.sampleRate);
   const data = buffer.getChannelData(0);
   const isPulsar = starType === "pulsar" || starType === "magnetar";
   const isBlackHole = starType === "blackhole";
 
-  for (let i = 0; i < buffer.length; i++) {
-    const t = i / ctx.sampleRate;
-    let s = 0;
+  const fade = 0.01 * ctx.sampleRate;
+  const invSampleRate = 1.0 / ctx.sampleRate;
 
-    if (type === "star") {
+  // Branching OUTSIDE the loop for massive performance gain in synthesis
+  if (type === "star") {
+    const freq = (starType === "O" || starType === "B") ? 110 : 55;
+    for (let i = 0; i < sampleCount; i++) {
+      const t = i * invSampleRate;
+      let s = 0;
       if (isBlackHole) {
-        // Haunted gravitational distortion
         s = Math.sin(2 * Math.PI * 40 * t + Math.sin(t * 15) * 5) * 0.35;
         s += (Math.random() * 2 - 1) * 0.08 * Math.sin(t * 2);
       } else if (isPulsar) {
-        // Rhythmic "crystalline" chirps
         const pulse = Math.pow(Math.sin(t * 12.0 * Math.PI), 16.0);
         s = Math.sin(2 * Math.PI * 800 * t) * pulse * 0.5;
         s += (Math.random() * 2 - 1) * 0.05 * pulse;
       } else {
-        // Roiling plasma rumble - use smoothed frequencies
-        const freq = (starType === "O" || starType === "B") ? 110 : 55;
         s = Math.sin(2 * Math.PI * freq * t) * 0.4;
         s += Math.sin(2 * Math.PI * (freq * 0.5) * t) * 0.2;
         s += (Math.random() * 2 - 1) * 0.12; 
       }
-    } else if (type === "gas_giant") {
-      // Thick atmospheric roaring - smoothed to prevent clipping
+      let multiplier = 1.0;
+      if (i < fade) multiplier = i / fade;
+      else if (i > sampleCount - fade) multiplier = (sampleCount - i) / fade;
+      data[i] = Math.max(-1, Math.min(1, s * multiplier));
+    }
+  } else if (type === "gas_giant") {
+    let lastValue = 0;
+    for (let i = 0; i < sampleCount; i++) {
       const raw = (Math.random() * 2 - 1) * 0.25;
-      if (i > 0) data[i] = data[i-1] * 0.98 + raw * 0.02;
-      s = data[i] * 3.0; 
-    } else if (type === "terrestrial") {
-      // Geological hum / sparse wind
-      s = Math.sin(2 * Math.PI * 45 * t) * 0.15;
+      lastValue = lastValue * 0.98 + raw * 0.02;
+      let multiplier = 1.0;
+      if (i < fade) multiplier = i / fade;
+      else if (i > sampleCount - fade) multiplier = (sampleCount - i) / fade;
+      data[i] = Math.max(-1, Math.min(1, lastValue * 3.0 * multiplier));
+    }
+  } else if (type === "terrestrial") {
+    for (let i = 0; i < sampleCount; i++) {
+      const t = i * invSampleRate;
+      let s = Math.sin(2 * Math.PI * 45 * t) * 0.15;
       if (Math.random() < 0.005) s += (Math.random() * 2 - 1) * 0.3;
-    } else if (type === "station") {
-      // Industrial drone
-      s = Math.sin(2 * Math.PI * 220 * t) * 0.1;
+      let multiplier = 1.0;
+      if (i < fade) multiplier = i / fade;
+      else if (i > sampleCount - fade) multiplier = (sampleCount - i) / fade;
+      data[i] = Math.max(-1, Math.min(1, s * multiplier));
+    }
+  } else if (type === "station") {
+    for (let i = 0; i < sampleCount; i++) {
+      const t = i * invSampleRate;
+      let s = Math.sin(2 * Math.PI * 220 * t) * 0.1;
       s += Math.sin(2 * Math.PI * 440 * t) * 0.05;
       s += (Math.random() * 2 - 1) * 0.02;
-    } else if (type === "moon") {
-      // Cold, hollow void sound
-      const raw = (Math.random() * 2 - 1) * 0.15;
-      if (i > 0) data[i] = data[i-1] * 0.99 + raw * 0.01;
-      s = data[i] * 2.0;
-    } else if (type === "gate") {
-      // High-pitched spatial tear
-      s = Math.sin(2 * Math.PI * (1200 + Math.sin(t * 5) * 200) * t) * 0.08;
-      s += (Math.random() * 2 - 1) * 0.02;
+      let multiplier = 1.0;
+      if (i < fade) multiplier = i / fade;
+      else if (i > sampleCount - fade) multiplier = (sampleCount - i) / fade;
+      data[i] = Math.max(-1, Math.min(1, s * multiplier));
     }
-
-    // Apply a subtle fade in/out to the entire buffer to prevent clicks on loop
-    const fade = 0.01 * ctx.sampleRate;
-    let multiplier = 1.0;
-    if (i < fade) multiplier = i / fade;
-    if (i > buffer.length - fade) multiplier = (buffer.length - i) / fade;
-    
-    data[i] = Math.max(-1, Math.min(1, s * multiplier));
+  } else if (type === "moon") {
+    let lastValue = 0;
+    for (let i = 0; i < sampleCount; i++) {
+      const raw = (Math.random() * 2 - 1) * 0.15;
+      lastValue = lastValue * 0.99 + raw * 0.01;
+      let multiplier = 1.0;
+      if (i < fade) multiplier = i / fade;
+      else if (i > sampleCount - fade) multiplier = (sampleCount - i) / fade;
+      data[i] = Math.max(-1, Math.min(1, lastValue * 2.0 * multiplier));
+    }
+  } else if (type === "gate") {
+    for (let i = 0; i < sampleCount; i++) {
+      const t = i * invSampleRate;
+      let s = Math.sin(2 * Math.PI * (1200 + Math.sin(t * 5) * 200) * t) * 0.08;
+      s += (Math.random() * 2 - 1) * 0.02;
+      let multiplier = 1.0;
+      if (i < fade) multiplier = i / fade;
+      else if (i > sampleCount - fade) multiplier = (sampleCount - i) / fade;
+      data[i] = Math.max(-1, Math.min(1, s * multiplier));
+    }
   }
-  
+
   celestialBufferCache.set(cacheKey, buffer);
   return buffer;
 };
