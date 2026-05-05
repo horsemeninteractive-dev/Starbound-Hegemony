@@ -1577,7 +1577,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
       if (profile) setSc(profile.credits);
       const { data: inv } = await supabase.from('user_resources').select('*').eq('user_id', user.id);
       if (inv) setUserResources(inv.map(r => ({ userId: r.user_id, resourceType: r.resource_type, amount: r.amount })));
-      grantXP('market_listing'); // Tiny XP for trade
+      grantXP('market_trade'); // Tiny XP for trade
     }
   }, [user, fetchEconomyData, grantXP]);
 
