@@ -1003,62 +1003,64 @@ function EconomyTab({
       <Divider />
 
       {/* Advanced Industry Section */}
-      <section>
-        <SubTitle>Advanced Industrial Development</SubTitle>
-        <div className="grid grid-cols-2 gap-2">
-          {/* T2 Category */}
-          <div className="p-2 border border-primary/20 bg-primary/5 rounded">
-            <div className="text-[8px] font-bold text-primary/70 uppercase tracking-[0.2em] mb-2 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              T2 Refineries
+      {!isSanctum && (
+        <section>
+          <SubTitle>Advanced Industrial Development</SubTitle>
+          <div className="grid grid-cols-2 gap-2">
+            {/* T2 Category */}
+            <div className="p-2 border border-primary/20 bg-primary/5 rounded">
+              <div className="text-[8px] font-bold text-primary/70 uppercase tracking-[0.2em] mb-2 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                T2 Refineries
+              </div>
+              <div className="grid grid-cols-4 gap-1">
+                {T2_RESOURCES.map(res => {
+                  const meta = (RESOURCE_META as any)[res];
+                  const alreadyHas = factories.some(f => f.resourceType === res && f.ownerId === userId);
+                  return (
+                    <button
+                      key={res}
+                      disabled={alreadyHas || !isAtThisBody}
+                      onClick={() => onBuildFactory(res)}
+                      title={`Build ${meta.label} (20,000 SC)`}
+                      className={`aspect-square flex items-center justify-center border rounded transition-all ${alreadyHas ? 'border-success/40 bg-success/10 text-success' : 'border-primary/20 bg-background hover:border-primary/60 text-primary/60 hover:text-primary'} ${(!isAtThisBody) ? 'opacity-30' : ''}`}
+                    >
+                      <GalaxyIcon name={meta.icon} className="w-5 h-5" color={alreadyHas ? meta.color : 'currentColor'} />
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-2 text-[7px] text-muted-foreground uppercase text-center">Cost: 20,000 SC</div>
             </div>
-            <div className="grid grid-cols-4 gap-1">
-              {T2_RESOURCES.map(res => {
-                const meta = (RESOURCE_META as any)[res];
-                const alreadyHas = factories.some(f => f.resourceType === res && f.ownerId === userId);
-                return (
-                  <button
-                    key={res}
-                    disabled={alreadyHas || !isAtThisBody || isSanctum}
-                    onClick={() => onBuildFactory(res)}
-                    title={`Build ${meta.label} (20,000 SC)`}
-                    className={`aspect-square flex items-center justify-center border rounded transition-all ${alreadyHas ? 'border-success/40 bg-success/10 text-success' : 'border-primary/20 bg-background hover:border-primary/60 text-primary/60 hover:text-primary'} ${(!isAtThisBody || isSanctum) ? 'opacity-30' : ''}`}
-                  >
-                    <GalaxyIcon name={meta.icon} className="w-5 h-5" color={alreadyHas ? meta.color : 'currentColor'} />
-                  </button>
-                );
-              })}
-            </div>
-            <div className="mt-2 text-[7px] text-muted-foreground uppercase text-center">Cost: 20,000 SC</div>
-          </div>
 
-          {/* T3 Category */}
-          <div className="p-2 border border-accent/20 bg-accent/5 rounded">
-            <div className="text-[8px] font-bold text-accent/70 uppercase tracking-[0.2em] mb-2 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-              T3 Fabricators
+            {/* T3 Category */}
+            <div className="p-2 border border-accent/20 bg-accent/5 rounded">
+              <div className="text-[8px] font-bold text-accent/70 uppercase tracking-[0.2em] mb-2 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+                T3 Fabricators
+              </div>
+              <div className="grid grid-cols-3 gap-1">
+                {T3_RESOURCES.map(res => {
+                  const meta = (RESOURCE_META as any)[res];
+                  const alreadyHas = factories.some(f => f.resourceType === res && f.ownerId === userId);
+                  return (
+                    <button
+                      key={res}
+                      disabled={alreadyHas || !isAtThisBody}
+                      onClick={() => onBuildFactory(res)}
+                      title={`Build ${meta.label} (75,000 SC)`}
+                      className={`aspect-square flex items-center justify-center border rounded transition-all ${alreadyHas ? 'border-success/40 bg-success/10 text-success' : 'border-accent/20 bg-background hover:border-accent/60 text-accent/60 hover:text-accent'} ${(!isAtThisBody) ? 'opacity-30' : ''}`}
+                    >
+                      <GalaxyIcon name={meta.icon} className="w-5 h-5" color={alreadyHas ? meta.color : 'currentColor'} />
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-2 text-[7px] text-muted-foreground uppercase text-center">Cost: 75,000 SC</div>
             </div>
-            <div className="grid grid-cols-3 gap-1">
-              {T3_RESOURCES.map(res => {
-                const meta = (RESOURCE_META as any)[res];
-                const alreadyHas = factories.some(f => f.resourceType === res && f.ownerId === userId);
-                return (
-                  <button
-                    key={res}
-                    disabled={alreadyHas || !isAtThisBody || isSanctum}
-                    onClick={() => onBuildFactory(res)}
-                    title={`Build ${meta.label} (75,000 SC)`}
-                    className={`aspect-square flex items-center justify-center border rounded transition-all ${alreadyHas ? 'border-success/40 bg-success/10 text-success' : 'border-accent/20 bg-background hover:border-accent/60 text-accent/60 hover:text-accent'} ${(!isAtThisBody || isSanctum) ? 'opacity-30' : ''}`}
-                  >
-                    <GalaxyIcon name={meta.icon} className="w-5 h-5" color={alreadyHas ? meta.color : 'currentColor'} />
-                  </button>
-                );
-              })}
-            </div>
-            <div className="mt-2 text-[7px] text-muted-foreground uppercase text-center">Cost: 75,000 SC</div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       <Divider />
 
@@ -1137,11 +1139,11 @@ export function ShipOverview({ system, travel, arrival, currentTime, onDeselect,
   const etaSec = travel ? Math.max(0, Math.ceil((travel.endTime - currentTime) / 1000)) : 0;
 
   return (
-    <Panel title={shipName || "Commander's Vessel"} subtitle="Fleet · Flagship" hideHeader={hideHeader}>
+    <Panel title={shipName || "Commander Vessel"} subtitle="Fleet · Flagship" hideHeader={hideHeader}>
       <div className="mb-3 p-2 bg-primary/10 border border-primary/20 rounded flex items-center gap-2">
         <span className="text-xl">🚀</span>
         <div>
-          <div className="text-[10px] font-bold text-primary uppercase tracking-widest">IXS Hegemony</div>
+          <div className="text-[10px] font-bold text-primary uppercase tracking-widest">{shipName || "Flagship"}</div>
           <div className="text-[9px] text-muted-foreground uppercase">Commander Vessel · Class I</div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { 
   Users, UserPlus, Shield, Flag, Globe, Coins, Settings, 
   MessageSquare, Award, ArrowRight, Lock, Plus, Search,
@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { type GalaxyApp } from "@/galaxy/useGalaxyApp";
 import { type Party } from "@/galaxy/types";
 import { Slider } from "@/components/ui/slider";
+import { supabase } from "@/lib/supabase";
 
 const PARTY_ICONS = [
   { name: "Shield", icon: Shield },
@@ -31,8 +32,24 @@ const PARTY_ICONS = [
   { name: "Zap", icon: Zap },
 ];
 
-export function PartyView({ app }: { app: GalaxyApp }) {
-  const [activeTab, setActiveTab] = useState<"Browse" | "My Party">("Browse");
+export function PartyView({ app, isPublic = false }: { app: GalaxyApp; isPublic?: boolean }) {
+  const [activeTab, setActiveTab] = useState<"Browse" | "My Party">(isPublic ? "My Party" : "Browse");
+  const [viewedParty, setViewedParty] = useState<Party | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (isPublic && app.viewedPartyId) {
+      const fetchParty = async () => {
+        setIsLoading(true);
+        const { data } = await supabase.from('parties').select('*').eq('id', app.viewedPartyId).single();
+        if (data) setViewedParty(data);
+        setIsLoading(false);
+      };
+      fetchParty();
+    }
+  }, [isPublic, app.viewedPartyId]);
+
+  const displayParty = isPublic ? viewedParty : app.userParty;
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreating, setIsCreating] = useState(false);
 
@@ -75,27 +92,39 @@ export function PartyView({ app }: { app: GalaxyApp }) {
               <Users className="text-primary" size={28} />
             </div>
             <div>
-              <h1 className="font-display text-2xl sm:text-3xl text-primary text-glow uppercase tracking-[0.2em]">Political Hub</h1>
-              <p className="font-mono-hud text-[10px] text-muted-foreground uppercase tracking-widest mt-1">Ideology · Power · Governance</p>
+              <h1 className="font-display text-2xl sm:text-3xl text-primary text-glow uppercase tracking-[0.2em]">{isPublic ? "Faction Intel" : "Political Hub"}</h1>
+              <p className="font-mono-hud text-[10px] text-muted-foreground uppercase tracking-widest mt-1">{isPublic ? "Strategic Analysis · Archives" : "Ideology · Power · Governance"}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button 
-              variant={activeTab === "Browse" ? "default" : "outline"}
-              onClick={() => setActiveTab("Browse")}
-              className="h-10 text-[10px] uppercase tracking-widest font-display"
-            >
-              Browse Factions
-            </Button>
-            <Button 
-              variant={activeTab === "My Party" ? "default" : "outline"}
-              onClick={() => setActiveTab("My Party")}
-              className="h-10 text-[10px] uppercase tracking-widest font-display"
-            >
-              {app.userParty ? "My Faction" : "Join/Create"}
-            </Button>
-          </div>
+          {!isPublic && (
+            <div className="flex items-center gap-2">
+              <Button 
+                variant={activeTab === "Browse" ? "default" : "outline"}
+                onClick={() => setActiveTab("Browse")}
+                className="h-10 text-[10px] uppercase tracking-widest font-display"
+              >
+                Browse Factions
+              </Button>
+              <Button 
+                variant={activeTab === "My Party" ? "default" : "outline"}
+                onClick={() => setActiveTab("My Party")}
+                className="h-10 text-[10px] uppercase tracking-widest font-display"
+              >
+                {app.userParty ? "My Faction" : "Join/Create"}
+              </Button>
+            </div>
+          )}
+          
+          {isPublic && (
+             <Button 
+               variant="outline"
+               onClick={() => app.resetPublicViews()}
+               className="h-10 text-[10px] uppercase tracking-widest font-display gap-2"
+             >
+               Return to Hub
+             </Button>
+          )}
         </div>
       </header>
 
@@ -190,7 +219,11 @@ export function PartyView({ app }: { app: GalaxyApp }) {
 
           {activeTab === "My Party" && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-              {!app.userParty ? (
+              {isLoading ? (
+                <div className="py-20 flex justify-center">
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
+                </div>
+              ) : !displayParty ? (
                 <div className="max-w-2xl mx-auto py-12 space-y-8">
                   <div className="text-center space-y-4">
                     <div className="w-20 h-20 mx-auto bg-primary/10 rounded-full border border-primary/20 flex items-center justify-center mb-6">
@@ -343,25 +376,25 @@ export function PartyView({ app }: { app: GalaxyApp }) {
                         <div 
                           className="w-24 h-24 mx-auto rounded border-2 flex items-center justify-center text-5xl text-glow shadow-[0_0_30px_rgba(var(--hue-rgb),0.2)]"
                           style={{ 
-                            backgroundColor: `hsla(${app.userParty.hue || 200}, 70%, 20%, 0.4)`,
-                            borderColor: `hsla(${app.userParty.hue || 200}, 70%, 50%, 0.8)`,
-                            color: `hsl(${app.userParty.hue || 200}, 80%, 60%)`
+                            backgroundColor: `hsla(${displayParty.hue || 200}, 70%, 20%, 0.4)`,
+                            borderColor: `hsla(${displayParty.hue || 200}, 70%, 50%, 0.8)`,
+                            color: `hsl(${displayParty.hue || 200}, 80%, 60%)`
                           } as any}
                         >
                           {(() => {
-                            const Icon = PARTY_ICONS.find(i => i.name === app.userParty?.logoSymbol)?.icon || Users;
+                            const Icon = PARTY_ICONS.find(i => i.name === displayParty?.logoSymbol)?.icon || Users;
                             return <Icon size={48} />;
                           })()}
                         </div>
                         <div>
-                          <h2 className="font-display text-xl text-white uppercase tracking-widest">{app.userParty.name}</h2>
+                          <h2 className="font-display text-xl text-white uppercase tracking-widest">{displayParty.name}</h2>
                           <div className="flex items-center justify-center gap-2 mt-1">
-                            <span className="text-[10px] font-mono-hud px-2 py-0.5 bg-primary/20 text-primary rounded">[{app.userParty.tag}]</span>
+                            <span className="text-[10px] font-mono-hud px-2 py-0.5 bg-primary/20 text-primary rounded">[{displayParty.tag}]</span>
                           </div>
                         </div>
                         <div className="pt-4 border-t border-primary/10 flex flex-col gap-1">
                           <span className="text-[8px] font-mono-hud text-muted-foreground uppercase">Ideology</span>
-                          <span className="text-[10px] font-display text-primary uppercase tracking-wider">{app.userParty.ideology || "None Defined"}</span>
+                          <span className="text-[10px] font-display text-primary uppercase tracking-wider">{displayParty.ideology || "None Defined"}</span>
                         </div>
                       </div>
 
@@ -370,15 +403,15 @@ export function PartyView({ app }: { app: GalaxyApp }) {
                          <div className="space-y-3">
                             <div className="flex justify-between items-center">
                               <span className="text-[9px] font-mono-hud text-muted-foreground uppercase">Daily Wage</span>
-                              <span className="text-[10px] font-display text-success">{app.userParty.dailyWage} SC</span>
+                              <span className="text-[10px] font-display text-success">{displayParty.dailyWage} SC</span>
                             </div>
                             <div className="flex justify-between items-center">
                               <span className="text-[9px] font-mono-hud text-muted-foreground uppercase">Establishment</span>
-                              <span className="text-[10px] font-display text-white">{new Date(app.userParty.createdAt).toLocaleDateString()}</span>
+                              <span className="text-[10px] font-display text-white">{new Date(displayParty.createdAt).toLocaleDateString()}</span>
                             </div>
                             <div className="flex justify-between items-center">
                               <span className="text-[9px] font-mono-hud text-muted-foreground uppercase">Base System</span>
-                              <span className="text-[10px] font-display text-info">{app.galaxy.systemById[app.userParty.regionId]?.name || "Unknown"}</span>
+                              <span className="text-[10px] font-display text-info">{app.galaxy.systemById[displayParty.regionId]?.name || "Unknown"}</span>
                             </div>
                          </div>
                       </div>
@@ -392,7 +425,7 @@ export function PartyView({ app }: { app: GalaxyApp }) {
                           <h3 className="font-display text-xs uppercase tracking-[0.2em] text-primary">Manifesto</h3>
                         </div>
                         <p className="font-mono-hud text-[11px] text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                          {app.userParty.description || "The faction leadership has not yet published an official manifesto. Establish a clear political mandate to attract more followers."}
+                          {displayParty.description || "The faction leadership has not yet published an official manifesto. Establish a clear political mandate to attract more followers."}
                         </p>
                       </div>
 

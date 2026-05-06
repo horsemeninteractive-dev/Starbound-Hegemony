@@ -30,6 +30,7 @@ import { ArticlesView } from "@/galaxy/components/ArticlesView";
 import { ProfileView } from "@/galaxy/components/ProfileView";
 import { PartyView } from "@/galaxy/components/PartyView";
 import { SkillsView } from "@/galaxy/components/SkillsView";
+import { WikiView } from "@/galaxy/components/WikiView";
 import { useAudio } from "@/galaxy/useAudio";
 import { ChangelogModal } from "@/galaxy/components/ChangelogModal";
 import { CreditsScreen } from "@/galaxy/components/CreditsScreen";
@@ -145,7 +146,7 @@ const Index = () => {
   const [pageKey, setPageKey] = useState(0);
   const [scanning, setScanning] = useState(false);
   const prevPage = useRef(app.page);
-  const navigateTo = (page: "map" | "profile" | "articles" | "market" | "factories" | "fleets" | "party" | "skills", extra?: () => void) => {
+  const navigateTo = (page: "map" | "profile" | "articles" | "market" | "factories" | "fleets" | "party" | "skills" | "wiki", extra?: () => void) => {
     if (page === prevPage.current && !extra) return;
     setScanning(true);
     setTimeout(() => {
@@ -206,6 +207,7 @@ const Index = () => {
           playerLevel={app.playerLevel}
           playerXP={app.playerXP}
           xpToNextLevel={app.xpToNextLevel}
+          playerSkills={app.playerSkills}
           playerAvatar={app.playerAvatar}
           playerPartyIcon={app.playerPartyIcon}
           playerPartyHue={app.playerPartyHue}
@@ -225,7 +227,14 @@ const Index = () => {
           isGameReady={isGameReady}
           shipName={app.shipConfig.name}
           nextApTick={app.nextApTick}
+          onOpenWiki={() => navigateTo("wiki")}
           isAdmin={app.isAdmin}
+          searchResults={app.searchResults}
+          isSearching={app.isSearching}
+          onSearch={app.performSearch}
+          onNavigateToUser={app.navigateToPublicProfile}
+          onNavigateToParty={app.navigateToPublicParty}
+          onNavigateToState={app.navigateToPublicState}
         />
       </div>
 
@@ -404,9 +413,9 @@ const Index = () => {
             </aside>
           </>
           ) : app.page === "profile" ? (
-            <ProfileView app={app} onPlayClick={playClick} />
+            <ProfileView app={app} onPlayClick={playClick} isPublic={!!app.viewedUserId} />
           ) : app.page === "party" ? (
-            <PartyView app={app} />
+            <PartyView app={app} isPublic={!!app.viewedPartyId} />
           ) : app.page === "market" ? (
             <MarketView app={app} onPlayClick={playClick} />
           ) : app.page === "factories" ? (
@@ -416,7 +425,9 @@ const Index = () => {
           ) : app.page === "articles" ? (
             <ArticlesView app={app} onPlayClick={playClick} />
           ) : app.page === "empire" ? (
-            <EmpireView app={app} onPlayClick={playClick} />
+            <EmpireView app={app} onPlayClick={playClick} isPublic={!!app.viewedStateId} />
+          ) : app.page === "wiki" ? (
+            <WikiView />
           ) : (
             <div className={`flex-1 bg-background/40 backdrop-blur-sm p-4 ${app.page === 'shipyard' ? 'sm:p-4' : 'sm:p-12'} custom-scrollbar animate-in slide-in-from-bottom-2 duration-500 flex flex-col ${app.page === 'shipyard' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
                <div className={`max-w-6xl mx-auto w-full flex flex-col ${app.page === 'shipyard' ? 'flex-1 min-h-0 h-full' : 'space-y-12 pb-24'}`}>
@@ -579,6 +590,12 @@ const Index = () => {
               </span>
             </>
           )}
+          {app.page === "wiki" && (
+            <>
+              <span className="text-primary/20 mx-0.5">/</span>
+              <span className="px-2 py-1 text-primary text-glow shrink-0 uppercase">Archives</span>
+            </>
+          )}
           {app.page === "profile" && (
             <>
               <span className="text-primary/20 mx-0.5">/</span>
@@ -593,7 +610,7 @@ const Index = () => {
             <span className="font-mono-hud text-[8px] text-emerald-400/80 uppercase tracking-tighter">{app.onlinePlayerCount} ONL</span>
           </div>
 
-          <span>S-Time: <span className="text-primary/60">{new Date(app.currentTime).toISOString().slice(11, 19)} GMT</span></span>
+          <span className="text-primary/60">{new Date(app.currentTime).toISOString().slice(11, 19)} GMT</span>
         </div>
       </footer>
 
@@ -1045,6 +1062,7 @@ function MobileHUD({
                 onDeselect={() => setExpanded(false)}
                 hideHeader={true}
                 onPlayClick={onPlayClick}
+                shipName={app.shipConfig.name}
               />
             )}
           </div>
@@ -1308,13 +1326,15 @@ function CouncilHemicycle({ empire }: { empire: Empire }) {
   );
 }
 
-function EmpireView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: () => void }) {
+function EmpireView({ app, onPlayClick, isPublic = false }: { app: GalaxyApp; onPlayClick: () => void, isPublic?: boolean }) {
   const [activeTab, setActiveTab] = useState<"overview" | "parliament" | "government" | "laws" | "diplomacy">("overview");
   const [newEmpireName, setNewEmpireName] = useState("");
   const [newEmpireTag, setNewEmpireTag] = useState("");
-  let empire = app.galaxy.empires.find(e => e.id === app.selectedEmpireId);
+  
+  const targetId = isPublic ? app.viewedStateId : app.selectedEmpireId;
+  let empire = app.galaxy.empires.find(e => e.id === targetId);
   if (!empire) {
-    empire = app.playerEmpires.find(e => e.id === app.selectedEmpireId);
+    empire = app.playerEmpires.find(e => e.id === targetId);
   }
 
   // Handle provisional body-based governments
@@ -1390,11 +1410,11 @@ function EmpireView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: () => v
       <div className="px-6 border-b border-primary/20 bg-background/20 flex gap-1 overflow-x-auto no-scrollbar">
         {[
           { id: 'overview', label: 'State Overview', icon: LayoutGrid },
-          { id: 'parliament', label: 'Parliament', icon: Scale },
-          { id: 'government', label: 'Cabinet', icon: Crown },
-          { id: 'laws', label: 'Legislation', icon: BookOpen },
-          { id: 'diplomacy', label: 'Diplomacy', icon: Globe },
-        ].map(tab => {
+          { id: 'parliament', label: 'Parliament', icon: Scale, restricted: true },
+          { id: 'government', label: 'Cabinet', icon: Crown, restricted: true },
+          { id: 'laws', label: 'Legislation', icon: BookOpen, restricted: true },
+          { id: 'diplomacy', label: 'Diplomacy', icon: Globe, restricted: true },
+        ].filter(t => !isPublic || !t.restricted).map(tab => {
           const Icon = tab.icon;
           return (
             <button
@@ -1415,6 +1435,23 @@ function EmpireView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: () => v
 
       <div className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar relative z-10">
         <div className="max-w-6xl mx-auto">
+          {isPublic && (
+            <div className="mb-8 p-4 bg-primary/10 border border-primary/20 rounded-lg flex items-center justify-between">
+               <div className="flex items-center gap-3">
+                  <ShieldAlert className="text-warning" size={20} />
+                  <div className="flex flex-col">
+                     <span className="font-display text-[10px] text-primary uppercase tracking-widest">Diplomatic Intelligence Archive</span>
+                     <span className="font-mono-hud text-[8px] text-muted-foreground uppercase tracking-tighter">Classified state secrets and cabinet records encrypted</span>
+                  </div>
+               </div>
+               <button 
+                 onClick={() => app.resetPublicViews()}
+                 className="px-3 py-1.5 bg-primary/20 border border-primary/30 text-[9px] font-mono-hud text-primary uppercase tracking-widest hover:bg-primary/30 transition-all rounded"
+               >
+                 Close Intel
+               </button>
+            </div>
+          )}
           {activeTab === "overview" && (
             <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
               {/* Key Stats */}

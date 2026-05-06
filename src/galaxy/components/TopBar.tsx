@@ -1,8 +1,8 @@
 import logo from "@/assets/logo.png";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { Sheet, SheetContent, SheetOverlay, SheetClose, SheetTitle } from "@/components/ui/sheet";
-import { Newspaper, Factory, Rocket, Users, User, Sparkles, Settings, X, Coins, Zap as ZapIcon, Bug, Hexagon } from "lucide-react";
+import { Sheet, SheetContent, SheetOverlay, SheetClose, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Newspaper, Factory, Rocket, Users, User, Sparkles, Settings, X, Coins, Zap as ZapIcon, Bug, Hexagon, BookOpen, Shield, Search, Compass, Package, Eye, EyeOff, Globe, Radio, RefreshCcw, BatteryFull, ShoppingCart } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +14,7 @@ import {
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UserAvatar } from "./UserAvatar";
+import { GalaxyIcon } from "./ResourceIcon";
 
 
 import type { Galaxy } from "@/galaxy/types";
@@ -28,6 +29,7 @@ interface Props {
   onOpenFleets?: () => void;
   onOpenParty?: () => void;
   onOpenSkills?: () => void;
+  onOpenWiki?: () => void;
   onOpenChangelog?: () => void;
   onOpenCredits?: () => void;
   ap: number;
@@ -39,6 +41,7 @@ interface Props {
   playerLevel: number;
   playerXP: number;
   xpToNextLevel: number;
+  playerSkills?: string[];
   playerAvatar: string;
   playerPartyIcon?: string;
   playerPartyHue?: number;
@@ -59,29 +62,43 @@ interface Props {
   shipName?: string;
   nextApTick?: number;
   isAdmin?: boolean;
+  searchResults?: { users: any[], parties: any[], states: any[] };
+  isSearching?: boolean;
+  onSearch?: (query: string) => void;
+  onNavigateToUser?: (id: string) => void;
+  onNavigateToParty?: (id: string) => void;
+  onNavigateToState?: (id: string) => void;
 }
 
-import { Eye, EyeOff, Zap, Globe, Compass, Radio, RefreshCcw, BatteryFull, ShoppingCart } from "lucide-react";
+
 
 const GAME_MENU = [
   { icon: Globe, label: "Galaxy Map", desc: "Celestial navigation", route: "map", disabled: false },
-  { icon: Newspaper, label: "Articles", desc: "Galactic news feed", route: "articles", disabled: false },
-  { icon: ShoppingCart, label: "Market", desc: "Galactic Trade Hub", route: "market", disabled: false },
-  { icon: Factory, label: "Factories", desc: "Production lines", route: "factories", disabled: false },
-  { icon: Rocket, label: "Fleets", desc: "Fleet command", route: "fleets", disabled: false },
-  { icon: Users, label: "Party", desc: "Political party", route: "party", disabled: false },
   { icon: User, label: "Profile", desc: "Commander profile", route: "profile", disabled: false },
+  { icon: Sparkles, label: "Skills", desc: "Neural Uplink", route: "skills", disabled: false },
+  { icon: Rocket, label: "Fleets", desc: "Fleet command", route: "fleets", disabled: false },
+  { icon: Factory, label: "Factories", desc: "Production lines", route: "factories", disabled: false },
+  { icon: ShoppingCart, label: "Market", desc: "Galactic Trade Hub", route: "market", disabled: false },
+  { icon: Users, label: "Party", desc: "Political party", route: "party", disabled: false },
+  { icon: Newspaper, label: "Articles", desc: "Galactic news feed", route: "articles", disabled: false },
+  { icon: BookOpen, label: "Wiki", desc: "Galactic Archives", route: "wiki", disabled: false },
   { icon: Settings, label: "Settings", desc: "Preferences", route: "settings", disabled: false },
 ];
 
 export function TopBar({ 
   onOpenSettings, onOpenProfile, onOpenMap, onOpenArticles, onOpenMarket,
-  onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills, onOpenChangelog, onOpenCredits,
-  ap, sc, vt = 0, cargoCapacity = 500, cargoUsed = 0, playerName, playerLevel, playerXP, xpToNextLevel, playerAvatar,
+  onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills, onOpenWiki, onOpenChangelog, onOpenCredits,
+  ap, sc, vt = 0, cargoCapacity = 500, cargoUsed = 0, playerName, playerLevel, playerXP, xpToNextLevel, playerSkills = [], playerAvatar,
   playerPartyIcon, playerPartyHue,
   fogOfWar, setFogOfWar, instantJump, setInstantJump,
   playerSystemName, playerSystemId, travel, arrival, currentTime, galaxy, onReset, onSetAp, onPlayClick, isGameReady = true, shipName,
-  nextApTick, isAdmin = false
+  nextApTick, isAdmin = false,
+  searchResults = { users: [], parties: [], states: [] },
+  isSearching = false,
+  onSearch,
+  onNavigateToUser,
+  onNavigateToParty,
+  onNavigateToState
 }: Props) {
   // Game menu state - Radix Sheet handles escape/outside-click automatically
   const [menuOpen, setMenuOpen] = useState(false);
@@ -99,6 +116,144 @@ export function TopBar({
     
     return galaxy.systemById[travel.targetId]?.name || "Deep Space";
   }, [travel, galaxy, playerSystemId]);
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery.length >= 2) {
+        onSearch?.(searchQuery);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, onSearch]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+        setShowSearchResults(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const renderSearchResultsList = () => {
+    if (!searchResults) return null;
+    const hasResults = (searchResults.users?.length || 0) > 0 || 
+                      (searchResults.parties?.length || 0) > 0 || 
+                      (searchResults.states?.length || 0) > 0;
+    
+    return (
+      <>
+        <div className="max-h-[350px] sm:max-h-[400px] overflow-y-auto custom-scrollbar p-2 space-y-4">
+          {/* Commanders */}
+          {searchResults.users && searchResults.users.length > 0 && (
+            <div>
+              <div className="px-2 mb-1 flex items-center justify-between">
+                <span className="text-[8px] font-display text-primary/40 uppercase tracking-widest">Commanders</span>
+                <User className="w-2.5 h-2.5 text-primary/20" />
+              </div>
+              {searchResults.users.map(u => (
+                <button
+                  key={u.id}
+                  onClick={() => {
+                    onNavigateToUser?.(u.id);
+                    setShowSearchResults(false);
+                    setSearchQuery("");
+                  }}
+                  className="w-full flex items-center gap-3 p-2 hover:bg-primary/10 rounded transition-colors group text-left"
+                >
+                  <UserAvatar avatarUrl={u.avatar_url} level={u.level} size="sm" />
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[10px] font-display text-foreground group-hover:text-primary transition-colors truncate">{u.commander_name}</span>
+                    <span className="text-[7px] font-mono-hud text-muted-foreground uppercase">Level {u.level} Commander</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Parties */}
+          {searchResults.parties && searchResults.parties.length > 0 && (
+            <div>
+              <div className="px-2 mb-1 flex items-center justify-between border-t border-primary/5 pt-3 mt-1">
+                <span className="text-[8px] font-display text-primary/40 uppercase tracking-widest">Political Parties</span>
+                <Users className="w-2.5 h-2.5 text-primary/20" />
+              </div>
+              {searchResults.parties.map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    onNavigateToParty?.(p.id);
+                    setShowSearchResults(false);
+                    setSearchQuery("");
+                  }}
+                  className="w-full flex items-center gap-3 p-2 hover:bg-primary/10 rounded transition-colors group text-left"
+                >
+                  <div className="w-6 h-6 rounded bg-primary/10 flex items-center justify-center border border-primary/20 group-hover:border-primary/40 transition-colors">
+                    <GalaxyIcon name={p.icon} className="w-3.5 h-3.5" color={`hsl(${p.hue} 70% 55%)`} />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-display text-foreground group-hover:text-primary transition-colors truncate">{p.name}</span>
+                      <span className="text-[7px] font-mono-hud text-primary/40">[{p.tag}]</span>
+                    </div>
+                    <span className="text-[7px] font-mono-hud text-muted-foreground uppercase">System: {p.system_id}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* States */}
+          {searchResults.states && searchResults.states.length > 0 && (
+            <div>
+              <div className="px-2 mb-1 flex items-center justify-between border-t border-primary/5 pt-3 mt-1">
+                <span className="text-[8px] font-display text-primary/40 uppercase tracking-widest">Sovereign States</span>
+                <Shield className="w-2.5 h-2.5 text-primary/20" />
+              </div>
+              {searchResults.states.map(s => (
+                <button
+                  key={s.id}
+                  onClick={() => {
+                    onNavigateToState?.(s.id);
+                    setShowSearchResults(false);
+                    setSearchQuery("");
+                  }}
+                  className="w-full flex items-center gap-3 p-2 hover:bg-primary/10 rounded transition-colors group text-left"
+                >
+                  <div className="w-6 h-6 rounded-full border-2 border-primary/20 flex items-center justify-center group-hover:border-primary/50 transition-colors" style={{ borderColor: `hsl(${s.hue} 70% 40% / 0.3)` }}>
+                    <div className="w-3 h-3 rounded-full" style={{ background: `hsl(${s.hue} 70% 55%)` }} />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-display text-foreground group-hover:text-primary transition-colors truncate">{s.name}</span>
+                      <span className="text-[7px] font-mono-hud text-primary/40">[{s.tag}]</span>
+                    </div>
+                    <span className="text-[7px] font-mono-hud text-muted-foreground uppercase">Hegemony Member State</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!hasResults && !isSearching && (
+            <div className="p-8 text-center">
+              <div className="font-display text-[10px] text-muted-foreground uppercase tracking-widest mb-2">No Intelligence Found</div>
+              <p className="font-mono-hud text-[8px] text-muted-foreground/50 leading-relaxed italic">The archives contain no records matching your query. Verify coordinates and try again.</p>
+            </div>
+          )}
+        </div>
+        
+        <div className="p-2 bg-primary/5 border-t border-primary/10 flex items-center justify-center">
+          <span className="text-[7px] font-mono-hud text-primary/30 uppercase tracking-[0.2em]">Universal Archive Index</span>
+        </div>
+      </>
+    );
+  };
 
   return (
     <header className="z-50 w-full bg-background/80 backdrop-blur-md border-b border-primary/20">
@@ -138,24 +293,36 @@ export function TopBar({
 
         {/* Player Profile HUD */}
         <div 
-          className="flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-1 bg-primary/5 border border-primary/20 rounded-lg group hover:bg-primary/10 transition-colors cursor-pointer" 
-          onClick={() => {
-            onPlayClick?.();
-            onOpenProfile();
-          }}
+          className="flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-1 bg-primary/5 border border-primary/20 rounded-lg group transition-colors" 
         >
           {/* Avatar with level badge and party icon */}
-          <UserAvatar 
-            avatarUrl={playerAvatar} 
-            level={playerLevel}
-            partyIcon={playerPartyIcon}
-            partyHue={playerPartyHue}
-            size={window.innerWidth < 640 ? "md" : "lg"}
-          />
+          <div 
+            className="cursor-pointer hover:scale-105 transition-transform"
+            onClick={(e) => {
+              e.stopPropagation();
+              onPlayClick?.();
+              onOpenProfile();
+            }}
+          >
+            <UserAvatar 
+              avatarUrl={playerAvatar} 
+              level={playerLevel}
+              partyIcon={playerPartyIcon}
+              partyHue={playerPartyHue}
+              size={window.innerWidth < 640 ? "md" : "lg"}
+            />
+          </div>
 
           {/* Name and XP details - hidden on mobile to save space */}
           <div className="hidden lg:flex flex-col gap-0.5 min-w-[140px]">
-            <div className="flex items-center justify-between gap-2">
+            <div 
+              className="flex items-center justify-between gap-2 cursor-pointer hover:text-primary transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                onPlayClick?.();
+                onOpenProfile();
+              }}
+            >
               <span className="font-display text-[10px] sm:text-[11px] uppercase tracking-wider text-primary text-glow truncate max-w-[120px] lg:max-w-[none]">
                 {playerName}
               </span>
@@ -164,18 +331,32 @@ export function TopBar({
               </div>
             </div>
             
-            {/* XP Progress Bar */}
-            <div className="w-full h-1 bg-primary/10 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-primary shadow-[0_0_5px_hsl(var(--primary))]" 
-                style={{ width: `${(playerXP / xpToNextLevel) * 100}%` }}
-              />
-            </div>
+            {/* XP Progress Bar - Click to open Skills */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div 
+                  className="w-full h-1 bg-primary/10 rounded-full overflow-hidden cursor-pointer hover:bg-primary/20 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPlayClick?.();
+                    onOpenSkills?.();
+                  }}
+                >
+                  <div 
+                    className="h-full bg-primary shadow-[0_0_5px_hsl(var(--primary))]" 
+                    style={{ width: `${(playerXP / xpToNextLevel) * 100}%` }}
+                  />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="bg-background/95 border-primary/20 text-primary font-mono-hud text-[9px] uppercase tracking-widest">
+                XP: {playerXP} / {xpToNextLevel} — Click to open Neural Uplink
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
         {/* Real-time Location Indicator */}
-        <div className="flex items-center gap-1.5 sm:gap-3 px-1.5 sm:px-3 py-1 sm:py-1.5 bg-primary/5 border border-primary/15 rounded-lg border-l-4 border-l-cyan-500 min-w-0 flex-grow max-w-[140px] sm:min-w-[180px] sm:max-w-none">
+        <div className="flex items-center gap-1.5 sm:gap-3 px-1.5 sm:px-3 py-1 sm:py-1.5 bg-primary/5 border border-primary/15 rounded-lg border-l-4 border-l-cyan-500 min-w-0 w-fit max-w-[140px] sm:max-w-[240px]">
           <div className="flex flex-col flex-1 min-w-0">
             <div className="flex items-center gap-1.5 sm:gap-2">
               <Compass size={10} className={`${(travel || arrival) ? "text-cyan-400 animate-spin-slow" : "text-cyan-400/60"} shrink-0`} />
@@ -216,17 +397,82 @@ export function TopBar({
           </div>
         </div>
 
+        {/* Universal Search Bar (Desktop) */}
+        <div className="hidden xl:flex items-center relative ml-2" ref={searchRef}>
+          <div className="relative group">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setShowSearchResults(true);
+              }}
+              onFocus={() => setShowSearchResults(true)}
+              placeholder="Search Galaxy..."
+              className="w-48 xl:w-64 bg-primary/5 border border-primary/20 rounded-lg py-1.5 pl-8 pr-4 text-[10px] font-mono-hud text-foreground focus:outline-none focus:border-primary/50 focus:bg-primary/10 focus:w-72 transition-all duration-300 placeholder:text-primary/20"
+            />
+            <Compass className={`absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 ${isSearching ? "text-primary animate-spin" : "text-primary/30 group-focus-within:text-primary"} transition-colors`} />
+            
+            {showSearchResults && (searchQuery.length >= 2) && (
+              <div className="absolute top-full left-0 mt-2 w-72 bg-background/95 backdrop-blur-xl border border-primary/20 rounded-lg shadow-[0_10px_40px_rgba(0,0,0,0.5)] z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                {renderSearchResultsList()}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Mobile Search Sheet */}
+        <div className="xl:hidden flex items-center ml-1">
+          <Sheet onOpenChange={(open) => {
+            if (open) {
+              setTimeout(() => {
+                const input = document.getElementById('mobile-search-input');
+                input?.focus();
+              }, 200);
+            }
+          }}>
+            <SheetTrigger asChild>
+              <button className="h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center rounded-lg bg-primary/5 border border-primary/20 text-primary/70 hover:text-primary hover:bg-primary/10 hover:border-primary/40 transition-all group">
+                <Search size={16} className={isSearching ? "animate-spin" : "group-hover:scale-110 transition-transform"} />
+              </button>
+            </SheetTrigger>
+            <SheetContent side="top" className="w-full bg-background/95 backdrop-blur-xl border-b border-primary/20 p-4 pt-12 z-[100] outline-none">
+              <div className="relative group mb-4">
+                <input
+                  id="mobile-search-input"
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                  }}
+                  placeholder="Search Galaxy..."
+                  className="w-full bg-primary/5 border border-primary/20 rounded-lg py-3 pl-10 pr-4 text-[12px] font-mono-hud text-foreground focus:outline-none focus:border-primary/50 focus:bg-primary/10 transition-all placeholder:text-primary/20"
+                />
+                <Search className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${isSearching ? "text-primary animate-spin" : "text-primary/30"} transition-colors`} />
+              </div>
+              
+              <div className="max-h-[60vh] overflow-y-auto custom-scrollbar">
+                {searchQuery.length >= 2 ? renderSearchResultsList() : (
+                  <div className="py-12 text-center opacity-40 italic">
+                    <span className="text-[10px] font-mono-hud uppercase tracking-widest">Type to search the archives...</span>
+                  </div>
+                )}
+              </div>
+            </SheetContent>
+          </Sheet>
+        </div>
+
         {/* Spacer to push content right */}
         <div className="flex-1" />
 
         {/* Action Points and Credits */}
-        <div className="flex flex-row items-center gap-1 sm:gap-4 pr-1 sm:pr-4 ml-auto">
+        <div className="grid grid-cols-2 grid-rows-2 gap-x-2 gap-y-1 sm:flex sm:flex-row sm:items-center sm:gap-4 pr-1 sm:pr-4 ml-auto">
           {/* Action Points */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="flex items-center gap-1 sm:gap-2 px-1 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-primary bg-primary/5 sm:min-w-0 cursor-help">
-                <ZapIcon size={12} className="text-primary animate-pulse sm:w-3.5 sm:h-3.5" fill="currentColor" />
-                <div className="flex flex-col leading-none">
+              <div className="flex items-center gap-1 sm:gap-2 px-1.5 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-primary bg-primary/5 sm:min-w-0 cursor-help w-full">
+                <ZapIcon size={12} className="text-primary animate-pulse sm:w-3.5 sm:h-3.5 shrink-0" fill="currentColor" />
+                <div className="flex flex-col leading-none truncate">
                   <div className="flex items-baseline gap-1">
                     <span className="text-[9px] sm:text-[11px] text-primary font-bold tracking-wider">{Math.floor(ap)}</span>
                     {nextApTick && ap < 240 && (
@@ -260,9 +506,9 @@ export function TopBar({
             </TooltipContent>
           </Tooltip>
 
-          <div className="flex items-center gap-1 sm:gap-2 px-1 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-warning bg-warning/5 sm:min-w-0">
-            <Coins size={12} className="text-warning sm:w-3.5 sm:h-3.5" />
-            <div className="flex flex-col leading-none">
+          <div className="flex items-center gap-1 sm:gap-2 px-1.5 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-warning bg-warning/5 sm:min-w-0 w-full">
+            <Coins size={12} className="text-warning sm:w-3.5 sm:h-3.5 shrink-0" />
+            <div className="flex flex-col leading-none truncate">
               <span className="text-[9px] sm:text-[11px] text-warning font-bold tracking-wider">
                 {sc > 1000 && window.innerWidth < 640 ? `${Math.floor(sc / 1000)}k` : Math.floor(sc).toLocaleString()}
               </span>
@@ -271,24 +517,24 @@ export function TopBar({
           </div>
 
           {/* Void Tokens (Premium Currency) */}
-          <div className="flex items-center gap-1 sm:gap-2 px-1 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-purple-500 bg-purple-500/10 sm:min-w-0">
-            <Hexagon size={12} className="text-purple-400 sm:w-3.5 sm:h-3.5" />
-            <div className="flex flex-col leading-none">
+          <div className="flex items-center gap-1 sm:gap-2 px-1.5 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-purple-500 bg-purple-500/10 sm:min-w-0 w-full">
+            <Hexagon size={12} className="text-purple-400 sm:w-3.5 sm:h-3.5 shrink-0" />
+            <div className="flex flex-col leading-none truncate">
               <span className="text-[9px] sm:text-[11px] text-purple-400 font-bold tracking-wider">
-                {vt.toLocaleString()}
+                {vt > 1000 && window.innerWidth < 640 ? `${Math.floor(vt / 1000)}k` : vt.toLocaleString()}
               </span>
               <span className="hidden sm:block text-[7px] text-purple-400/60 uppercase tracking-widest font-mono-hud">Void Tokens</span>
             </div>
           </div>
 
           {/* Cargo Hold */}
-          <div className={`flex items-center gap-1 sm:gap-2 px-1 sm:px-3 py-0.5 sm:py-1.5 border-l-2 sm:min-w-0 bg-info/10 border-info`}>
-            <BatteryFull size={12} className="text-info sm:w-3.5 sm:h-3.5" />
-            <div className="flex flex-col leading-none">
-              <span className={`text-[9px] sm:text-[11px] font-bold tracking-wider ${cargoUsed >= cargoCapacity ? 'text-warning' : 'text-info'}`}>
-                {cargoUsed}/{cargoCapacity}
+          <div className={`flex items-center gap-1 sm:gap-2 px-1.5 sm:px-3 py-0.5 sm:py-1.5 border-l-2 sm:min-w-0 w-full ${cargoUsed >= cargoCapacity ? 'bg-destructive/10 border-destructive' : 'bg-blue-500/10 border-blue-500'}`}>
+            <Package size={12} className={`${cargoUsed >= cargoCapacity ? 'text-destructive' : 'text-blue-400'} sm:w-3.5 sm:h-3.5 shrink-0`} />
+            <div className="flex flex-col leading-none truncate">
+              <span className={`text-[9px] sm:text-[11px] font-bold tracking-wider ${cargoUsed >= cargoCapacity ? 'text-destructive' : 'text-blue-400'}`}>
+                {cargoUsed > 1000 && window.innerWidth < 640 ? `${Math.floor(cargoUsed / 1000)}k` : cargoUsed}/{cargoCapacity > 1000 && window.innerWidth < 640 ? `${Math.floor(cargoCapacity / 1000)}k` : cargoCapacity}
               </span>
-              <span className="hidden sm:block text-[7px] text-info/60 uppercase tracking-widest font-mono-hud">Cargo</span>
+              <span className={`hidden sm:block text-[7px] uppercase tracking-widest font-mono-hud ${cargoUsed >= cargoCapacity ? 'text-destructive/60' : 'text-blue-400/60'}`}>Cargo</span>
             </div>
           </div>
         </div>
@@ -329,7 +575,7 @@ export function TopBar({
                   onClick={() => { setInstantJump(!instantJump); onPlayClick?.(); }}
                   className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5"
                 >
-                  <Zap size={14} fill={instantJump ? "currentColor" : "none"} />
+                  <ZapIcon size={14} fill={instantJump ? "currentColor" : "none"} />
                   <span>{instantJump ? "Disable Instant FTL" : "Enable Instant FTL"}</span>
                 </DropdownMenuItem>
   
@@ -392,6 +638,7 @@ export function TopBar({
                   if (item.route === "fleets") onOpenFleets?.();
                   if (item.route === "party") onOpenParty?.();
                   if (item.route === "skills") onOpenSkills?.();
+                  if (item.route === "wiki") onOpenWiki?.();
                 }}
                 className={`flex items-center gap-4 px-4 py-4 text-left border rounded-lg transition group ${item.disabled ? 'opacity-40 grayscale border-transparent hover:border-primary/10' : 'border-transparent hover:border-primary/30 hover:bg-primary/10'}`}
               >
@@ -401,6 +648,9 @@ export function TopBar({
                     <span className={`font-display text-[14px] uppercase tracking-[0.2em] transition-colors ${item.disabled ? 'text-muted-foreground' : 'text-foreground group-hover:text-primary'} truncate`}>
                       {item.label}
                     </span>
+                    {item.route === "skills" && (playerLevel - 1 - playerSkills.length) > 0 && (
+                      <span className="w-2 h-2 rounded-full bg-primary animate-pulse shadow-[0_0_8px_hsl(var(--primary))]" />
+                    )}
                     {item.disabled && (
                       <span className="text-[7px] border border-muted-foreground/30 px-1 rounded text-muted-foreground font-mono-hud uppercase tracking-tighter">In Dev</span>
                     )}
@@ -439,7 +689,7 @@ export function TopBar({
               </button>
             </div>
             <span className="font-mono-hud text-[7px] uppercase tracking-[0.25em] text-primary/30">
-              Starbound Hegemony OS v0.2.3
+              Starbound Hegemony OS v0.2.4
             </span>
           </div>
         </SheetContent>

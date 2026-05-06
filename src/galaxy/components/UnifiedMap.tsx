@@ -406,18 +406,19 @@ function MapContent({
     }
 
     if (view === "galaxy") {
-      // If we just entered galaxy view, try to focus on the last system we were looking at
-      const target = system || lastSystemRef.current;
+      // Prioritize: Currently selected system -> Last viewed system -> Player's current location -> Galaxy center
+      const target = system || lastSystemRef.current || (currentSystemId ? galaxy.systemById[currentSystemId] : null);
+      
       if (target) {
-        const isNewEntry = lastViewRef.current !== "galaxy";
+        const isFirstLoad = !lastSystemRef.current;
+        const isNewEntry = lastViewRef.current !== "galaxy" || isFirstLoad;
         
-        // If we're coming from a system/body view, we need to compensate for the world-shift being removed.
-        // We do an instant snap first so the user doesn't see the galaxy "jump" to the center,
-        // then a smooth transition to the final preferred angle.
+        // If we're coming from a system/body view, or this is the first load, 
+        // we snap to the target. Otherwise we smooth transition.
         controlsRef.current.setLookAt(
           target.pos[0], target.pos[1] + 400, target.pos[2] + 500,
           target.pos[0], target.pos[1], target.pos[2],
-          !isNewEntry // Only smooth if we were already in galaxy view (e.g. clicking a star)
+          !isNewEntry
         );
       } else {
         controlsRef.current.setLookAt(0, 400, 500, 0, 0, 0, true);

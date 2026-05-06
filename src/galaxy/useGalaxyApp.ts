@@ -48,20 +48,10 @@ export function useGalaxyApp(initialSeed = 20260423) {
     if (saved === "galaxy" || saved === "system") return saved;
     return "galaxy";
   });
-  const [playerSystemId, setPlayerSystemId] = useState<string>(() => {
-    const saved = localStorage.getItem("playerSystemId");
-    if (saved && galaxy.systemById[saved]) return saved;
-    return Object.keys(galaxy.systemById)[0] || "sys-center";
-  });
-  const [playerBodyId, setPlayerBodyId] = useState<string>(
-    () => localStorage.getItem("playerBodyId") ?? "star"
-  );
-  const [exploredSystemIds, setExploredSystemIds] = useState<Set<string>>(
-    () => new Set(JSON.parse(localStorage.getItem("exploredIds") ?? '["sys-center"]'))
-  );
-  const [exploredBodyIds, setExploredBodyIds] = useState<Set<string>>(
-    () => new Set(JSON.parse(localStorage.getItem("exploredBodyIds") ?? '["sys-center:star"]'))
-  );
+  const [playerSystemId, setPlayerSystemId] = useState<string>("sys-center");
+  const [playerBodyId, setPlayerBodyId] = useState<string>("star");
+  const [exploredSystemIds, setExploredSystemIds] = useState<Set<string>>(new Set(["sys-center"]));
+  const [exploredBodyIds, setExploredBodyIds] = useState<Set<string>>(new Set(["sys-center:star"]));
   const [fogOfWar, setFogOfWarState] = useState(() => localStorage.getItem("fogOfWar") !== "false");
   const [instantJump, setInstantJumpState] = useState(() => localStorage.getItem("instantJump") === "true");
   
@@ -71,25 +61,19 @@ export function useGalaxyApp(initialSeed = 20260423) {
     endTime: number; 
     type?: "inter" | "intra";
     startPos?: { x: number; z: number }; // Relative to system center
-  } | null>(() => {
-    const saved = localStorage.getItem("travel");
-    return saved ? JSON.parse(saved) : null;
-  });
+  } | null>(null);
   const [arrival, setArrival] = useState<{ fromId: string; startTime: number; duration: number } | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
 
-  const [ap, setAp] = useState(() => Number(localStorage.getItem("ap") ?? 240));
-  const [sc, setSc] = useState(() => Number(localStorage.getItem("sc") ?? 15000));
+  const [ap, setAp] = useState(240);
+  const [sc, setSc] = useState(15000);
 
-  const [playerName, setPlayerName] = useState(() => localStorage.getItem("playerName") ?? "Majora");
-  const [playerLevel, setPlayerLevel] = useState(() => Number(localStorage.getItem("playerLevel") ?? 1));
-  const [playerXP, setPlayerXP] = useState(() => Number(localStorage.getItem("playerXP") ?? 0));
-  const [playerAvatar, setPlayerAvatar] = useState(() => localStorage.getItem("playerAvatar") ?? avatar);
-  const [shipConfig, setShipConfig] = useState<ShipConfiguration>(() => {
-    const saved = localStorage.getItem("shipConfig");
-    return saved ? JSON.parse(saved) : DEFAULT_SHIP_CONFIG;
-  });
-  const [page, setPage] = useState<"map" | "profile" | "articles" | "market" | "factories" | "fleets" | "party" | "skills" | "shipyard" | "empire">("map");
+  const [playerName, setPlayerName] = useState("Majora");
+  const [playerLevel, setPlayerLevel] = useState(1);
+  const [playerXP, setPlayerXP] = useState(0);
+  const [playerAvatar, setPlayerAvatar] = useState(avatar);
+  const [shipConfig, setShipConfig] = useState<ShipConfiguration>(DEFAULT_SHIP_CONFIG);
+  const [page, setPage] = useState<"map" | "profile" | "articles" | "market" | "factories" | "fleets" | "party" | "skills" | "shipyard" | "empire" | "wiki">("map");
   const [selectedEmpireId, setSelectedEmpireId] = useState<string | null>(null);
   const [systemId, setSystemId] = useState<string | null>(() => localStorage.getItem("systemId"));
   const [bodyId, setBodyId] = useState<string | null>(() => localStorage.getItem("bodyId"));
@@ -113,6 +97,12 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [userProfiles, setUserProfiles] = useState<Record<string, { name: string; avatar: string }>>({});
   const [playerPartyIcon, setPlayerPartyIcon] = useState<string | undefined>();
   const [playerPartyHue, setPlayerPartyHue] = useState<number | undefined>();
+  const [viewedUserId, setViewedUserId] = useState<string | null>(null);
+  const [viewedPartyId, setViewedPartyId] = useState<string | null>(null);
+  const [viewedStateId, setViewedStateId] = useState<string | null>(null);
+  const [searchResults, setSearchResults] = useState<{ users: any[], parties: any[], states: any[] }>({ users: [], parties: [], states: [] });
+  const [isSearching, setIsSearching] = useState(false);
+
   const [playerSkills, setPlayerSkills] = useState<string[]>([]); // unlocked skill IDs
 
   const [socialStats, setSocialStats] = useState({
@@ -152,11 +142,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
   
   // Action Points Tick Logic
   const AP_REGEN_INTERVAL = 300000; // 5 minutes
-  const [lastApTick, setLastApTick] = useState(() => {
-    const saved = localStorage.getItem("lastApTick");
-    return saved ? Number(saved) : Date.now();
-  });
-  const [nextApTick, setNextApTick] = useState(lastApTick + AP_REGEN_INTERVAL);
+  const [lastApTick, setLastApTick] = useState(Date.now());
+  const [nextApTick, setNextApTick] = useState(Date.now() + AP_REGEN_INTERVAL);
   const [onlinePlayerCount, setOnlinePlayerCount] = useState(1);
 
   // Shared mapper: DB factory row → Installation
@@ -226,6 +213,16 @@ export function useGalaxyApp(initialSeed = 20260423) {
           setCargoCapacity(profile.cargo_capacity ?? 5000);
           setIsAdmin(profile.is_admin ?? false);
 
+          // Load AP from DB and compute regen since last tick
+          const dbAp = profile.action_points ?? 240;
+          const lastRegenAt = profile.last_ap_regen_at ? new Date(profile.last_ap_regen_at).getTime() : Date.now();
+          const hoursSinceRegen = Math.floor((Date.now() - lastRegenAt) / 3600000);
+          const regenAmount = hoursSinceRegen * 20;
+          setAp(Math.min(240, dbAp + regenAmount));
+          const nextTick = lastRegenAt + Math.ceil((Date.now() - lastRegenAt) / 3600000) * 3600000;
+          setLastApTick(lastRegenAt);
+          setNextApTick(Math.max(Date.now() + 1000, nextTick));
+
           // Extract party info
           const partyMember = profile.party_members?.[0];
           if (partyMember?.parties) {
@@ -235,6 +232,37 @@ export function useGalaxyApp(initialSeed = 20260423) {
             setPlayerPartyIcon(undefined);
             setPlayerPartyHue(undefined);
           }
+        } else {
+          // PROFILE MISSING: DB was reset!
+          // Reset gameplay state to defaults so we don't resurrect stale data,
+          // but we leave playerName/Avatar as-is in memory so they pre-fill the onboarding form.
+          setPlayerLevel(1);
+          setPlayerXP(0);
+          setSc(15000);
+          setCargoCapacity(5000);
+          setAp(240);
+          setPlayerSystemId("sys-center");
+          setPlayerBodyId("star");
+          setExploredSystemIds(new Set(["sys-center"]));
+          setExploredBodyIds(new Set(["sys-center:star"]));
+          setVesselId(null);
+          setUserResidency(null);
+          setCurrentJob(null);
+          setPlayerSkills([]);
+        }
+
+        // Check for Campaign Reset (Epoch)
+        const { data: epochData } = await supabase.from('global_config').select('value').eq('key', 'campaign_epoch').single();
+        if (epochData) {
+          const currentEpoch = epochData.value;
+          const storedEpoch = localStorage.getItem('campaign_epoch');
+          if (storedEpoch && storedEpoch !== currentEpoch) {
+            console.warn("Campaign reset detected. Force reloading...");
+            localStorage.setItem('campaign_epoch', currentEpoch);
+            window.location.reload();
+            return;
+          }
+          localStorage.setItem('campaign_epoch', currentEpoch);
         }
 
         // Load Inventory
@@ -353,17 +381,28 @@ export function useGalaxyApp(initialSeed = 20260423) {
             enginesId: vessel.engines_id,
             bridgeId: vessel.bridge_id,
           });
+        } else {
+          setVesselId(null);
         }
 
-        // Load Exploration
+        // Load Exploration — always overwrite local state with DB truth
         const { data: exploration } = await supabase
           .from('exploration_logs')
-          .select('system_id')
+          .select('system_id, body_id')
           .eq('user_id', user.id);
         
-        if (exploration && exploration.length > 0) {
-          setExploredSystemIds(new Set(exploration.map(e => e.system_id)));
+        // Always rebuild from DB — never guard on length, so cross-device sync works
+        const exploredSysSet = new Set<string>(["sys-center"]);
+        const exploredBodySet = new Set<string>(["sys-center:star"]);
+        if (exploration) {
+          exploration.forEach(e => {
+            exploredSysSet.add(e.system_id);
+            exploredBodySet.add(`${e.system_id}:${e.body_id || 'star'}`);
+          });
         }
+        setExploredSystemIds(exploredSysSet);
+        setExploredBodyIds(exploredBodySet);
+        console.log(`[Exploration] Loaded ${exploredSysSet.size} systems from DB`);
 
         // Load unlocked skills
         const { data: skills } = await supabase
@@ -371,6 +410,38 @@ export function useGalaxyApp(initialSeed = 20260423) {
           .select('skill_id')
           .eq('user_id', user.id);
         if (skills) setPlayerSkills(skills.map(s => s.skill_id));
+
+        // Load Fleet Position (Current Location)
+        const { data: pos } = await supabase
+          .from('fleet_positions')
+          .select('system_id, body_id, travel_type, travel_target_id, travel_start_time, travel_end_time, travel_start_pos_x, travel_start_pos_z, arrival_from_id, arrival_start_time, arrival_duration')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (pos) {
+          if (pos.system_id) setPlayerSystemId(pos.system_id);
+          if (pos.body_id) setPlayerBodyId(pos.body_id);
+          
+          if (pos.travel_type) {
+            setTravel({
+              targetId: pos.travel_target_id,
+              startTime: Number(pos.travel_start_time),
+              endTime: Number(pos.travel_end_time),
+              type: pos.travel_type as any,
+              startPos: (pos.travel_start_pos_x !== null && pos.travel_start_pos_z !== null) 
+                ? { x: pos.travel_start_pos_x, z: pos.travel_start_pos_z } 
+                : undefined
+            });
+          }
+
+          if (pos.arrival_from_id) {
+            setArrival({
+              fromId: pos.arrival_from_id,
+              startTime: Number(pos.arrival_start_time),
+              duration: Number(pos.arrival_duration)
+            });
+          }
+        }
       } catch (err) {
         console.error("Error loading user data:", err);
       } finally {
@@ -501,22 +572,76 @@ export function useGalaxyApp(initialSeed = 20260423) {
       if (now >= nextApTick) {
         setAp(prev => {
           const next = Math.min(240, prev + 1);
-          localStorage.setItem("ap", next.toString());
+          // Sync AP and regen timestamp to DB for cross-device persistence
+          if (user) {
+            supabase.from('profiles').update({ 
+              action_points: next,
+              last_ap_regen_at: new Date().toISOString()
+            }).eq('id', user.id).then();
+          }
           return next;
         });
         const newTick = now + AP_REGEN_INTERVAL;
         setLastApTick(now);
         setNextApTick(newTick);
-        localStorage.setItem("lastApTick", now.toString());
-        
-        // Sync AP to profile in background
-        if (user) {
-          supabase.from('profiles').update({ action_points: Math.min(240, ap + 1) }).eq('id', user.id).then();
-        }
       }
     }, 1000);
     return () => clearInterval(interval);
   }, [nextApTick, user, ap]);
+
+  // 11. Listen for Campaign Reset (Epoch) via Realtime
+  useEffect(() => {
+    if (!initialDataLoaded) return;
+
+    const channel = supabase
+      .channel('public:global_config')
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'global_config',
+        filter: 'key=eq.campaign_epoch' 
+      }, (payload) => {
+        const newEpoch = payload.new.value;
+        const storedEpoch = localStorage.getItem('campaign_epoch');
+        if (storedEpoch && storedEpoch !== newEpoch) {
+          console.warn("Campaign reset detected via Realtime. Force reloading...");
+          localStorage.setItem('campaign_epoch', newEpoch);
+          window.location.reload();
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [initialDataLoaded]);
+
+  // 12. Listen for App Updates (Deployment) via polling
+  useEffect(() => {
+    const CURRENT_VERSION = "v0.2.4-sb"; // This should match what's in public/version.txt
+    
+    const checkVersion = async () => {
+      try {
+        const response = await fetch('/version.txt?t=' + Date.now());
+        if (!response.ok) return;
+        const latestVersion = (await response.text()).trim();
+        
+        if (latestVersion && latestVersion !== CURRENT_VERSION) {
+          console.warn(`New app version detected: ${latestVersion}. Reloading...`);
+          window.location.reload();
+        }
+      } catch (err) {
+        // Silently fail if offline or error
+      }
+    };
+
+    // Check immediately on mount to catch stale cached loads
+    checkVersion();
+
+    // Then check every 60 seconds
+    const interval = setInterval(checkVersion, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Global Online Players Count (Global scale)
   useEffect(() => {
@@ -560,11 +685,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
     });
   };
 
-  // Persist state to localStorage
-  useEffect(() => { localStorage.setItem("playerSystemId", playerSystemId); }, [playerSystemId]);
-  useEffect(() => { localStorage.setItem("playerBodyId", playerBodyId); }, [playerBodyId]);
-  useEffect(() => { localStorage.setItem("exploredIds", JSON.stringify([...exploredSystemIds])); }, [exploredSystemIds]);
-  useEffect(() => { localStorage.setItem("exploredBodyIds", JSON.stringify([...exploredBodyIds])); }, [exploredBodyIds]);
+  // Persistence sync is now handled primarily by Supabase DB calls in their respective functions
   useEffect(() => { 
     if (view === "galaxy" || view === "system") {
       localStorage.setItem("view", view); 
@@ -578,48 +699,21 @@ export function useGalaxyApp(initialSeed = 20260423) {
     if (bodyId) localStorage.setItem("bodyId", bodyId);
     else localStorage.setItem("bodyId", "");
   }, [bodyId]);
-  useEffect(() => { 
-    if (travel) localStorage.setItem("travel", JSON.stringify(travel));
-    else localStorage.removeItem("travel");
-  }, [travel]);
-
-  useEffect(() => { localStorage.setItem("ap", String(ap)); }, [ap]);
-  useEffect(() => { localStorage.setItem("sc", String(sc)); }, [sc]);
-  useEffect(() => { localStorage.setItem("playerName", playerName); }, [playerName]);
-  useEffect(() => { localStorage.setItem("playerLevel", String(playerLevel)); }, [playerLevel]);
-  useEffect(() => { localStorage.setItem("playerXP", String(playerXP)); }, [playerXP]);
-  useEffect(() => { localStorage.setItem("playerAvatar", playerAvatar); }, [playerAvatar]);
-  useEffect(() => { localStorage.setItem("shipConfig", JSON.stringify(shipConfig)); }, [shipConfig]);
+  // LocalStorage is strictly for UI preferences and non-gameplay settings
+  useEffect(() => { localStorage.setItem("audioEnabled", String(audioEnabled)); }, [audioEnabled]);
+  useEffect(() => { localStorage.setItem("musicVolume", String(musicVolume)); }, [musicVolume]);
+  useEffect(() => { localStorage.setItem("sfxVolume", String(sfxVolume)); }, [sfxVolume]);
+  useEffect(() => { localStorage.setItem("fxVolume", String(fxVolume)); }, [fxVolume]);
   useEffect(() => { localStorage.setItem("audioEnabled", String(audioEnabled)); }, [audioEnabled]);
   useEffect(() => { localStorage.setItem("musicVolume", String(musicVolume)); }, [musicVolume]);
   useEffect(() => { localStorage.setItem("sfxVolume", String(sfxVolume)); }, [sfxVolume]);
   useEffect(() => { localStorage.setItem("fxVolume", String(fxVolume)); }, [fxVolume]);
 
-  // Unified Global Timer: AP regeneration and Clock Update
+  // Unified Global Timer: Clock Update only
+  // AP regen is handled by the AP Regeneration Timer above (DB-backed)
   useEffect(() => {
-    const tick = () => {
-      const now = Date.now();
-      setCurrentTime(now);
-
-      // 1. AP Regen (20 AP/hour on the hour boundary)
-      let lastRegenStr = localStorage.getItem("lastApRegen");
-      if (!lastRegenStr) {
-        const initialRegen = new Date(now).setMinutes(0, 0, 0);
-        localStorage.setItem("lastApRegen", String(initialRegen));
-        lastRegenStr = String(initialRegen);
-      }
-      
-      const lastRegen = Number(lastRegenStr);
-      const hoursPassed = Math.floor((now - lastRegen) / 3600000);
-
-      if (hoursPassed > 0) {
-        setAp(prev => Math.min(240, prev + (hoursPassed * 20)));
-        const newRegenTime = lastRegen + (hoursPassed * 3600000);
-        localStorage.setItem("lastApRegen", String(newRegenTime));
-      }
-    };
-
-    tick(); // Initial sync
+    const tick = () => setCurrentTime(Date.now());
+    tick();
     const t = setInterval(tick, 1000);
     return () => clearInterval(t);
   }, []);
@@ -927,7 +1021,11 @@ export function useGalaxyApp(initialSeed = 20260423) {
     setPlayerLevel(result.level);
     if (result.leveled_up) {
       toast.success(`🎖 Level Up! Now Level ${result.level}`, {
-        description: `You gained a new skill point. Open the Skill Tree to spend it.`
+        description: `You gained a new skill point. Open the Skill Tree to spend it.`,
+        action: {
+          label: "View Skills",
+          onClick: () => setPage("skills")
+        }
       });
     }
   }, [user, playerSkills]);
@@ -1692,6 +1790,27 @@ export function useGalaxyApp(initialSeed = 20260423) {
 
 
 
+  // Ensure current location is always marked as explored
+  useEffect(() => {
+    if (!initialDataLoaded || !user) return;
+    
+    const bodyId = playerBodyId || 'star';
+    const bodyKey = `${playerSystemId}:${bodyId}`;
+    
+    if (playerSystemId && (!exploredSystemIds.has(playerSystemId) || !exploredBodyIds.has(bodyKey))) {
+      // Sync to DB
+      supabase.from('exploration_logs').upsert({
+        user_id: user.id,
+        system_id: playerSystemId,
+        body_id: bodyId
+      }, { ignoreDuplicates: true }).then();
+
+      setExploredSystemIds(prev => new Set(prev).add(playerSystemId));
+      setExploredBodyIds(prev => new Set(prev).add(bodyKey));
+      console.log(`[Exploration] Physical discovery synced: ${playerSystemId} / ${bodyId}`);
+    }
+  }, [playerSystemId, playerBodyId, exploredSystemIds, exploredBodyIds, initialDataLoaded, user]);
+
   // Arrive at destination
   useEffect(() => {
     if (travel && currentTime >= travel.endTime) {
@@ -1705,6 +1824,16 @@ export function useGalaxyApp(initialSeed = 20260423) {
           next.add(`${playerSystemId}:${targetId}`);
           return next;
         });
+        
+        // Sync to DB
+        if (user) {
+          supabase.from('exploration_logs').upsert({
+            user_id: user.id,
+            system_id: playerSystemId,
+            body_id: targetId
+          }, { ignoreDuplicates: true }).then();
+        }
+
         setTravel(null);
         toast.success("Arrival confirmed", {
           description: `Vessel has entered orbit around ${targetId === "star" ? "the system star" : targetId}.`
@@ -1725,6 +1854,15 @@ export function useGalaxyApp(initialSeed = 20260423) {
             logAction('exploration', `System Discovered: ${galaxy.systemById[targetId]?.name || targetId}`, `Successfully mapped the ${targetId} sector and established orbital reconnaissance.`);
             const explorationBonus = computeSkillBonus('exploration_xp_bonus', playerSkills);
             grantXP('system_explored', explorationBonus);
+            
+            // Sync to DB
+            if (user) {
+              supabase.from('exploration_logs').upsert({
+                user_id: user.id,
+                system_id: targetId,
+                body_id: 'star'
+              }, { ignoreDuplicates: true }).then();
+            }
           }
           return next;
         });
@@ -1735,7 +1873,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
         });
       }
     }
-  }, [travel, currentTime, playerSystemId]);
+  }, [travel, currentTime, playerSystemId, playerSkills, grantXP, logAction, galaxy, user]);
 
   // --- BACKGROUND PRE-CACHING ---
   // During hyperspace jumps, use the transit time to pre-synthesize audio for the target system
@@ -1996,6 +2134,58 @@ export function useGalaxyApp(initialSeed = 20260423) {
     nextApTick,
     onlinePlayerCount,
     isAdmin,
+    searchResults,
+    isSearching,
+
+    performSearch: useCallback(async (query: string) => {
+      if (!query || query.length < 2) {
+        setSearchResults({ users: [], parties: [], states: [] });
+        return;
+      }
+      setIsSearching(true);
+      try {
+        const [profiles, partiesRes, empires] = await Promise.all([
+          supabase.from('profiles').select('id, commander_name, avatar_url, level').ilike('commander_name', `%${query}%`).limit(5),
+          supabase.from('parties').select('id, name, tag, icon, hue, system_id').ilike('name', `%${query}%`).limit(5),
+          supabase.from('player_empires').select('id, name, tag, hue').ilike('name', `%${query}%`).limit(5)
+        ]);
+        
+        setSearchResults({
+          users: profiles.data || [],
+          parties: partiesRes.data || [],
+          states: empires.data || []
+        });
+      } catch (e) {
+        console.error("Search failed", e);
+      } finally {
+        setIsSearching(false);
+      }
+    }, []),
+
+    viewedUserId,
+    viewedPartyId,
+    viewedStateId,
+
+    navigateToPublicProfile: useCallback((id: string) => {
+      setViewedUserId(id);
+      setPage('profile');
+    }, []),
+
+    navigateToPublicParty: useCallback((id: string) => {
+      setViewedPartyId(id);
+      setPage('party');
+    }, []),
+
+    navigateToPublicState: useCallback((id: string) => {
+      setViewedStateId(id);
+      setPage('empire');
+    }, []),
+
+    resetPublicViews: useCallback(() => {
+      setViewedUserId(null);
+      setViewedPartyId(null);
+      setViewedStateId(null);
+    }, []),
 
     // XP & Skill Tree
     playerSkills,

@@ -20,6 +20,7 @@ export default defineConfig(({ mode }) => ({
       includeAssets: ["favicon.ico", "apple-touch-icon.png", "mask-icon.svg"],
       workbox: {
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        globIgnores: ["**/version.txt"],
       },
       manifest: {
         name: "Starbound Hegemony",

@@ -1,13 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
-  Coins, Newspaper, Sparkles, User as UserIcon, Users as UsersIcon, 
-  Globe, Zap, Shield, Rocket, TrendingUp, Anchor, History, Factory, Award, Hexagon
+  Globe, Zap, Shield, Rocket, TrendingUp, Anchor, History, Factory, Award, Hexagon,
+  ShieldAlert, Coins, Newspaper, Sparkles, User as UserIcon, Users as UsersIcon
 } from "lucide-react";
 import { GalaxyIcon } from "./ResourceIcon";
 import { PartyView } from "./PartyView";
 import { type GalaxyApp } from "@/galaxy/useGalaxyApp";
 import { RESOURCE_META } from "@/galaxy/meta";
 import { UserAvatar } from "./UserAvatar";
+import { supabase } from "@/lib/supabase";
 
 
 
@@ -55,16 +56,127 @@ function LogEntry({ date, event, type, description }: { date: string, event: str
   );
 }
 
-export function ProfileView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: () => void }) {
+export function ProfileView({ app, onPlayClick, isPublic = false }: { app: GalaxyApp; onPlayClick: () => void; isPublic?: boolean }) {
   const [activeTab, setActiveTab] = useState("Overview");
+  const [targetProfile, setTargetProfile] = useState<{ 
+    name: string; 
+    avatar: string; 
+    level: number; 
+    id: string;
+    partyName?: string;
+    residencyBodyId?: string;
+    factoryCount?: number;
+    exploredCount?: number;
+    updatedAt?: string;
+    createdAt?: string;
+  } | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [friendStatus, setFriendStatus] = useState<"none" | "pending_sent" | "pending_received" | "accepted">("none");
+  const [friendsList, setFriendsList] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (isPublic && app.viewedUserId) {
+      const fetchProfile = async () => {
+        setIsLoading(true);
+        const { data } = await supabase.from('profiles').select('id, commander_name, avatar_url, level, updated_at, created_at').eq('id', app.viewedUserId).single();
+        if (data) {
+          const { data: party } = await supabase.from('party_members').select('parties(name)').eq('user_id', app.viewedUserId).maybeSingle();
+          const { data: residency } = await supabase.from('residencies').select('body_id').eq('user_id', app.viewedUserId).maybeSingle();
+          const { count: factoryCount } = await supabase.from('factories').select('*', { count: 'exact', head: true }).eq('owner_id', app.viewedUserId);
+          const { count: exploredCount } = await supabase.from('exploration_logs').select('*', { count: 'exact', head: true }).eq('user_id', app.viewedUserId);
+
+          setTargetProfile({
+            id: data.id,
+            name: data.commander_name,
+            avatar: data.avatar_url,
+            level: data.level,
+            updatedAt: data.updated_at,
+            createdAt: data.created_at,
+            partyName: (party?.parties as any)?.name,
+            residencyBodyId: residency?.body_id,
+            factoryCount: factoryCount || 0,
+            exploredCount: exploredCount || 0
+          });
+          
+          // Check friendship
+          if (app.user) {
+            const { data: friendship } = await supabase
+              .from('friendships')
+              .select('*')
+              .or(`and(user_id.eq.${app.user.id},friend_id.eq.${data.id}),and(user_id.eq.${data.id},friend_id.eq.${app.user.id})`)
+              .single();
+            
+            if (friendship) {
+              if (friendship.status === 'accepted') setFriendStatus('accepted');
+              else if (friendship.user_id === app.user.id) setFriendStatus('pending_sent');
+              else setFriendStatus('pending_received');
+            } else {
+              setFriendStatus('none');
+            }
+          }
+        }
+        setIsLoading(false);
+      };
+      fetchProfile();
+    } else if (!isPublic && app.user) {
+      // Load my friends
+      const fetchFriends = async () => {
+        const { data } = await supabase
+          .from('friendships')
+          .select('*, friend:friend_id(id, commander_name, avatar_url, level), requester:user_id(id, commander_name, avatar_url, level)')
+          .or(`user_id.eq.${app.user!.id},friend_id.eq.${app.user!.id}`);
+        
+        if (data) {
+          const list = data.map((f: any) => {
+            const other = f.user_id === app.user!.id ? f.friend : f.requester;
+            return { ...other, status: f.status, isRequester: f.user_id === app.user!.id };
+          });
+          setFriendsList(list);
+        }
+      };
+      fetchFriends();
+    }
+  }, [isPublic, app.viewedUserId, app.user]);
+
+  const handleAddFriend = async () => {
+    if (!app.user || !targetProfile) return;
+    const { error } = await supabase.from('friendships').insert({
+      user_id: app.user.id,
+      friend_id: targetProfile.id,
+      status: 'pending'
+    });
+    if (!error) setFriendStatus('pending_sent');
+  };
+
+  const handleAcceptFriend = async (requesterId: string) => {
+    if (!app.user) return;
+    const { error } = await supabase
+      .from('friendships')
+      .update({ status: 'accepted' })
+      .match({ user_id: requesterId, friend_id: app.user.id });
+    
+    if (!error) {
+      if (isPublic) setFriendStatus('accepted');
+      else {
+        setFriendsList(prev => prev.map(f => f.id === requesterId ? { ...f, status: 'accepted' } : f));
+      }
+    }
+  };
+
+  const displayUser = isPublic && targetProfile ? targetProfile : {
+    name: app.playerName,
+    avatar: app.playerAvatar,
+    level: app.playerLevel
+  };
   
   const TABS = [
     { label: "Overview", icon: UserIcon },
-    { label: "Assets", icon: Coins },
-    { label: "Political", icon: Shield },
-    { label: "Reputation", icon: UsersIcon },
-    { label: "Logbook", icon: Newspaper },
-  ];
+    { label: "Friends", icon: UsersIcon },
+    { label: "Assets", icon: Coins, restricted: true },
+    { label: "Political", icon: Shield, restricted: true },
+    { label: "Reputation", icon: UsersIcon, restricted: true },
+    { label: "Logbook", icon: Newspaper, restricted: true },
+  ].filter(t => !isPublic || !t.restricted);
 
   return (
     <div className="flex-1 flex flex-col sm:flex-row bg-background/40 backdrop-blur-sm animate-fade-in overflow-hidden">
@@ -72,15 +184,15 @@ export function ProfileView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick:
       <aside className="w-full sm:w-[320px] border-b sm:border-b-0 sm:border-r border-primary/20 flex flex-col bg-primary/5 animate-in slide-in-from-left duration-500 shrink-0">
         <div className="p-3 sm:p-6 border-b border-primary/20 flex flex-row sm:flex-col items-center justify-center sm:justify-start gap-4">
           <UserAvatar 
-            avatarUrl={app.playerAvatar} 
-            level={app.playerLevel}
-            partyIcon={app.playerPartyIcon}
-            partyHue={app.playerPartyHue}
+            avatarUrl={displayUser.avatar} 
+            level={displayUser.level}
+            partyIcon={isPublic ? undefined : app.playerPartyIcon}
+            partyHue={isPublic ? undefined : app.playerPartyHue}
             size={window.innerWidth < 640 ? "lg" : "xl"}
           />
           <div className="flex flex-col text-left sm:text-center min-w-0">
-            <h2 className="font-display text-base sm:text-2xl text-primary text-glow uppercase tracking-[0.1em] truncate">{app.playerName}</h2>
-            <p className="font-mono-hud text-[8px] sm:text-[10px] text-muted-foreground uppercase tracking-[0.2em] sm:tracking-[0.3em] truncate">Commander</p>
+            <h2 className="font-display text-base sm:text-2xl text-primary text-glow uppercase tracking-[0.1em] truncate">{displayUser.name}</h2>
+            <p className="font-mono-hud text-[8px] sm:text-[10px] text-muted-foreground uppercase tracking-[0.2em] sm:tracking-[0.3em] truncate">{isPublic ? "Foreign Commander" : "Commander"}</p>
           </div>
         </div>
 
@@ -113,16 +225,66 @@ export function ProfileView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick:
         <div className="absolute inset-0 pointer-events-none scanline opacity-10" />
         
         <div className="flex-1 overflow-y-auto p-3 sm:p-10 custom-scrollbar relative z-10">
-          <div className="max-w-4xl mx-auto">
+          {isLoading ? (
+            <div className="flex-1 flex items-center justify-center h-full min-h-[400px]">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : (
+            <div className="max-w-4xl mx-auto">
+              {isPublic && (
+                <div className="mb-8 p-4 bg-primary/10 border border-primary/20 rounded-lg flex items-center justify-between">
+                   <div className="flex items-center gap-3">
+                      <ShieldAlert className="text-warning" size={20} />
+                      <div className="flex flex-col">
+                         <span className="font-display text-[10px] text-primary uppercase tracking-widest">Public Archive Access</span>
+                         <span className="font-mono-hud text-[8px] text-muted-foreground uppercase tracking-tighter">Sensitive data restricted by Hegemony Privacy Protocol</span>
+                      </div>
+                   </div>
+                    <div className="flex gap-2">
+                      {friendStatus === 'none' && (
+                        <button 
+                          onClick={handleAddFriend}
+                          className="px-4 py-1.5 bg-primary text-background font-display text-[9px] font-bold uppercase tracking-widest rounded hover:bg-primary/80 transition-all flex items-center gap-2"
+                        >
+                          <UsersIcon size={12} /> Add Friend
+                        </button>
+                      )}
+                      {friendStatus === 'pending_sent' && (
+                        <div className="px-4 py-1.5 bg-primary/10 border border-primary/20 text-primary/60 font-display text-[9px] font-bold uppercase tracking-widest rounded flex items-center gap-2">
+                          <Sparkles size={12} /> Request Sent
+                        </div>
+                      )}
+                      {friendStatus === 'pending_received' && (
+                        <button 
+                          onClick={() => targetProfile && handleAcceptFriend(targetProfile.id)}
+                          className="px-4 py-1.5 bg-success text-background font-display text-[9px] font-bold uppercase tracking-widest rounded hover:bg-success/80 transition-all flex items-center gap-2"
+                        >
+                          <UsersIcon size={12} /> Accept Request
+                        </button>
+                      )}
+                      {friendStatus === 'accepted' && (
+                        <div className="px-4 py-1.5 bg-success/10 border border-success/20 text-success font-display text-[9px] font-bold uppercase tracking-widest rounded flex items-center gap-2">
+                          <Shield size={12} /> Trusted Friend
+                        </div>
+                      )}
+                      <button 
+                        onClick={() => app.resetPublicViews()}
+                        className="px-3 py-1.5 bg-primary/20 border border-primary/30 text-[9px] font-mono-hud text-primary uppercase tracking-widest hover:bg-primary/30 transition-all rounded"
+                      >
+                        Close Archive
+                      </button>
+                    </div>
+                </div>
+              )}
             {activeTab === "Overview" && (
               <div className="space-y-6 sm:space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <StatCard label="Action Potential" value={Math.floor(app.ap)} unit="AP" icon={Zap} color="primary" />
-                  <StatCard label="Total Net Worth" value={Math.floor(app.sc).toLocaleString()} unit="SC" icon={Coins} color="warning" />
-                  <StatCard label="Void Tokens" value={0} unit="VT" icon={Hexagon} color="purple" />
-                  <StatCard label="Systems Discovered" value={app.exploredSystemIds.size} unit="SYS" icon={Globe} color="success" />
-                  <StatCard label="Active Fleets" value={app.fleetCount} unit="FLT" icon={Rocket} color="primary" />
-                  <StatCard label="Industrial Sites" value={app.userFactories?.length || 0} unit="FAC" icon={Factory} color="cyan" />
+                  <StatCard label="Action Potential" value={isPublic ? "REDACTED" : Math.floor(app.ap)} unit="AP" icon={Zap} color="primary" />
+                  <StatCard label="Total Net Worth" value={isPublic ? "REDACTED" : Math.floor(app.sc).toLocaleString()} unit="SC" icon={Coins} color="warning" />
+                  <StatCard label="Void Tokens" value={isPublic ? "REDACTED" : 0} unit="VT" icon={Hexagon} color="purple" />
+                  <StatCard label="Systems Discovered" value={isPublic ? (targetProfile?.exploredCount || "???") : app.exploredSystemIds.size} unit="SYS" icon={Globe} color="success" />
+                  <StatCard label="Active Fleets" value={isPublic ? "???" : app.fleetCount} unit="FLT" icon={Rocket} color="primary" />
+                  <StatCard label="Industrial Sites" value={isPublic ? (targetProfile?.factoryCount || 0) : (app.userFactories?.length || 0)} unit="FAC" icon={Factory} color="cyan" />
                 </div>
 
                 {/* Status Snapshot */}
@@ -138,18 +300,28 @@ export function ProfileView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick:
                         <span className="font-display text-[10px] text-success uppercase tracking-widest px-2 py-0.5 border border-success/40 rounded">Active Service</span>
                       </div>
                       <div className="flex justify-between items-center bg-background/20 p-3 rounded">
-                        <span className="font-mono-hud text-[10px] text-muted-foreground uppercase">Planet Residency</span>
+                        <span className="font-mono-hud text-[10px] text-muted-foreground uppercase">Party Affiliation</span>
                         <span className="font-display text-[10px] text-primary uppercase tracking-widest px-2 py-0.5 border border-primary/40 rounded">
-                          {app.userResidency?.bodyId || "None"}
+                          {isPublic ? (targetProfile?.partyName || "Independent") : (app.galaxy.empires.find(e => e.logo.symbol === app.playerPartyIcon)?.name || "Independent")}
                         </span>
                       </div>
                       <div className="flex justify-between items-center bg-background/20 p-3 rounded">
-                        <span className="font-mono-hud text-[10px] text-muted-foreground uppercase">Bounty Priority</span>
-                        <span className="font-display text-[10px] text-primary uppercase tracking-widest px-2 py-0.5 border border-primary/40 rounded">None</span>
+                        <span className="font-mono-hud text-[10px] text-muted-foreground uppercase">Planet Residency</span>
+                        <span className="font-display text-[10px] text-primary uppercase tracking-widest px-2 py-0.5 border border-primary/40 rounded">
+                          {isPublic ? (targetProfile?.residencyBodyId || "None") : (app.userResidency?.bodyId || "None")}
+                        </span>
                       </div>
                       <div className="flex justify-between items-center bg-background/20 p-3 rounded">
-                        <span className="font-mono-hud text-[10px] text-muted-foreground uppercase">Next Requisition</span>
-                        <span className="font-display text-[10px] text-warning uppercase">24h 12m 04s</span>
+                        <span className="font-mono-hud text-[10px] text-muted-foreground uppercase">Last Active</span>
+                        <span className="font-display text-[10px] text-warning uppercase">
+                          {isPublic ? (targetProfile?.updatedAt ? new Date(targetProfile.updatedAt).toLocaleDateString() : "Unknown") : new Date().toLocaleDateString()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center bg-background/20 p-3 rounded">
+                        <span className="font-mono-hud text-[10px] text-muted-foreground uppercase">Service Began</span>
+                        <span className="font-display text-[10px] text-primary uppercase">
+                          {isPublic ? (targetProfile?.createdAt ? new Date(targetProfile.createdAt).toLocaleDateString() : "Unknown") : (app.user?.created_at ? new Date(app.user.created_at).toLocaleDateString() : "Classified")}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -181,30 +353,88 @@ export function ProfileView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick:
                 </div>
 
                 {/* Career Timeline */}
-                <section className="space-y-6">
-                  <div className="flex items-center gap-4">
-                    <div className="h-px flex-1 bg-primary/20" />
-                    <h3 className="font-display text-sm uppercase tracking-[0.3em] text-primary/60">Recent Activity</h3>
-                    <div className="h-px flex-1 bg-primary/20" />
+                {!isPublic && (
+                  <section className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <div className="h-px flex-1 bg-primary/20" />
+                      <h3 className="font-display text-sm uppercase tracking-[0.3em] text-primary/60">Recent Activity</h3>
+                      <div className="h-px flex-1 bg-primary/20" />
+                    </div>
+                    
+                    <div className="space-y-4">
+                      {app.userLogs.slice(0, 3).map((log, i) => (
+                        <LogEntry 
+                          key={log.id} 
+                          date={new Date(log.created_at).toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '.')} 
+                          event={log.title} 
+                          type={log.type} 
+                          description={log.description}
+                        />
+                      ))}
+                      {app.userLogs.length === 0 && (
+                        <div className="text-center py-4 border border-dashed border-primary/10 rounded">
+                          <span className="font-mono-hud text-[10px] text-muted-foreground uppercase italic">No activity recorded yet</span>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                )}
+              </div>
+            )}
+
+            {activeTab === "Friends" && (
+              <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="flex items-center justify-between border-b border-primary/20 pb-4">
+                  <div>
+                    <h3 className="font-display text-lg uppercase tracking-widest text-primary">Communications Network</h3>
+                    <p className="font-mono-hud text-[10px] text-muted-foreground uppercase mt-1">Direct Neural Links & Contacts</p>
                   </div>
-                  
-                  <div className="space-y-4">
-                    {app.userLogs.slice(0, 3).map((log, i) => (
-                      <LogEntry 
-                        key={log.id} 
-                        date={new Date(log.created_at).toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '.')} 
-                        event={log.title} 
-                        type={log.type} 
-                        description={log.description}
-                      />
-                    ))}
-                    {app.userLogs.length === 0 && (
-                      <div className="text-center py-4 border border-dashed border-primary/10 rounded">
-                        <span className="font-mono-hud text-[10px] text-muted-foreground uppercase italic">No activity recorded yet</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {friendsList.length === 0 && (
+                    <div className="col-span-full py-20 text-center border border-dashed border-primary/10 rounded">
+                      <UsersIcon size={40} className="mx-auto text-primary/10 mb-4" />
+                      <p className="font-display text-[10px] text-muted-foreground uppercase tracking-widest">No social links established</p>
+                      <p className="font-mono-hud text-[8px] text-muted-foreground/50 mt-2">Search for other commanders in the archives to add them.</p>
+                    </div>
+                  )}
+                  {friendsList.map(friend => (
+                    <div key={friend.id} className="hud-panel p-4 border border-primary/20 bg-primary/5 flex items-center gap-4 group hover:border-primary/40 transition-all">
+                      <UserAvatar avatarUrl={friend.avatar_url} level={friend.level} size="md" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <span className="font-display text-sm uppercase tracking-widest text-foreground group-hover:text-primary transition-colors truncate">{friend.commander_name}</span>
+                          <span className="font-mono-hud text-[8px] text-muted-foreground uppercase">LVL {friend.level}</span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          {friend.status === 'accepted' ? (
+                            <span className="text-[7px] font-mono-hud text-success uppercase tracking-tighter bg-success/10 px-1.5 py-0.5 rounded border border-success/20">ESTABLISHED</span>
+                          ) : (
+                            <span className="text-[7px] font-mono-hud text-warning uppercase tracking-tighter bg-warning/10 px-1.5 py-0.5 rounded border border-warning/20">
+                              {friend.isRequester ? "REQUEST SENT" : "PENDING ACCEPTANCE"}
+                            </span>
+                          )}
+                          {!friend.isRequester && friend.status === 'pending' && (
+                            <button 
+                              onClick={() => handleAcceptFriend(friend.id)}
+                              className="text-[7px] font-mono-hud text-primary hover:text-white uppercase tracking-tighter bg-primary/20 hover:bg-primary px-1.5 py-0.5 rounded transition-all"
+                            >
+                              ACCEPT
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    )}
-                  </div>
-                </section>
+                      <button 
+                        onClick={() => app.navigateToPublicProfile(friend.id)}
+                        className="p-2 text-primary/40 hover:text-primary transition-colors"
+                        title="View Profile"
+                      >
+                        <TrendingUp size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -439,6 +669,7 @@ export function ProfileView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick:
             )}
 
           </div>
+        )}
         </div>
       </main>
     </div>

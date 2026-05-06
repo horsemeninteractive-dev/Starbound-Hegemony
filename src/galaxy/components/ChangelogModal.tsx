@@ -11,6 +11,19 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.2.4",
+    title: "Galactic Reset & NPC Refresh",
+    date: "2026-05-06",
+    type: "feature",
+    changes: [
+      "Executed Global Database Reset to initialize a fresh campaign state",
+      "Purged all user data across 30+ tables including profiles, vessels, and governance",
+      "Re-seeded Sanctum system with NPC factories and economic infrastructure",
+      "Initialized NPC factory economies with 50,000 credit treasuries",
+      "Reset all market prices to baseline values and normalized governance states"
+    ]
+  },
+  {
     version: "0.2.3",
     title: "Economic Balance & Requisitions",
     date: "2026-05-05",
@@ -363,7 +376,7 @@ export function ChangelogModal({ open, onOpenChange, onPlayClick }: { open: bool
             Acknowledge
           </button>
           <div className="font-mono-hud text-[8px] text-muted-foreground/30 uppercase tracking-[0.2em]">
-            Starbound Hegemony · Build v0.2.3-sb
+            Starbound Hegemony · Build v0.2.4-sb
           </div>
         </div>
       </div>
