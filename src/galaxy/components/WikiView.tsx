@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { 
   Search, 
   Book, 
@@ -21,8 +22,11 @@ import {
   Coins,
   Hammer,
   Rocket,
-  Lock
+  Lock,
+  ChevronLeft
 } from "lucide-react";
+
+import { PageHeader } from "./PageHeader";
 
 /* ========================================================================
    GALAXY ARCHIVES (WIKI) COMPONENT
@@ -42,6 +46,7 @@ const WIKI_CATEGORIES = [
   "Economy",
   "Infrastructure",
   "Military",
+  "Exploration",
   "Politics",
   "Commander",
   "World",
@@ -263,7 +268,7 @@ const WIKI_DATA: WikiSection[] = [
     title: "Personal Infrastructure",
     category: "Infrastructure",
     icon: <Hammer className="w-4 h-4" />,
-    status: "Planned",
+    status: "Live",
     content: `
       <p>Infrastructure buildings enable storage, construction, and advanced logistics. They remain your personal property forever.</p>
       <div class="card">
@@ -280,7 +285,7 @@ const WIKI_DATA: WikiSection[] = [
       </div>
       <div class="card">
         <h4>Shipyard & Drydock</h4>
-        <p>Shipyards build new vessels from components. Drydocks store and repair your fleet ships while providing passive hull regeneration.</p>
+        <p>Shipyards are the exclusive construction sites for specialized vessels like <strong>Science Ships</strong> and <strong>Cargo Freighters</strong>. Drydocks enable fleet storage and provide passive hull regeneration for your persistent fleet.</p>
       </div>
     `
   },
@@ -317,7 +322,7 @@ const WIKI_DATA: WikiSection[] = [
     title: "Fleet Ships",
     category: "Military",
     icon: <Rocket className="w-4 h-4" />,
-    status: "Planned",
+    status: "Live",
     content: `
       <p>Fleet ships are persistent entities. If they are destroyed in battle, they are gone forever. They are the primary sink for the T3 component economy.</p>
       <h3>Warships</h3>
@@ -336,11 +341,11 @@ const WIKI_DATA: WikiSection[] = [
       <div class="card-grid grid-2">
         <div class="card">
           <h4>Freighters</h4>
-          <p>Massive cargo bonuses. Enable automated trade routes between silos.</p>
+          <p>Massive cargo capacity. Built at personal <strong>Shipyards</strong>, these enable automated trade routes and bulk logistics between star systems.</p>
         </div>
         <div class="card">
           <h4>Science Vessels</h4>
-          <p>Conduct archaeological surveys of anomaly sites for rare artefacts and T3 rewards.</p>
+          <p>The only ships capable of surveying <strong>Sites of Interest</strong>. They use specialized sensors to extract knowledge, resources, and rare artifacts.</p>
         </div>
       </div>
     `
@@ -516,7 +521,7 @@ const WIKI_DATA: WikiSection[] = [
     title: "Commander Ship",
     category: "Commander",
     icon: <Rocket className="w-4 h-4" />,
-    status: "Partial",
+    status: "Live",
     content: `
       <p>Your flagship is your persistent presence in the galaxy. It cannot be destroyed. It is the platform for all your travel and industrial actions.</p>
       <div class="card">
@@ -618,6 +623,67 @@ const WIKI_DATA: WikiSection[] = [
     `
   },
   {
+    id: "incursions",
+    title: "Incursion Zones",
+    category: "Exploration",
+    icon: <Shield className="w-4 h-4" />,
+    status: "Live",
+    content: `
+      <p>Incursion Zones are unstable regions where the fabric of space-time is frayed. These zones are identified by a <strong>Shield Alert</strong> icon on the stellar navigation map and represent specialized regional hazards.</p>
+      
+      <div class="card-grid grid-2">
+        <div class="card">
+          <h4>Nebulas</h4>
+          <p>Densed ionized gas clouds that generate dimensional drag. <strong>Warp Speed is reduced by 35-50%</strong> while transiting or jumping from these systems.</p>
+        </div>
+        <div class="card">
+          <h4>Dust Clouds</h4>
+          <p>Thick particulate matter that absorbs sensor sweeps. <strong>Sensor Range is reduced to 1 jump</strong> (effectively blinding long-range scans).</p>
+        </div>
+        <div class="card">
+          <h4>Ion Storms</h4>
+          <p>Violent electromagnetic disturbances that scatter neural links. <strong>AP costs for local actions are increased</strong> due to interference.</p>
+        </div>
+        <div class="card">
+          <h4>Gravity Rifts</h4>
+          <p>Intense gravitational wells that warp subspace. <strong>AP cost to jump OUT of these systems is increased by 50%</strong>.</p>
+        </div>
+      </div>
+
+      <div class="callout callout-red">
+        <p><strong>Environmental Hazards:</strong> Navigating these zones requires specialized ship configurations or increased operational budgets to compensate for the efficiency losses.</p>
+      </div>
+    `
+  },
+  {
+    id: "soi",
+    title: "Sites of Interest (SoI)",
+    category: "Exploration",
+    icon: <Target className="w-4 h-4" />,
+    status: "Planned",
+    content: `
+      <p>Sites of Interest (SoIs) are high-value tactical and archaeological locations that randomly spawn across the Viridian Expanse. They represent the primary source of "Deep Space" rewards.</p>
+      <div class="card-grid grid-2">
+        <div class="card">
+          <h4>Rarity & Difficulty</h4>
+          <p>Sites vary from Common to Legendary. Harder sites take significantly more time to complete but offer vastly superior loot pools.</p>
+        </div>
+        <div class="card">
+          <h4>Extraction</h4>
+          <p>Surveying a site requires a <strong>Science Ship</strong>. Sending a vessel to a site starts a completion timer; once finished, the rewards are delivered to the owner.</p>
+        </div>
+      </div>
+      <h3>Potential Rewards</h3>
+      <ul class="wiki-list">
+        <li><strong>Credits (SC):</strong> Massive knowledge data-dumps sold to the Hegemony.</li>
+        <li><strong>T3 Resources:</strong> Direct extraction of exotic materials.</li>
+        <li><strong>Void Tokens:</strong> Rare premium currency found in ancient vaults.</li>
+        <li><strong>Skill Points:</strong> Direct neural integration spikes.</li>
+        <li><strong>Ship Parts:</strong> Unique blueprints for your Commander Flagship.</li>
+      </ul>
+    `
+  },
+  {
     id: "star-types",
     title: "Star Types",
     category: "World",
@@ -688,8 +754,8 @@ laws            <span class="ck">id</span>, type, passed, takes_effect_at</div>
         <thead><tr><th>Phase</th><th>Focus</th><th>Status</th></tr></thead>
         <tbody>
           <tr><td>1-3</td><td>Economic Loop & Markets</td><td>✅ Complete</td></tr>
-          <tr><td>4-8</td><td>Logistics & Ships</td><td>🔄 In Progress</td></tr>
-          <tr><td>9-15</td><td>Politics & Conquest</td><td>⬜ Next</td></tr>
+          <tr><td>4-8</td><td>Logistics & Ships</td><td>✅ Complete</td></tr>
+          <tr><td>9-15</td><td>Politics & Conquest</td><td>🔄 In Progress</td></tr>
           <tr><td>16+</td><td>Corps & Deep Space</td><td>⬜ Future</td></tr>
         </tbody>
       </table>
@@ -698,10 +764,11 @@ laws            <span class="ck">id</span>, type, passed, takes_effect_at</div>
 ];
 
 
-export function WikiView() {
+export function WikiView({ app, onBack }: { app: any; onBack?: () => void }) {
   const [activeSectionId, setActiveSectionId] = useState("vision");
   const [searchQuery, setSearchQuery] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   const activeSection = useMemo(() => 
     WIKI_DATA.find(s => s.id === activeSectionId) || WIKI_DATA[0]
@@ -727,6 +794,10 @@ export function WikiView() {
     // Reset to top of content when section changes
     const mainEl = document.getElementById("wiki-content-area");
     if (mainEl) mainEl.scrollTop = 0;
+    // On mobile, close sidebar after selection
+    if (window.innerWidth < 1024) {
+      setIsMobileSidebarOpen(false);
+    }
   }, [activeSectionId]);
 
   // Handle internal wiki links
@@ -748,8 +819,79 @@ export function WikiView() {
     return () => contentArea?.removeEventListener("click", handleWikiLinkClick);
   }, []);
 
+  const sidebarContent = (
+    <>
+      <div className="p-4 border-b border-primary/10 bg-primary/5">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input 
+            type="text"
+            placeholder="Search archives..."
+            className="w-full bg-background/50 border border-primary/30 rounded pl-10 pr-4 py-2 font-mono-hud text-[10px] focus:outline-none focus:border-primary transition-colors hover:bg-primary/5"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-6">
+        {Object.entries(sectionsByCategory).map(([cat, sections]) => {
+          if (sections.length === 0) return null;
+
+          return (
+            <div key={cat} className="space-y-2">
+              <h3 className="font-display text-[9px] text-primary/60 uppercase tracking-widest border-l-2 border-primary/20 pl-2">{cat}</h3>
+              <div className="space-y-1">
+                {sections.map(s => (
+                  <button
+                    key={s.id}
+                    onClick={() => setActiveSectionId(s.id)}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded text-left group transition-all ${
+                      activeSectionId === s.id 
+                        ? "bg-primary/20 text-primary border border-primary/30 shadow-[inset_0_0_10px_rgba(var(--primary-rgb),0.1)]" 
+                        : "text-muted-foreground hover:text-foreground hover:bg-primary/5"
+                    }`}
+                  >
+                    <span className={`shrink-0 ${activeSectionId === s.id ? "text-primary" : "text-primary/40 group-hover:text-primary/60"}`}>
+                      {s.icon}
+                    </span>
+                    <span className="font-display text-[11px] uppercase tracking-wider truncate">{s.title}</span>
+                    {s.status === "Planned" && (
+                      <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary/20 border border-primary/30" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+
   return (
-    <div className="flex-1 flex overflow-hidden bg-background">
+    <div className="flex-1 flex flex-col overflow-hidden bg-background relative">
+      {/* Sidebar Backdrop and Sidebar for mobile - Portalled to body to cover everything including TopBar */}
+      {typeof document !== "undefined" && createPortal(
+        <div className={`lg:hidden fixed inset-0 z-[200] pointer-events-none ${isMobileSidebarOpen ? "pointer-events-auto" : ""}`}>
+          {isMobileSidebarOpen && (
+            <div 
+              className="absolute inset-0 bg-black/80 backdrop-blur-md animate-in fade-in duration-300"
+              onClick={() => setIsMobileSidebarOpen(false)}
+            />
+          )}
+
+          {/* Mobile Sidebar - absolute inset-y-0 within fixed portal covers full page height */}
+          <aside className={`
+            absolute inset-y-0 left-0 w-[280px] bg-background border-r border-primary/20 flex flex-col
+            transition-transform duration-300 ease-in-out z-[210] pointer-events-auto shadow-[0_0_50px_rgba(0,0,0,0.5)]
+            ${isMobileSidebarOpen ? "translate-x-0" : "-translate-x-full"}
+          `}>
+            {sidebarContent}
+          </aside>
+        </div>,
+        document.body
+      )}
       {/* Styles integration */}
       <style>{`
         .wiki-content p { margin-bottom: 1rem; line-height: 1.6; color: #a1a1aa; }
@@ -800,117 +942,83 @@ export function WikiView() {
         .wiki-content .formula { font-family: monospace; color: #34d399; background: rgba(0,0,0,0.3); padding: 0.75rem; border-radius: 4px; border: 1px solid rgba(52, 211, 153, 0.2); margin: 0.5rem 0; white-space: pre-wrap; font-size: 10px; }
       `}</style>
 
-      {/* Wiki Sidebar */}
-      <div className={`transition-all duration-300 border-r border-primary/20 bg-background/50 backdrop-blur-md flex flex-col ${isSidebarOpen ? "w-72" : "w-0 overflow-hidden"}`}>
-        <div className="p-6 border-b border-primary/20">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/20 rounded-lg">
-                <Book className="w-5 h-5 text-primary" />
-              </div>
-              <h2 className="font-display text-sm uppercase tracking-[0.2em] text-primary">Archives</h2>
-            </div>
-            <button 
-              onClick={() => setIsSidebarOpen(false)}
-              className="p-1 hover:bg-white/5 rounded transition-colors lg:hidden"
-            >
-              <ChevronDown className="w-4 h-4 rotate-90" />
-            </button>
-          </div>
+      <PageHeader 
+        title="Galaxy Archives"
+        subtitle="Hegemony Knowledge Base & Universal Reference"
+        icon={<Book className="w-5 h-5 text-primary" />}
+        onBack={onBack || (() => app?.setPage("map"))}
+      />
 
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <input 
-              type="text"
-              placeholder="Search data-banks..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-white/5 border border-primary/20 rounded-lg py-2 pl-10 pr-4 text-xs font-mono-hud text-foreground focus:outline-none focus:border-primary/50 transition-colors"
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Mobile Tab Trigger */}
+        <button
+          onClick={() => setIsMobileSidebarOpen(true)}
+          className="lg:hidden fixed left-0 top-1/2 -translate-y-1/2 z-[45] bg-primary/20 backdrop-blur-md border border-l-0 border-primary/30 p-2 rounded-r-xl text-primary hover:bg-primary/30 transition-all flex flex-col items-center gap-1 shadow-[0_0_20px_rgba(var(--primary-rgb),0.2)]"
+        >
+          <Book className="w-4 h-4" />
+          <span className="[writing-mode:vertical-lr] text-[8px] font-mono-hud uppercase tracking-widest mt-1">Archive Index</span>
+          <ChevronRight className="w-4 h-4 mt-1" />
+        </button>
+
+        {/* Desktop Sidebar */}
+        <aside className="hidden lg:flex relative z-10 bg-background/20 backdrop-blur-none border-r border-primary/20 flex flex-col w-[280px] shrink-0">
+          {sidebarContent}
+        </aside>
+
+        {/* Main Content Area */}
+        <main id="wiki-content-area" className="flex-1 overflow-y-auto relative z-10 custom-scrollbar">
+          <div className="max-w-4xl mx-auto px-6 lg:px-12 py-10">
+            <div className="mb-10 flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-primary/20 pb-8 relative">
+              <div className="absolute -bottom-px left-0 w-32 h-0.5 bg-primary shadow-[0_0_15px_rgba(var(--primary-rgb),0.5)]" />
+              <div>
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/20 text-primary font-mono-hud text-[8px] uppercase tracking-tighter">
+                    {activeSection.category}
+                  </span>
+                  {activeSection.status && (
+                    <span className={`
+                      px-2 py-0.5 rounded border font-mono-hud text-[8px] uppercase tracking-tighter
+                      ${activeSection.status === "Live" ? "bg-success/10 border-success/30 text-success" : 
+                        activeSection.status === "Active" ? "bg-cyan-500/10 border-cyan-500/30 text-cyan-400" :
+                        activeSection.status === "Reference" ? "bg-purple-500/10 border-purple-500/30 text-purple-400" :
+                        "bg-primary/5 border-primary/20 text-primary/40"}
+                    `}>
+                      Status: {activeSection.status}
+                    </span>
+                  )}
+                </div>
+                <h1 className="font-display text-3xl sm:text-4xl text-foreground text-glow uppercase tracking-[0.1em]">{activeSection.title}</h1>
+              </div>
+              <div className="flex items-center gap-2 text-primary/40 text-[10px] font-mono-hud uppercase">
+                <Shield className="w-3 h-3" />
+                <span>Verified Archive Node 07-X</span>
+              </div>
+            </div>
+
+            <div 
+              className="wiki-content animate-in fade-in slide-in-from-bottom-4 duration-500"
+              dangerouslySetInnerHTML={{ __html: activeSection.content }}
             />
-          </div>
-        </div>
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-8">
-          {Object.entries(sectionsByCategory).map(([cat, sections]) => (
-            sections.length > 0 && (
-              <div key={cat} className="space-y-2">
-                <h3 className="px-3 font-display text-[9px] uppercase tracking-[0.3em] text-primary/40">{cat}</h3>
-                <div className="space-y-1">
-                  {sections.map(s => (
-                    <button
-                      key={s.id}
-                      onClick={() => setActiveSectionId(s.id)}
-                      className={`w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg transition-all group ${activeSectionId === s.id ? "bg-primary/10 text-primary border border-primary/20" : "text-muted-foreground hover:bg-white/5 hover:text-foreground border border-transparent"}`}
-                    >
-                      <div className="flex items-center gap-3 overflow-hidden">
-                        <span className={`shrink-0 transition-transform group-hover:scale-110 ${activeSectionId === s.id ? "text-primary" : "text-muted-foreground/50"}`}>
-                          {s.icon}
-                        </span>
-                        <span className="text-[11px] font-medium truncate">{s.title}</span>
-                      </div>
-                      {activeSectionId === s.id && <ChevronRight className="w-3 h-3 animate-pulse" />}
-                    </button>
-                  ))}
+            <div className="mt-20 pt-8 border-t border-primary/10 flex flex-col sm:flex-row items-center justify-between gap-6 opacity-40 hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-full bg-primary/5 border border-primary/10">
+                  <Globe className="w-6 h-6 text-primary" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="font-display text-[10px] text-primary uppercase tracking-widest">End of Entry</span>
+                  <span className="font-mono-hud text-[8px] text-muted-foreground uppercase">Reference ID: ARCH-{activeSection.id.toUpperCase()}</span>
                 </div>
               </div>
-            )
-          ))}
-        </div>
-      </div>
-
-      {/* Main Content Area */}
-      <div id="wiki-content-area" className="flex-1 overflow-y-auto custom-scrollbar relative">
-        {/* Toggle Sidebar Button (Mobile/Collapsed) */}
-        {!isSidebarOpen && (
-          <button 
-            onClick={() => setIsSidebarOpen(true)}
-            className="absolute top-6 left-6 p-2 bg-primary/20 border border-primary/30 text-primary rounded-lg z-20 hover:bg-primary/30 transition-all"
-          >
-            <ChevronRight className="w-5 h-5" />
-          </button>
-        )}
-
-        <div className="max-w-4xl mx-auto p-8 lg:p-16">
-          <div className="mb-12 animate-in fade-in slide-in-from-top-4 duration-500">
-            <div className="flex items-center justify-between mb-4">
-              <div className="font-mono-hud text-[10px] uppercase tracking-[0.4em] text-primary/60">{activeSection.category}</div>
-              {activeSection.status && (
-                <div className={`px-3 py-1 rounded-full font-mono-hud text-[8px] uppercase tracking-widest border ${
-                  activeSection.status === "Live" ? "bg-success/10 border-success/30 text-success" :
-                  activeSection.status === "Partial" ? "bg-warning/10 border-warning/30 text-warning" :
-                  activeSection.status === "Planned" ? "bg-purple-500/10 border-purple-500/30 text-purple-400" :
-                  activeSection.status === "Active" ? "bg-primary/10 border-primary/30 text-primary" :
-                  "bg-white/5 border-white/20 text-muted-foreground"
-                }`}>
-                  {activeSection.status}
-                </div>
-              )}
-            </div>
-            <h1 className="font-display text-4xl uppercase tracking-[0.1em] text-foreground text-glow mb-2">{activeSection.title}</h1>
-            <div className="w-24 h-1 bg-gradient-to-r from-primary to-transparent rounded-full" />
-          </div>
-
-          <div 
-            className="wiki-content animate-in fade-in slide-in-from-bottom-4 duration-700 delay-100"
-            dangerouslySetInnerHTML={{ __html: activeSection.content }}
-          />
-
-          {/* Footer Navigation */}
-          <div className="mt-24 pt-8 border-t border-primary/10 flex items-center justify-between">
-            <div className="text-[10px] font-mono-hud text-muted-foreground uppercase tracking-widest">
-              Last Synced: {new Date().toLocaleDateString()}
-            </div>
-            <div className="flex items-center gap-6">
-              <button className="flex items-center gap-2 text-[10px] font-mono-hud text-primary hover:text-white transition-colors uppercase tracking-widest group">
-                Download PDF <ExternalLink className="w-3 h-3 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+              <button 
+                onClick={() => document.getElementById("wiki-content-area")?.scrollTo({ top: 0, behavior: 'smooth' })}
+                className="font-mono-hud text-[10px] text-primary hover:text-white uppercase tracking-widest flex items-center gap-2 group"
+              >
+                Top of Record <ChevronRight className="w-3 h-3 rotate-[-90deg] group-hover:translate-y-[-2px] transition-transform" />
               </button>
             </div>
           </div>
-        </div>
-
-        {/* Decorative corner accents */}
-        <div className="fixed top-0 right-0 w-64 h-64 bg-primary/5 blur-[120px] pointer-events-none -z-10" />
-        <div className="fixed bottom-0 left-0 w-96 h-96 bg-primary/5 blur-[150px] pointer-events-none -z-10" />
+        </main>
       </div>
     </div>
   );

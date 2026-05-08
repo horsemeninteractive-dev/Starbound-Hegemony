@@ -1,15 +1,19 @@
-import React, { useState, useRef, memo } from "react";
+import React, { useState, useRef, memo, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Environment, OrbitControls, PerspectiveCamera } from "@react-three/drei";
-import { SHIP_PARTS, ShipConfiguration, ShipComponentType } from "../shipPresets";
+import { SHIP_PARTS, ShipConfiguration, ShipComponentType, CLASS_DEFAULTS } from "../shipPresets";
 import { ModularShip } from "./ModularShip";
 import { SpaceBackground } from "./SpaceBackground";
-import { ChevronLeft, ChevronRight, Rocket, Shield, Cpu, Layout } from "lucide-react";
+import { ChevronLeft, ChevronRight, Rocket, Shield, Cpu, Layout, Box, Microscope, Zap } from "lucide-react";
+import { VesselClass } from "../types";
 
 interface Props {
   config: ShipConfiguration;
   onChange: (config: ShipConfiguration) => void;
   playClick: () => void;
+  shipClass?: VesselClass;
+  onClassChange?: (newClass: VesselClass) => void;
+  hideClassSelector?: boolean;
 }
 
 const ShipPreview = memo(({ config, previewIntensityRef }: { config: ShipConfiguration; previewIntensityRef: React.MutableRefObject<number> }) => {
@@ -46,7 +50,7 @@ const ShipPreview = memo(({ config, previewIntensityRef }: { config: ShipConfigu
   );
 });
 
-export function ShipCustomizer({ config, onChange, playClick }: Props) {
+export function ShipCustomizer({ config, onChange, playClick, shipClass = 'commander', onClassChange, hideClassSelector = false }: Props) {
   const [activeTab, setActiveTab] = useState<ShipComponentType>('hull');
   const previewIntensityRef = useRef(0.8);
 
@@ -57,6 +61,13 @@ export function ShipCustomizer({ config, onChange, playClick }: Props) {
     { id: 'bridge', label: 'BRIDGE', icon: Cpu },
   ];
 
+  const classes: { id: VesselClass; label: string; icon: React.ElementType }[] = [
+    { id: 'commander', label: 'COMMANDER', icon: Shield },
+    { id: 'freighter', label: 'FREIGHTER', icon: Box },
+    { id: 'science', label: 'SCIENCE', icon: Microscope },
+    // { id: 'corvette', label: 'CORVETTE', icon: Zap },
+  ];
+
   const handlePartSelect = (type: ShipComponentType, partId: string) => {
     playClick();
     onChange({
@@ -65,7 +76,7 @@ export function ShipCustomizer({ config, onChange, playClick }: Props) {
     });
   };
 
-  const activeParts = SHIP_PARTS[activeTab];
+  const activeParts = SHIP_PARTS[shipClass][activeTab];
 
   return (
     <div className="flex flex-col lg:flex-row w-full h-full bg-black/60 border border-primary/20 backdrop-blur-xl rounded-lg overflow-hidden shadow-2xl min-h-0">
@@ -79,8 +90,33 @@ export function ShipCustomizer({ config, onChange, playClick }: Props) {
           <div className="absolute bottom-0 left-0 w-4 h-4 border-b border-l border-primary/30" />
           <div className="absolute top-2 left-3 flex flex-col gap-0.5">
             <div className="font-mono-hud text-[7px] text-primary uppercase tracking-widest opacity-50">LNK_ESTABLISHED</div>
+            <div className="font-mono-hud text-[9px] text-primary/80 uppercase tracking-widest">CLASS: {shipClass}</div>
           </div>
         </div>
+
+        {/* Class Selector Tab Bar (Optional) */}
+        {!hideClassSelector && (
+          <div className="absolute top-2 right-2 flex gap-1 p-1 bg-black/60 border border-primary/20 rounded-lg backdrop-blur-md">
+            {classes.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => {
+                  playClick();
+                  onClassChange?.(c.id);
+                  onChange({ ...CLASS_DEFAULTS[c.id], name: config.name });
+                }}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded transition-all ${
+                  shipClass === c.id 
+                    ? 'bg-primary/20 text-primary border border-primary/40' 
+                    : 'text-primary/40 hover:text-primary/70 hover:bg-white/5 border border-transparent'
+                }`}
+              >
+                <c.icon size={10} />
+                <span className="font-mono-hud text-[7px] tracking-widest">{c.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Customization Controls - Non-shrinking to guarantee visibility */}
@@ -121,7 +157,7 @@ export function ShipCustomizer({ config, onChange, playClick }: Props) {
           <div className="space-y-1.5">
             <div className="font-mono-hud text-[7px] text-primary/40 uppercase flex items-center gap-1.5">
               <span className="w-1 h-1 bg-primary/40 rounded-full" />
-              <span>Variant Selection</span>
+              <span>Variant Selection ({shipClass})</span>
             </div>
 
             <div className="grid grid-cols-5 lg:grid-cols-1 gap-1 lg:gap-1.5">
@@ -171,7 +207,7 @@ export function ShipCustomizer({ config, onChange, playClick }: Props) {
           <div className="flex flex-col lg:flex-row lg:w-full items-center lg:justify-between gap-1 lg:gap-2">
             <label className="font-mono-hud text-[6px] lg:text-[7px] text-primary/40 uppercase tracking-widest">HULL</label>
             <div className="flex gap-1 items-center">
-              {['#c8d0dc', '#2a2a2a', '#1e293b', '#4a1d1d'].map(color => (
+              {['#c8d0dc', '#2a2a2a', '#1e293b', '#4a1d1d', '#eab308', '#f8fafc'].map(color => (
                 <button
                   key={color}
                   onClick={() => onChange({ ...config, primaryColor: color })}
@@ -202,7 +238,7 @@ export function ShipCustomizer({ config, onChange, playClick }: Props) {
           <div className="flex flex-col lg:flex-row lg:w-full items-center lg:justify-between gap-1 lg:gap-2">
             <label className="font-mono-hud text-[6px] lg:text-[7px] text-primary/40 uppercase tracking-widest">ENERGY</label>
             <div className="flex gap-1 items-center">
-              {['#00ffff', '#ff3333', '#33ff33', '#ffff33'].map(color => (
+              {['#00ffff', '#ff3333', '#33ff33', '#ffff33', '#fb923c', '#38bdf8'].map(color => (
                 <button
                   key={color}
                   onClick={() => onChange({ ...config, accentColor: color })}

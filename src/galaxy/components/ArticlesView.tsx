@@ -21,7 +21,8 @@ import {
   Palette,
   Image as ImageIcon,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  ChevronLeft
 } from "lucide-react";
 
 const CommentIcon = MessageSquare;
@@ -29,6 +30,7 @@ import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { formatDistanceToNow } from "date-fns";
 import { UserAvatar } from "./UserAvatar";
+import { PageHeader } from "./PageHeader";
 
 interface ArticlesViewProps {
   app: any;
@@ -68,6 +70,19 @@ export function ArticlesView({ app, onPlayClick }: ArticlesViewProps) {
     setIsCreating(false);
   };
 
+  const headerActions = (
+    <div className="flex items-center gap-3">
+      <Button 
+        variant="outline"
+        className="h-10 text-[10px] uppercase tracking-widest font-display"
+        onClick={() => { onPlayClick?.(); setIsCreating(!isCreating); }}
+      >
+        {isCreating ? <ArrowLeft size={14} className="mr-2" /> : <Plus size={14} className="mr-2" />}
+        {isCreating ? "Back to Feed" : "Compose Broadcast"}
+      </Button>
+    </div>
+  );
+
   const insertTag = (tag: string, value?: string) => {
     const textarea = document.getElementById("article-content") as HTMLTextAreaElement;
     if (!textarea) return;
@@ -95,31 +110,19 @@ export function ArticlesView({ app, onPlayClick }: ArticlesViewProps) {
   };
 
   return (
-    <div className="flex-1 bg-background/40 backdrop-blur-sm p-4 sm:p-12 overflow-y-auto custom-scrollbar animate-in slide-in-from-bottom-2 duration-500">
-      <div className="max-w-6xl mx-auto space-y-12 pb-24">
-        {/* Header & Tabs */}
-        <div className="flex flex-col gap-6">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-primary/20 pb-10">
-            <div className="flex items-center gap-4">
-              <div className="p-4 bg-primary/10 border border-primary/20 rounded-xl shadow-[0_0_20px_hsl(var(--primary)/0.1)]">
-                <Newspaper className="text-primary" size={32} />
-              </div>
-              <div>
-                <h2 className="text-3xl font-display text-white tracking-[0.2em] uppercase text-glow leading-none mb-2">Communication Hub</h2>
-                <p className="text-xs font-mono-hud text-muted-foreground uppercase tracking-[0.3em]">Interstellar Subspace Relay System</p>
-              </div>
-            </div>
-            <Button 
-              className="bg-primary/20 hover:bg-primary/30 border border-primary/30 text-primary font-display text-[10px] uppercase tracking-widest h-10 px-6"
-              onClick={() => { onPlayClick?.(); setIsCreating(!isCreating); }}
-            >
-              {isCreating ? <ArrowLeft size={14} className="mr-2" /> : <Plus size={14} className="mr-2" />}
-              {isCreating ? "Back to Feed" : "Compose Broadcast"}
-            </Button>
-          </div>
+    <div className="flex-1 flex flex-col bg-background/40 backdrop-blur-sm animate-fade-in overflow-hidden">
+      <PageHeader 
+        title="Communication Hub"
+        subtitle="Interstellar Subspace Relay System"
+        icon={<Newspaper />}
+        onBack={() => app.setPage("map")}
+        actions={headerActions}
+      />
 
+      <main className="flex-1 p-4 sm:p-12 overflow-y-auto custom-scrollbar">
+        <div className="max-w-6xl mx-auto space-y-12 pb-24">
           {!isCreating && (
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 mb-8">
               {TABS.map(tab => {
                 const Icon = tab.icon;
                 return (
@@ -135,9 +138,8 @@ export function ArticlesView({ app, onPlayClick }: ArticlesViewProps) {
               })}
             </div>
           )}
-        </div>
 
-        {isCreating ? (
+          {isCreating ? (
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-6">
             <div className="hud-panel p-8 border border-primary/20 bg-primary/5 space-y-8">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
@@ -260,8 +262,9 @@ export function ArticlesView({ app, onPlayClick }: ArticlesViewProps) {
           </div>
         )}
       </div>
-    </div>
-  );
+    </main>
+  </div>
+);
 }
 
 function ArticleCard({ article, onVote, onComment, user }: { article: any, onVote: any, onComment: any, user: any }) {

@@ -162,6 +162,8 @@ export function CommanderOnboarding({ onComplete, playClick, playSuccess, playTy
                   config={shipConfig} 
                   onChange={setShipConfig} 
                   playClick={playClick} 
+                  shipClass="commander"
+                  hideClassSelector={true}
                 />
               </div>
 

@@ -7,13 +7,15 @@ import {
   Factory,
   Database,
   ArrowRight,
-  Lock
+  Lock,
+  ChevronLeft
 } from "lucide-react";
 import { GalaxyIcon } from "./ResourceIcon";
 import { useState, useMemo } from "react";
-import { Installation } from "../types";
-import { RESOURCE_META } from "../meta";
+import { Installation, UserResource } from "../types";
+import { RESOURCE_META, INFRA_META } from "../meta";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "./PageHeader";
 
 interface FactoriesViewProps {
   app: any;
@@ -22,8 +24,12 @@ interface FactoriesViewProps {
 
 
 
-function FactoryRow({ f, galaxy, playerSystemId, playerBodyId, onCollect, onUpgrade, updateFactorySettings, depositToFactoryTreasury, onPlayClick }: any) {
-  const rMeta = (RESOURCE_META as any)[f.resourceType];
+function FactoryRow({ f, galaxy, playerSystemId, playerBodyId, onCollect, onUpgrade, onUpgradeInfrastructure, updateFactorySettings, depositToFactoryTreasury, userResources, onPlayClick }: any) {
+  const isInfrastructure = f.resourceType === 'Structure';
+  const rMeta = isInfrastructure 
+    ? Object.values(INFRA_META).find(m => m.type === f.type)
+    : (RESOURCE_META as any)[f.resourceType];
+    
   const system = galaxy.systemById[f.systemId];
   const body = system?.bodies.find((b: any) => b.id === f.bodyId) || (f.bodyId === "star" ? { name: system?.name } : null);
 
@@ -37,6 +43,7 @@ function FactoryRow({ f, galaxy, playerSystemId, playerBodyId, onCollect, onUpgr
   const STORAGE_CAPACITY = [100, 300, 750, 2000, 5000];
   const storageCapacity = f.storageCapacity ?? STORAGE_CAPACITY[Math.min(f.storageTier ?? 0, 4)];
   const storagePct = storageCapacity > 0 ? Math.min(100, (f.storage / storageCapacity) * 100) : 0;
+  const [showUpgrades, setShowUpgrades] = useState(false);
 
   return (
     <div className="hud-panel border border-primary/20 bg-primary/5 overflow-hidden group">
@@ -49,6 +56,7 @@ function FactoryRow({ f, galaxy, playerSystemId, playerBodyId, onCollect, onUpgr
             <div>
               <div className="flex items-center gap-2">
                 <div className="text-xs font-bold text-white uppercase tracking-wider">{rMeta?.label || f.type}</div>
+                {isInfrastructure && <div className="px-1 py-0.5 rounded-sm bg-info/10 border border-info/20 text-[7px] font-bold text-info uppercase tracking-tighter">Level {f.tier} Infrastructure</div>}
                 {!isAtLocation && (
                   <div className="px-1.5 py-0.5 rounded-sm bg-destructive/10 border border-destructive/20 flex items-center gap-1">
                     <Lock size={8} className="text-destructive" />
@@ -95,36 +103,102 @@ function FactoryRow({ f, galaxy, playerSystemId, playerBodyId, onCollect, onUpgr
 
         {/* Actions */}
         <div className="flex gap-2 pt-2">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className={`flex-1 h-8 text-[10px] border-primary/20 transition-all ${isAtLocation ? 'hover:bg-primary/10' : 'opacity-40 cursor-not-allowed'}`}
-            disabled={f.storage === 0 || !isAtLocation}
-            onClick={() => { onPlayClick?.(); onCollect(f.id); }}
-          >
-            {isAtLocation ? <Package size={12} className="mr-2" /> : <Lock size={12} className="mr-2" />}
-            {isAtLocation ? "Collect All" : "Local Presence Required"}
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className={`h-8 w-8 p-0 border-info/20 text-info transition-all ${isAtLocation ? 'hover:bg-info/10' : 'opacity-40 cursor-not-allowed'}`}
-            disabled={!isAtLocation}
-            onClick={() => { onPlayClick?.(); onUpgrade(f.id, 'storage'); }}
-            title={isAtLocation ? "Upgrade Capacity" : "Upgrade requires local presence"}
-          >
-            <ArrowUp size={12} />
-          </Button>
+          {!isInfrastructure && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className={`flex-1 h-8 text-[10px] border-primary/20 transition-all ${isAtLocation ? 'hover:bg-primary/10' : 'opacity-40 cursor-not-allowed'}`}
+              disabled={f.storage === 0 || !isAtLocation}
+              onClick={() => { onPlayClick?.(); onCollect(f.id); }}
+            >
+              {isAtLocation ? <Package size={12} className="mr-2" /> : <Lock size={12} className="mr-2" />}
+              {isAtLocation ? "Collect All" : "Local Presence Required"}
+            </Button>
+          )}
+          {isInfrastructure && (
+             <Button 
+               variant="outline" 
+               size="sm" 
+               className={`flex-1 h-8 text-[10px] border-info/20 text-info transition-all ${isAtLocation ? 'hover:bg-info/10' : 'opacity-40 cursor-not-allowed'}`}
+               disabled={!isAtLocation}
+               onClick={() => { onPlayClick?.(); setShowUpgrades(!showUpgrades); setShowSettings(false); }}
+             >
+               <ArrowUp size={12} className="mr-2" />
+               Upgrade Facility
+             </Button>
+          )}
+          {!isInfrastructure && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className={`h-8 w-8 p-0 border-info/20 text-info transition-all ${isAtLocation ? 'hover:bg-info/10' : 'opacity-40 cursor-not-allowed'}`}
+              disabled={!isAtLocation}
+              onClick={() => { onPlayClick?.(); onUpgrade(f.id, 'storage'); }}
+              title={isAtLocation ? "Upgrade Capacity" : "Upgrade requires local presence"}
+            >
+              <ArrowUp size={12} />
+            </Button>
+          )}
           <Button 
             variant="outline" 
             size="sm" 
             className={`h-8 w-8 p-0 border-primary/20 transition-all ${showSettings ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:bg-primary/10'}`}
-            onClick={() => setShowSettings(!showSettings)}
+            onClick={() => { setShowSettings(!showSettings); setShowUpgrades(false); }}
             title="Factory Settings"
           >
             <Settings size={12} />
           </Button>
         </div>
+
+        {/* Upgrade Details (for Infrastructure) */}
+        {showUpgrades && isInfrastructure && (
+          <div className="animate-in slide-in-from-top-2 duration-300 p-3 bg-info/5 border border-info/20 rounded-md space-y-3">
+             {(() => {
+                const infraKey = Object.keys(INFRA_META).find(k => (INFRA_META as any)[k].type === f.type) as keyof typeof INFRA_META;
+                if (!infraKey) return null;
+                const meta = (INFRA_META as any)[infraKey];
+                const currentTier = f.tier || 1;
+                const nextTierConfig = meta.tiers[currentTier]; 
+
+                if (!nextTierConfig) return <div className="text-[10px] text-success italic font-mono-hud text-center py-2">Maximum persistent efficiency reached.</div>;
+
+                return (
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center text-[10px] text-white uppercase tracking-wider font-bold">
+                       <span>Target: Tier {currentTier + 1}</span>
+                       <span className="text-info">{nextTierConfig.costSC.toLocaleString()} SC</span>
+                    </div>
+                    
+                    <div className="p-2 bg-black/40 rounded border border-info/10">
+                       <div className="text-[8px] text-muted-foreground uppercase font-bold mb-1">Required Components:</div>
+                       <div className="grid grid-cols-2 gap-2">
+                          {nextTierConfig.mats.map((m: any) => {
+                             const has = userResources.find((ur: any) => ur.resourceType === m.resource)?.amount || 0;
+                             return (
+                               <div key={m.resource} className={`text-[9px] font-mono-hud flex justify-between ${has >= m.qty ? 'text-success' : 'text-destructive'}`}>
+                                 <span>{m.resource}</span>
+                                 <span>{has}/{m.qty}</span>
+                               </div>
+                             );
+                          })}
+                       </div>
+                    </div>
+
+                    <Button 
+                      className="w-full h-8 bg-info hover:bg-info/80 text-background font-bold text-[10px] uppercase tracking-widest"
+                      onClick={() => {
+                        onPlayClick?.();
+                        onUpgradeInfrastructure(f.id);
+                        setShowUpgrades(false);
+                      }}
+                    >
+                      Authorize Upgrade
+                    </Button>
+                  </div>
+                );
+             })()}
+          </div>
+        )}
 
         {/* Inline Settings */}
         {showSettings && (
@@ -196,10 +270,11 @@ function FactoryRow({ f, galaxy, playerSystemId, playerBodyId, onCollect, onUpgr
 }
 
 export function FactoriesView({ app, onPlayClick }: FactoriesViewProps) {
-  const { userFactories, galaxy, collectFactory, upgradeFactory, updateFactorySettings, depositToFactoryTreasury, user, playerSystemId, playerBodyId } = app;
+  const { userFactories, galaxy, collectFactory, upgradeFactory, upgradeInfrastructure, updateFactorySettings, depositToFactoryTreasury, user, playerSystemId, playerBodyId, userResources } = app;
   const userId = user?.id;
   const onCollect = collectFactory;
   const onUpgrade = upgradeFactory;
+  const onUpgradeInfrastructure = upgradeInfrastructure;
   const [filter, setFilter] = useState<string>("all");
 
   const resourceTypes = useMemo(() => {
@@ -225,63 +300,61 @@ export function FactoriesView({ app, onPlayClick }: FactoriesViewProps) {
   }, [userFactories]);
 
   return (
-    <div className="flex-1 bg-background/40 backdrop-blur-sm p-4 sm:p-12 overflow-y-auto custom-scrollbar animate-in slide-in-from-bottom-2 duration-500">
-      <div className="max-w-6xl mx-auto space-y-12 pb-24">
-        {/* Header with Background Pattern */}
-        <div className="relative p-8 hud-panel border border-primary/20 bg-primary/5 overflow-hidden group">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,hsl(var(--primary)/0.05),transparent)] pointer-events-none" />
-          <div className="absolute -top-24 -right-24 opacity-[0.03] group-hover:opacity-[0.05] transition-opacity pointer-events-none">
-            <Factory size={320} />
-          </div>
+    <div className="flex-1 flex flex-col bg-background/40 backdrop-blur-sm animate-fade-in overflow-hidden">
+      <PageHeader 
+        title="Industrial Complex"
+        subtitle="Production & Supply Chain Management"
+        icon={<Building2 />}
+        onBack={() => app.setPage("map")}
+      />
 
-          <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-8">
-            <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <div className="p-4 bg-primary/10 border border-primary/20 rounded-xl shadow-[0_0_20px_hsl(var(--primary)/0.1)]">
-                  <Building2 size={32} className="text-primary" />
-                </div>
-                <div>
-                  <h2 className="text-3xl font-display text-white tracking-[0.2em] uppercase text-glow leading-none mb-2">Industrial Complex</h2>
-                  <p className="text-xs font-mono-hud text-muted-foreground uppercase tracking-[0.3em]">Production & Supply Chain Management</p>
+      <main className="flex-1 p-4 sm:p-12 overflow-y-auto custom-scrollbar">
+        <div className="max-w-6xl mx-auto space-y-12 pb-24">
+          {/* Summary Banner */}
+          <div className="relative p-8 hud-panel border border-primary/20 bg-primary/5 overflow-hidden group">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,hsl(var(--primary)/0.05),transparent)] pointer-events-none" />
+            <div className="absolute -top-24 -right-24 opacity-[0.03] group-hover:opacity-[0.05] transition-opacity pointer-events-none">
+              <Factory size={320} />
+            </div>
+
+            <div className="relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-8">
+              <div className="space-y-4">
+                <div className="flex flex-wrap gap-6 pt-4 border-t border-primary/10">
+                  <div className="space-y-1">
+                      <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">Global Efficiency</span>
+                      <div className="text-sm font-mono-hud text-white">94.2% <span className="text-success text-[10px] ml-1">▲</span></div>
+                  </div>
+                  <div className="space-y-1">
+                      <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">Active Workforce</span>
+                      <div className="text-sm font-mono-hud text-white">{userFactories.reduce((acc, f) => acc + ((f.maxJobs || 5) - f.jobsAvailable), 0)} / {userFactories.reduce((acc, f) => acc + (f.maxJobs || 5), 0)}</div>
+                  </div>
+                  <div className="space-y-1">
+                      <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">System Coverage</span>
+                      <div className="text-sm font-mono-hud text-white">{new Set(userFactories.map(f => f.systemId)).size} Sectors</div>
+                  </div>
                 </div>
               </div>
-              
-              <div className="flex flex-wrap gap-6 pt-4 border-t border-primary/10">
-                <div className="space-y-1">
-                    <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">Global Efficiency</span>
-                    <div className="text-sm font-mono-hud text-white">94.2% <span className="text-success text-[10px] ml-1">▲</span></div>
+
+              <div className="grid grid-cols-2 gap-4 shrink-0">
+                <div className="hud-panel p-4 border border-success/20 bg-success/5 min-w-[140px]">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Package className="text-success" size={14} />
+                    <span className="text-[9px] font-bold text-success uppercase tracking-widest">Stockpile</span>
+                  </div>
+                  <div className="text-2xl font-display text-white">{stats.totalStorage}</div>
+                  <div className="text-[7px] text-muted-foreground uppercase tracking-tighter">Units available</div>
                 </div>
-                <div className="space-y-1">
-                    <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">Active Workforce</span>
-                    <div className="text-sm font-mono-hud text-white">{userFactories.reduce((acc, f) => acc + ((f.maxJobs || 5) - f.jobsAvailable), 0)} / {userFactories.reduce((acc, f) => acc + (f.maxJobs || 5), 0)}</div>
-                </div>
-                <div className="space-y-1">
-                    <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">System Coverage</span>
-                    <div className="text-sm font-mono-hud text-white">{new Set(userFactories.map(f => f.systemId)).size} Sectors</div>
+                <div className="hud-panel p-4 border border-info/20 bg-info/5 min-w-[140px]">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Database className="text-info" size={14} />
+                    <span className="text-[9px] font-bold text-info uppercase tracking-widest">Portfolio</span>
+                  </div>
+                  <div className="text-2xl font-display text-white">{stats.count}</div>
+                  <div className="text-[7px] text-muted-foreground uppercase tracking-tighter">Active lines</div>
                 </div>
               </div>
             </div>
-
-            <div className="grid grid-cols-2 gap-4 shrink-0">
-              <div className="hud-panel p-4 border border-success/20 bg-success/5 min-w-[140px]">
-                <div className="flex items-center gap-2 mb-1">
-                  <Package className="text-success" size={14} />
-                  <span className="text-[9px] font-bold text-success uppercase tracking-widest">Stockpile</span>
-                </div>
-                <div className="text-2xl font-display text-white">{stats.totalStorage}</div>
-                <div className="text-[7px] text-muted-foreground uppercase tracking-tighter">Units available</div>
-              </div>
-              <div className="hud-panel p-4 border border-info/20 bg-info/5 min-w-[140px]">
-                <div className="flex items-center gap-2 mb-1">
-                  <Database className="text-info" size={14} />
-                  <span className="text-[9px] font-bold text-info uppercase tracking-widest">Portfolio</span>
-                </div>
-                <div className="text-2xl font-display text-white">{stats.count}</div>
-                <div className="text-[7px] text-muted-foreground uppercase tracking-tighter">Active lines</div>
-              </div>
-            </div>
           </div>
-        </div>
 
         {/* Filter Bar with Glow Effect */}
         <div className="flex items-center gap-4 bg-primary/5 p-2 border border-primary/10 rounded-lg backdrop-blur-md sticky top-0 z-20">
@@ -317,8 +390,10 @@ export function FactoriesView({ app, onPlayClick }: FactoriesViewProps) {
               playerBodyId={playerBodyId}
               onCollect={onCollect}
               onUpgrade={onUpgrade}
+              onUpgradeInfrastructure={onUpgradeInfrastructure}
               updateFactorySettings={updateFactorySettings}
               depositToFactoryTreasury={depositToFactoryTreasury}
+              userResources={userResources}
               onPlayClick={onPlayClick}
             />
           ))
@@ -331,6 +406,7 @@ export function FactoriesView({ app, onPlayClick }: FactoriesViewProps) {
         )}
         </div>
       </div>
-    </div>
-  );
+    </main>
+  </div>
+);
 }

@@ -2,7 +2,7 @@ import logo from "@/assets/logo.png";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Sheet, SheetContent, SheetOverlay, SheetClose, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Newspaper, Factory, Rocket, Users, User, Sparkles, Settings, X, Coins, Zap as ZapIcon, Bug, Hexagon, BookOpen, Shield, Search, Compass, Package, Eye, EyeOff, Globe, Radio, RefreshCcw, BatteryFull, ShoppingCart } from "lucide-react";
+import { Newspaper, Factory, Rocket, Users, User, Sparkles, Settings, X, Coins, Zap as ZapIcon, Bug, Hexagon, BookOpen, Shield, Search, Compass, Package, Eye, EyeOff, Globe, Radio, RefreshCcw, BatteryFull, ShoppingCart, LogOut } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,6 +32,7 @@ interface Props {
   onOpenWiki?: () => void;
   onOpenChangelog?: () => void;
   onOpenCredits?: () => void;
+  onLogout?: () => void;
   ap: number;
   sc: number;
   vt?: number;
@@ -87,7 +88,7 @@ const GAME_MENU = [
 
 export function TopBar({ 
   onOpenSettings, onOpenProfile, onOpenMap, onOpenArticles, onOpenMarket,
-  onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills, onOpenWiki, onOpenChangelog, onOpenCredits,
+  onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills, onOpenWiki, onOpenChangelog, onOpenCredits, onLogout,
   ap, sc, vt = 0, cargoCapacity = 500, cargoUsed = 0, playerName, playerLevel, playerXP, xpToNextLevel, playerSkills = [], playerAvatar,
   playerPartyIcon, playerPartyHue,
   fogOfWar, setFogOfWar, instantJump, setInstantJump,
@@ -119,6 +120,7 @@ export function TopBar({
 
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -139,6 +141,12 @@ export function TopBar({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  const closeSearch = () => {
+    setShowSearchResults(false);
+    setMobileSearchOpen(false);
+    setSearchQuery("");
+  };
 
   const renderSearchResultsList = () => {
     if (!searchResults) return null;
@@ -161,8 +169,7 @@ export function TopBar({
                   key={u.id}
                   onClick={() => {
                     onNavigateToUser?.(u.id);
-                    setShowSearchResults(false);
-                    setSearchQuery("");
+                    closeSearch();
                   }}
                   className="w-full flex items-center gap-3 p-2 hover:bg-primary/10 rounded transition-colors group text-left"
                 >
@@ -188,8 +195,7 @@ export function TopBar({
                   key={p.id}
                   onClick={() => {
                     onNavigateToParty?.(p.id);
-                    setShowSearchResults(false);
-                    setSearchQuery("");
+                    closeSearch();
                   }}
                   className="w-full flex items-center gap-3 p-2 hover:bg-primary/10 rounded transition-colors group text-left"
                 >
@@ -220,8 +226,7 @@ export function TopBar({
                   key={s.id}
                   onClick={() => {
                     onNavigateToState?.(s.id);
-                    setShowSearchResults(false);
-                    setSearchQuery("");
+                    closeSearch();
                   }}
                   className="w-full flex items-center gap-3 p-2 hover:bg-primary/10 rounded transition-colors group text-left"
                 >
@@ -423,7 +428,8 @@ export function TopBar({
 
         {/* Mobile Search Sheet */}
         <div className="xl:hidden flex items-center ml-1">
-          <Sheet onOpenChange={(open) => {
+          <Sheet open={mobileSearchOpen} onOpenChange={(open) => {
+            setMobileSearchOpen(open);
             if (open) {
               setTimeout(() => {
                 const input = document.getElementById('mobile-search-input');
@@ -432,11 +438,17 @@ export function TopBar({
             }
           }}>
             <SheetTrigger asChild>
-              <button className="h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center rounded-lg bg-primary/5 border border-primary/20 text-primary/70 hover:text-primary hover:bg-primary/10 hover:border-primary/40 transition-all group">
+              <button 
+                onClick={() => setMobileSearchOpen(true)}
+                className="h-8 w-8 sm:h-9 sm:w-9 flex items-center justify-center rounded-lg bg-primary/5 border border-primary/20 text-primary/70 hover:text-primary hover:bg-primary/10 hover:border-primary/40 transition-all group"
+              >
                 <Search size={16} className={isSearching ? "animate-spin" : "group-hover:scale-110 transition-transform"} />
               </button>
             </SheetTrigger>
             <SheetContent side="top" className="w-full bg-background/95 backdrop-blur-xl border-b border-primary/20 p-4 pt-12 z-[100] outline-none">
+              <VisuallyHidden>
+                <SheetTitle>Search Galaxy Archives</SheetTitle>
+              </VisuallyHidden>
               <div className="relative group mb-4">
                 <input
                   id="mobile-search-input"
@@ -687,9 +699,20 @@ export function TopBar({
               >
                 Credits
               </button>
+              <span className="text-primary/20">•</span>
+              <button 
+                onClick={() => {
+                  setMenuOpen(false);
+                  onLogout?.();
+                }}
+                className="font-mono-hud text-[8px] uppercase tracking-[0.25em] text-destructive/60 hover:text-destructive transition-colors flex items-center gap-1.5"
+              >
+                <LogOut size={10} />
+                Logout
+              </button>
             </div>
             <span className="font-mono-hud text-[7px] uppercase tracking-[0.25em] text-primary/30">
-              Starbound Hegemony OS v0.2.4
+              Starbound Hegemony OS v0.3.0
             </span>
           </div>
         </SheetContent>

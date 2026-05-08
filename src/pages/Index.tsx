@@ -15,11 +15,11 @@ import { UnifiedMap } from "@/galaxy/components/UnifiedMap";
 import { GalaxyOverview, SystemOverview, BodyOverview, ShipOverview } from "@/galaxy/components/Overview";
 import { TopBar } from "@/galaxy/components/TopBar";
 import { FilterPanel } from "@/galaxy/components/FilterPanel";
-import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Legend } from "@/galaxy/components/Legend";
 import { SettingsModal } from "@/galaxy/components/SettingsModal";
 import { MiniMap } from "@/galaxy/components/MiniMap";
 import { CommanderOnboarding } from "@/galaxy/components/CommanderOnboarding";
+import { ShipyardView } from "@/galaxy/components/ShipyardView";
 import { ShipCustomizer } from "@/galaxy/components/ShipCustomizer";
 import { type ShipConfiguration } from "@/galaxy/shipPresets";
 import { AuthScreen } from "@/galaxy/components/AuthScreen";
@@ -31,6 +31,9 @@ import { ProfileView } from "@/galaxy/components/ProfileView";
 import { PartyView } from "@/galaxy/components/PartyView";
 import { SkillsView } from "@/galaxy/components/SkillsView";
 import { WikiView } from "@/galaxy/components/WikiView";
+import { FleetSidebar } from "@/galaxy/components/FleetSidebar";
+import type { VesselClass } from "@/galaxy/types";
+import { PageHeader } from "@/galaxy/components/PageHeader";
 import { useAudio } from "@/galaxy/useAudio";
 import { ChangelogModal } from "@/galaxy/components/ChangelogModal";
 import { CreditsScreen } from "@/galaxy/components/CreditsScreen";
@@ -111,6 +114,14 @@ const Index = () => {
     app.selectSystem(null); // Clear selection when going back to full galaxy view
   }), [withLoading, playTransition, app.backToGalaxy, app.selectSystem]);
 
+  const handleInitiateJump = useCallback((systemId: string) => {
+    if (app.selectedEntityId) {
+      app.initiateFleetJump(app.selectedEntityId, systemId);
+    } else {
+      app.initiateJump(systemId);
+    }
+  }, [app.selectedEntityId, app.initiateFleetJump, app.initiateJump]);
+
   const handleBackToSystem = useCallback(withLoading(() => {
     playTransition();
     backToSystem();
@@ -168,6 +179,11 @@ const Index = () => {
       root.classList.remove("light");
     }
   }, [app.theme]);
+
+  const activeFleet = app.selectedEntityId ? app.userFleets?.find(f => f.id === app.selectedEntityId) : null;
+  const activeSystemId = activeFleet ? activeFleet.systemId : app.playerSystemId;
+  const activeBodyId = activeFleet ? activeFleet.bodyId : app.playerBodyId;
+  const activeTravel = activeFleet ? activeFleet.travel : app.travel;
 
   return (
     <main className={`relative flex flex-col h-screen w-screen overflow-hidden bg-background`}>
@@ -235,8 +251,10 @@ const Index = () => {
           onNavigateToUser={app.navigateToPublicProfile}
           onNavigateToParty={app.navigateToPublicParty}
           onNavigateToState={app.navigateToPublicState}
+          onLogout={app.logout}
         />
       </div>
+
 
       {/* Main Content Area — keyed so it animates on page change */}
       <div className="flex-1 flex overflow-hidden relative">
@@ -245,6 +263,37 @@ const Index = () => {
             <>
             {/* Main Map Viewport Area */}
             <div className="relative flex-1 flex flex-col min-w-0">
+              {/* Fleet Sidebar (Galaxy View) */}
+              {app.view === "galaxy" && app.page === "map" && (
+                <FleetSidebar
+                  isOpen={app.isFleetSidebarOpen}
+                  onToggle={app.toggleFleetSidebar}
+                  fleets={[
+                    {
+                      id:         app.vesselId,
+                      name:       app.playerName ?? 'Commander',
+                      vesselClass: 'commander' as const,
+                      systemName: app.galaxy?.systemById[app.playerSystemId]?.name ?? '',
+                      status:     app.travel ? 'TRAVELING' : 'IDLE',
+                      isSelected: app.selectedEntityId == null,
+                    },
+                    ...(app.userFleets ?? []).map(f => ({
+                      id:         f.id,
+                      name:       f.name,
+                      vesselClass: 'freighter' as const,
+                      vesselCount: f.vesselIds.length,
+                      systemName: app.galaxy?.systemById[f.systemId]?.name ?? f.systemId,
+                      status:     f.travel ? 'TRAVELING' : f.status.toUpperCase(),
+                      isSelected: app.selectedEntityId === f.id,
+                    })),
+                  ]}
+                  selectedFleetId={app.selectedEntityId ?? app.vesselId}
+                  onSelectFleet={(id: string) => {
+                    if (id === app.vesselId) { app.setSelectedEntityId(null); }
+                    else { app.setSelectedEntityId(id); }
+                  }}
+                />
+              )}
               {/* Subtle nebula vignette */}
               <div className="pointer-events-none absolute inset-0 bg-nebula opacity-40 z-0" />
 
@@ -293,22 +342,72 @@ const Index = () => {
 
               <DataProcessingIndicator isBusy={isTransitioning} />
 
-              <div className="absolute top-0 right-0 bottom-0 left-0 pointer-events-none z-[100]">
-                 <Sonner closeButton />
-              </div>
-
               {/* HUD Overlay within Map (Bottom Controls) */}
               <div className="relative z-20 flex flex-col h-full pointer-events-none">
                 <div className="flex-1" />
 
                 {/* Bottom Controls cluster — desktop only (mobile gets its own bar below) */}
-                <div className="hidden sm:flex p-2 items-end justify-between w-full">
+                <div className="hidden sm:flex p-2 items-end justify-between w-full relative">
                   <Legend 
                     view={app.view} 
                     onPlayClick={playClick} 
                     onPlayExpand={playExpand} 
                     onPlayCollapse={playCollapse} 
                   />
+                  
+                  {/* Regional interference indicator (Desktop Center) */}
+                  <div className="absolute left-1/2 bottom-2 -translate-x-1/2 pointer-events-none flex flex-col items-center z-50">
+                    <AnimatePresence>
+                      {(() => {
+                        const currentSystem = app.galaxy.systemById[app.playerSystemId];
+                        const region = currentSystem?.regionId ? app.galaxy.regions?.find(r => r.id === currentSystem.regionId) : null;
+                        if (!region || app.page !== "map") return null;
+                        
+                        return (
+                          <motion.div
+                            key={region.id}
+                            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                            className="bg-black/50 backdrop-blur-lg border border-white/10 rounded-sm overflow-hidden flex flex-col pointer-events-auto shadow-2xl w-[260px] mb-1 relative"
+                          >
+                            <div className="absolute top-0 left-0 w-1 h-1 border-t border-l border-white/20" />
+                            <div className="absolute top-0 right-0 w-1 h-1 border-t border-r border-white/20" />
+                            
+                            <div className="h-[1px] w-full" style={{ backgroundColor: `hsl(${region.hue}, 80%, 60%)` }} />
+                            
+                            <div className="px-3 py-2 flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <ShieldAlert size={14} style={{ color: `hsl(${region.hue}, 90%, 75%)` }} />
+                                <div className="flex flex-col">
+                                  <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold leading-none">Incursion Active</span>
+                                  <span 
+                                    className="text-[11px] uppercase tracking-widest font-black leading-tight"
+                                    style={{ color: `hsl(${region.hue}, 90%, 80%)` }}
+                                  >
+                                    {region.name}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3 border-l border-white/5 pl-3">
+                                <div className="flex flex-col items-end">
+                                  <div className="flex items-center gap-1.5">
+                                    <Zap size={9} className="text-amber-500" />
+                                    <span className="text-[9px] font-black text-amber-500/90">-35%</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 mt-1">
+                                    <TrendingUp size={9} className="text-cyan-500" />
+                                    <span className="text-[9px] font-black text-cyan-500/90">+20%</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })()}
+                    </AnimatePresence>
+                  </div>
+
                   {(app.view === "galaxy" || app.view === "system" || app.view === "body" || app.view === "ship") && (
                     <FilterPanel 
                       filters={app.filters} 
@@ -332,10 +431,13 @@ const Index = () => {
                       galaxy={app.galaxy} 
                       onSelectBody={handleSystemBodyClick}
                       playerSystemId={app.playerSystemId}
-                      travel={app.travel}
+                      originSystemId={activeSystemId}
+                      travel={activeTravel}
                       arrival={app.arrival}
-                      initiateJump={app.initiateJump}
-                      getJumpCost={app.getJumpCost}
+                      initiateJump={handleInitiateJump}
+                      calculatePath={app.calculatePath}
+                      getPathCost={app.getPathCost}
+                      getJumpCostBetween={app.getJumpCostBetween}
                       currentTime={app.currentTime}
                       isExplored={!app.fogOfWar || app.exploredSystemIds.has(app.system.id)}
                       onPlayClick={playClick}
@@ -353,10 +455,13 @@ const Index = () => {
                     galaxy={app.galaxy} 
                     onSelectBody={handleSystemBodyClick}
                     playerSystemId={app.playerSystemId}
-                    travel={app.travel}
+                    originSystemId={activeSystemId}
+                    travel={activeTravel}
                     arrival={app.arrival}
-                    initiateJump={app.initiateJump}
-                    getJumpCost={app.getJumpCost}
+                    initiateJump={handleInitiateJump}
+                    calculatePath={app.calculatePath}
+                    getPathCost={app.getPathCost}
+                    getJumpCostBetween={app.getJumpCostBetween}
                     currentTime={app.currentTime}
                     isExplored={!app.fogOfWar || app.exploredSystemIds.has(app.system.id)}
                     onPlayClick={playClick}
@@ -373,20 +478,27 @@ const Index = () => {
                       onPlayClick={playClick}
                       onSelectEmpire={handleSelectEmpire}
                       playerSystemId={app.playerSystemId}
+                      originSystemId={activeSystemId}
                       playerBodyId={app.playerBodyId}
-                      travel={app.travel}
+                      originBodyId={activeBodyId}
+                      travel={activeTravel}
                       initiateTravelToBody={app.initiateTravelToBody}
+                      initiateJump={handleInitiateJump}
+                      calculatePath={app.calculatePath}
+                      getPathCost={app.getPathCost}
                       currentTime={app.currentTime}
                       factories={app.factories}
                       bodyResources={app.bodyResources}
                       userResources={app.userResources}
                       currentJob={app.currentJob}
                       onBuildFactory={app.buildFactory}
+                      onBuildInfrastructure={app.buildInfrastructure}
                       onApplyForJob={app.applyForJob}
                       onWorkJob={app.workJob}
                       onLeaveJob={app.leaveJob}
                       onCollect={app.collectFactory}
                       onUpgrade={app.upgradeFactory}
+                      onUpgradeInfrastructure={app.upgradeInfrastructure}
                       onSaveSettings={app.updateFactorySettings}
                       factoryInputStorage={app.factoryInputStorage}
                       onDepositInput={app.depositFactoryInput}
@@ -425,72 +537,66 @@ const Index = () => {
           ) : app.page === "articles" ? (
             <ArticlesView app={app} onPlayClick={playClick} />
           ) : app.page === "empire" ? (
-            <EmpireView app={app} onPlayClick={playClick} isPublic={!!app.viewedStateId} />
+            <EmpireView app={app} onPlayClick={playClick} isPublic={!!app.viewedStateId} onBack={() => withLoading(app.setPage)("map")} />
+          ) : app.page === "skills" ? (
+            <SkillsView
+              playerLevel={app.playerLevel}
+              playerXP={app.playerXP}
+              playerSkills={app.playerSkills}
+              onUnlock={app.unlockSkill}
+              onBack={() => withLoading(app.setPage)("map")}
+            />
           ) : app.page === "wiki" ? (
-            <WikiView />
+            <WikiView app={app} onBack={() => withLoading(app.setPage)("map")} />
+          ) : app.page === "shipyard" ? (
+            <ShipyardView app={app} onPlayClick={playClick} />
+          ) : app.page === "customizer" ? (
+            <div className="flex-1 flex flex-col bg-background/40 backdrop-blur-sm overflow-hidden">
+               <PageHeader 
+                 title="Orbital Drydock"
+                 subtitle="Flagship Refit & Hull Calibration Module"
+                 icon={<Rocket />}
+                 onBack={() => { playClick(); app.setPage("fleets"); }}
+               />
+               <main className="flex-1 min-h-0 h-full p-4">
+                  <div className="max-w-6xl mx-auto w-full h-full flex flex-col">
+                    <ShipCustomizer 
+                      config={app.shipConfig} 
+                      onChange={app.setShipConfig} 
+                      playClick={playClick} 
+                    />
+                  </div>
+               </main>
+            </div>
           ) : (
-            <div className={`flex-1 bg-background/40 backdrop-blur-sm p-4 ${app.page === 'shipyard' ? 'sm:p-4' : 'sm:p-12'} custom-scrollbar animate-in slide-in-from-bottom-2 duration-500 flex flex-col ${app.page === 'shipyard' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
-               <div className={`max-w-6xl mx-auto w-full flex flex-col ${app.page === 'shipyard' ? 'flex-1 min-h-0 h-full' : 'space-y-12 pb-24'}`}>
-                  {app.page !== 'shipyard' && (
-                    <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 border-b border-primary/20 pb-10">
+            <div className="flex-1 bg-background/40 backdrop-blur-sm p-4 sm:p-12 custom-scrollbar animate-in slide-in-from-bottom-2 duration-500 flex flex-col overflow-y-auto">
+               <div className="max-w-6xl mx-auto w-full flex flex-col space-y-12 pb-24">
+                  <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 border-b border-primary/20 pb-10">
                      <div className="flex items-center gap-5">
                         <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg shadow-[0_0_20px_hsl(var(--primary)/0.1)]">
-                           {app.page === "skills" && <Sparkles size={32} className="text-primary" />}
+                           <Cpu size={32} className="text-primary" />
                         </div>
                         <div>
                            <h1 className="font-display text-2xl sm:text-4xl text-primary text-glow uppercase tracking-[0.2em]">
-                              {app.page === "skills" && "Neural Uplink"}
+                              Access Denied
                            </h1>
                            <p className="font-mono-hud text-[10px] sm:text-xs text-muted-foreground uppercase tracking-[0.3em] mt-2">
-                              {app.page === "skills" && "Tier 4 Doctrine Training"}
+                              Security Protocol 404
                            </p>
                         </div>
                      </div>
                      <button 
                        onClick={() => withLoading(app.setPage)("map")}
-                       className="px-4 py-2 bg-primary/10 border border-primary/30 text-primary font-display text-[10px] uppercase tracking-widest hover:bg-primary/20 transition-all rounded"
+                       className="px-4 py-2 bg-primary/10 border border-primary/30 text-primary font-display text-[10px] uppercase tracking-widest hover:bg-primary/20 transition-all rounded flex items-center gap-2"
                      >
-                       Return to Map
+                       <ChevronLeft size={14} />
+                       <span>Back to Galaxy</span>
                      </button>
                    </header>
-                  )}
 
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                      <div className="lg:col-span-2 space-y-8">
-                        {app.page === "shipyard" && (
-                          <div className="space-y-4 flex-1 flex flex-col min-h-0">
-                            <div className="flex justify-between items-center mb-2 shrink-0">
-                              <div className="space-y-1">
-                                <h3 className="font-display text-xl text-primary tracking-[0.3em] uppercase text-glow">Orbital Drydock</h3>
-                                <p className="font-mono-hud text-[10px] text-muted-foreground uppercase tracking-widest">Flagship Refit & Hull Calibration Module</p>
-                              </div>
-                              <button 
-                                onClick={() => { playClick(); app.setPage("fleets"); }}
-                                className="px-4 py-2 border border-primary/20 bg-primary/5 text-primary font-mono-hud text-[10px] uppercase tracking-widest hover:border-primary/60 hover:bg-primary/10 transition-all flex items-center gap-2"
-                              >
-                                <span>← Return to Command</span>
-                              </button>
-                            </div>
-                            <div className="flex-1 min-h-0">
-                              <ShipCustomizer 
-                                config={app.shipConfig} 
-                                onChange={app.setShipConfig} 
-                                playClick={playClick} 
-                              />
-                            </div>
-                          </div>
-                        )}
-
-                        {app.page === "skills" && (
-                          <SkillsView
-                            playerLevel={app.playerLevel}
-                            playerXP={app.playerXP}
-                            playerSkills={app.playerSkills}
-                            onUnlock={app.unlockSkill}
-                          />
-                        )}
-
-                        {!["skills", "shipyard"].includes(app.page) && (
+                        {!["shipyard"].includes(app.page) && (
                           <div className="hud-panel p-12 border border-primary/20 bg-primary/5 flex flex-col items-center justify-center text-center gap-6 relative overflow-hidden">
                              <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,hsl(var(--primary)/0.05)_0%,transparent_70%)]" />
                              <div className="w-16 h-16 rounded-full border border-primary/40 flex items-center justify-center animate-pulse">
@@ -648,8 +754,6 @@ const Index = () => {
         )}
       </AnimatePresence>
 
-      {app.page !== "map" && <Sonner position="top-right" theme="dark" closeButton />}
-
       {/* Mobile Tactical Panel Overlay */}
       {app.page === "map" && (
         <MobileHUD 
@@ -664,6 +768,7 @@ const Index = () => {
           setExpanded={setIsMobilePanelExpanded} 
           onSelectEmpire={handleSelectEmpire}
           onEnterSystem={() => handleEnterSystem(app.system?.id || "")}
+          onInitiateJump={handleInitiateJump}
         />
       )}
     </motion.div>
@@ -691,6 +796,23 @@ const Index = () => {
         )}
 
 
+        <UplinkBootSequence 
+          isInitialLoading={isInitialLoading}
+          hasInteracted={hasInteracted}
+          playerName={app.playerName}
+          logo={logo}
+          onEnter={() => {
+            setHasInteracted(true);
+            playSuccess();
+            // Resume Web Audio Context for Three.js Positional Audio
+            if (THREE.AudioContext.getContext().state === 'suspended') {
+              THREE.AudioContext.getContext().resume();
+            }
+          }}
+          playType={playType}
+          showWelcome={!!app.user && !!app.vesselId && !isInitialLoading && !hasInteracted}
+        />
+
         {/* Authentication Screen - Priority 1 */}
         {!app.user && !app.sessionLoading && (
           <motion.div 
@@ -709,61 +831,205 @@ const Index = () => {
           </motion.div>
         )}
 
-        {/* Welcome Screen for returning users to unlock Audio Context */}
-        {app.user && !hasInteracted && (
-          <motion.div 
-            key="welcome"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.5 }}
-            className="fixed inset-0 z-[200]"
-          >
-            <WelcomeScreen 
-              playerName={app.playerName} 
-              onEnter={() => {
-                setHasInteracted(true);
-                playSuccess();
-                // Resume Web Audio Context for Three.js Positional Audio
-                if (THREE.AudioContext.getContext().state === 'suspended') {
-                  THREE.AudioContext.getContext().resume();
-                }
-              }} 
-            />
-          </motion.div>
-        )}
       </AnimatePresence>
     </main>
   );
 };
 
-function WelcomeScreen({ playerName, onEnter }: { playerName: string; onEnter: () => void }) {
+function UplinkBootSequence({ 
+  isInitialLoading, 
+  hasInteracted, 
+  playerName, 
+  logo, 
+  onEnter, 
+  playType,
+  showWelcome
+}: { 
+  isInitialLoading: boolean; 
+  hasInteracted: boolean; 
+  playerName: string; 
+  logo: string; 
+  onEnter: () => void;
+  playType: () => void;
+  showWelcome: boolean;
+}) {
+  const [bootStep, setBootStep] = useState(0);
+  const steps = [
+    `INITIATING NEURAL HANDSHAKE...`,
+    `GALAXY TOPOLOGY SYNCED [${new Date().getFullYear()}.04.23]`,
+    `COMMANDER DESIGNATION: ${playerName.toUpperCase()}`,
+    `STATUS: READY FOR DEPLOYMENT`
+  ];
+
+  useEffect(() => {
+    if (showWelcome && bootStep < steps.length) {
+      const timer = setTimeout(() => {
+        setBootStep(prev => prev + 1);
+        playType();
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [showWelcome, bootStep, steps.length, playType]);
+
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background/80 backdrop-blur-md animate-in fade-in duration-500">
-      <div className="relative p-1">
-        <div className="absolute inset-0 bg-gradient-to-r from-primary/0 via-primary/20 to-primary/0 animate-scan pointer-events-none" />
-        <button 
-          onClick={onEnter}
-          className="hud-panel p-8 md:p-12 border border-primary/40 bg-background/60 hover:bg-primary/10 transition-colors flex flex-col items-center gap-6 group cursor-pointer w-[300px] md:w-[400px]"
+    <AnimatePresence>
+      {(isInitialLoading || showWelcome) && !hasInteracted && (
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0, scale: 1.05, filter: "blur(10px)" }}
+          transition={{ duration: 1, ease: "easeInOut" }}
+          className="fixed inset-0 z-[500] flex items-center justify-center bg-background"
         >
-          <div className="w-16 h-16 rounded-full border border-primary flex items-center justify-center bg-primary/10 group-hover:bg-primary/20 transition-colors">
-            <Zap className="text-primary w-8 h-8 group-hover:scale-110 transition-transform" />
-          </div>
-          <div className="text-center space-y-2">
-            <h2 className="font-display text-2xl md:text-3xl text-primary text-glow uppercase tracking-[0.2em] pointer-events-none">
-              Uplink Ready
-            </h2>
-            <p className="font-mono-hud text-[10px] md:text-xs tracking-widest text-primary/60 uppercase pointer-events-none">
-              Welcome back, Commander {playerName}
-            </p>
-          </div>
+          {/* Decorative scanlines overlay */}
+          <div className="absolute inset-0 pointer-events-none opacity-[0.03] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_3px,4px_100%]" />
           
-          <div className="mt-4 w-full px-8 py-3 border border-primary/30 bg-primary/5 group-hover:bg-primary/20 transition-colors font-display tracking-[0.3em] uppercase text-sm text-primary text-glow animate-pulse text-center">
-            Initialize
+          <div className="flex flex-col items-center gap-12 relative z-10 w-full max-w-md px-6">
+            {/* Unified Logo/Ring Component */}
+            <div className="relative w-32 h-32 md:w-40 md:h-40">
+              <motion.div 
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: [1, 1.2, 1], opacity: [0.2, 0.4, 0.2] }}
+                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                className="absolute inset-0 rounded-full bg-primary/5 blur-2xl"
+              />
+              
+              <svg className="absolute inset-[-15px] w-[calc(100%+30px)] h-[calc(100%+30px)] -rotate-90">
+                <motion.circle
+                  cx="50%"
+                  cy="50%"
+                  r="48%"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeDasharray="1 4"
+                  className="text-primary/10"
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
+                />
+                <motion.circle
+                  cx="50%"
+                  cy="50%"
+                  r="48%"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  className="text-primary"
+                  initial={{ pathLength: 0 }}
+                  animate={{ 
+                    pathLength: isInitialLoading ? [0, 0.7, 0.3, 0.9] : 1,
+                    opacity: isInitialLoading ? [0.2, 0.8, 0.5] : 1
+                  }}
+                  transition={{ 
+                    pathLength: { duration: isInitialLoading ? 5 : 1, repeat: isInitialLoading ? Infinity : 0, ease: "easeInOut" },
+                    opacity: { duration: 2, repeat: Infinity, ease: "linear" }
+                  }}
+                />
+              </svg>
+
+              <motion.img 
+                src={logo} 
+                alt="Logo"
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ 
+                  scale: 1, 
+                  opacity: 1, 
+                  filter: showWelcome ? 'brightness(1.5) drop-shadow(0 0 15px hsl(var(--primary)/0.5))' : 'brightness(1)'
+                }}
+                transition={{ duration: 2 }}
+                className="w-full h-full object-contain relative z-10"
+              />
+            </div>
+
+            {/* Text Information Section */}
+            <div className="text-center w-full min-h-[140px] flex flex-col items-center">
+              <AnimatePresence mode="wait">
+                {isInitialLoading ? (
+                  <motion.div 
+                    key="loading"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="space-y-4"
+                  >
+                    <h2 className="font-display text-2xl md:text-4xl lg:text-5xl text-primary text-glow uppercase tracking-[0.3em] leading-[1.1] flex flex-col items-center gap-1">
+                      <span className="opacity-90">Neural Link</span>
+                      <span className="opacity-100 scale-110 drop-shadow-[0_0_15px_rgba(var(--primary-rgb),0.6)]">Established</span>
+                    </h2>
+                    <div className="flex flex-col items-center mt-12 space-y-4">
+                      <p className="font-mono-hud text-[9px] md:text-[11px] text-primary/70 uppercase tracking-[0.35em] italic max-w-xs leading-relaxed">
+                        Synchronizing command data with<br/>hegemonic core ...
+                      </p>
+                      <div className="flex gap-1.5 justify-center pt-4">
+                        {[0, 1, 2, 3].map(i => (
+                          <motion.div
+                            key={i}
+                            animate={{ 
+                               height: [12, 32, 12],
+                               opacity: [0.3, 0.8, 0.3] 
+                            }}
+                            transition={{ 
+                               duration: 1.2, 
+                               repeat: Infinity, 
+                               delay: i * 0.15,
+                               ease: "easeInOut"
+                            }}
+                            className="w-1 bg-primary/60 rounded-full"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </motion.div>
+                ) : (
+                  <motion.div 
+                    key="welcome"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="space-y-6 w-full"
+                  >
+                    <div className="space-y-2 text-left font-mono-hud text-[10px] tracking-widest text-primary/80 uppercase max-w-[280px] mx-auto border-l border-primary/20 pl-4 py-2">
+                      {steps.slice(0, bootStep).map((step, i) => (
+                        <motion.div 
+                          key={i}
+                          initial={{ opacity: 0, x: -5 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.3 }}
+                          className="flex items-center gap-2"
+                        >
+                          <span className="text-primary/30 truncate">{'>'}</span>
+                          <span>{step}</span>
+                        </motion.div>
+                      ))}
+                    </div>
+
+                    {bootStep >= steps.length && (
+                      <motion.button 
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        onClick={onEnter}
+                        className="group relative px-12 py-4 overflow-hidden"
+                      >
+                        <div className="absolute inset-0 border border-primary/40 bg-primary/5 transition-all group-hover:bg-primary/20 group-hover:border-primary group-hover:shadow-[0_0_20px_hsl(var(--primary)/0.3)]" />
+                        <div className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-primary" />
+                        <div className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-primary" />
+                        
+                        <span className="relative z-10 font-display text-sm uppercase tracking-[0.4em] text-primary text-glow group-hover:scale-105 transition-transform block">
+                          Initialize
+                        </span>
+                      </motion.button>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
-        </button>
-      </div>
-    </div>
+
+          {/* Decorative background grid */}
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,hsl(var(--background))_100%)] z-0" />
+          <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, hsl(var(--primary)) 1px, transparent 0)', backgroundSize: '24px 24px' }} />
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -807,33 +1073,65 @@ function DataProcessingIndicator({ isBusy }: { isBusy: boolean }) {
 function LoadingHud() {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center bg-background z-[100] animate-in fade-in duration-1000">
-      <div className="relative w-48 h-48 sm:w-64 sm:h-64 mb-8">
+      <div className="relative w-40 h-40 md:w-56 md:h-56 mb-12">
+        <div className="absolute inset-0 rounded-full bg-primary/5 blur-3xl animate-pulse" />
+        
+        <svg className="absolute inset-[-10px] w-[calc(100%+20px)] h-[calc(100%+20px)] -rotate-90">
+          <motion.circle
+            cx="50%"
+            cy="50%"
+            r="49%"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1"
+            className="text-primary/20"
+            initial={{ pathLength: 0 }}
+            animate={{ pathLength: 1 }}
+            transition={{ duration: 2.5, ease: "easeInOut" }}
+          />
+        </svg>
+
         <img 
           src={logo} 
           alt="Starbound Hegemony" 
-          className="w-full h-full object-contain animate-pulse-slow drop-shadow-[0_0_30px_rgba(16,185,129,0.3)]"
+          className="w-full h-full object-contain animate-pulse-slow drop-shadow-[0_0_30px_hsl(var(--primary)/0.3)] relative z-10"
         />
-        <div className="absolute inset-0 border border-primary/20 rounded-full animate-spin-slow" />
+        
+        {/* Decorative scanning element */}
+        <motion.div 
+          initial={{ rotate: 0 }}
+          animate={{ rotate: 360 }}
+          transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+          className="absolute inset-0 border border-dashed border-primary/20 rounded-full shadow-[inset_0_0_20px_rgba(var(--primary),0.05)]"
+        />
       </div>
       
-      <div className="flex flex-col items-center gap-2 max-w-[90vw]">
-        <div className="font-display text-base sm:text-xl uppercase tracking-[0.2em] sm:tracking-[0.5em] text-primary text-glow mb-2 animate-pulse text-center">
+      <div className="flex flex-col items-center gap-4 max-w-[90vw]">
+        <div className="font-display text-lg sm:text-2xl uppercase tracking-[0.4em] text-primary text-glow text-center animate-pulse">
           Initialising Star Chart
         </div>
-        <div className="flex gap-1">
-          {[0, 1, 2, 3].map((i) => (
+        
+        <div className="flex gap-2">
+          {[0, 1, 2, 3, 4].map((i) => (
             <div 
               key={i} 
-              className="w-8 h-1 bg-primary/20 overflow-hidden rounded-full"
+              className="w-10 h-1 bg-primary/10 overflow-hidden rounded-full"
             >
-              <div 
-                className="h-full bg-primary animate-loading-bar" 
-                style={{ animationDelay: `${i * 0.2}s` }} 
+              <motion.div 
+                animate={{ x: ['-100%', '100%'] }}
+                transition={{ 
+                    duration: 1.5, 
+                    repeat: Infinity, 
+                    delay: i * 0.2,
+                    ease: "easeInOut"
+                }}
+                className="h-full w-full bg-primary/60" 
               />
             </div>
           ))}
         </div>
-        <div className="font-mono-hud text-[8px] uppercase tracking-widest text-primary/40 mt-4">
+        
+        <div className="font-mono-hud text-[9px] uppercase tracking-widest text-primary/30 mt-2 bg-primary/5 px-4 py-1 border-x border-primary/20">
           Decrypting galactic telemetry...
         </div>
       </div>
@@ -852,7 +1150,8 @@ function MobileHUD({
   expanded, 
   setExpanded,
   onSelectEmpire,
-  onEnterSystem
+  onEnterSystem,
+  onInitiateJump
 }: { 
   app: GalaxyApp; 
   onSelectBody: (id: string) => void; 
@@ -865,6 +1164,7 @@ function MobileHUD({
   setExpanded: (v: boolean) => void;
   onSelectEmpire: (id: string) => void;
   onEnterSystem: () => void;
+  onInitiateJump: (id: string) => void;
 }) {
   useEffect(() => {
     setExpanded(false);
@@ -901,6 +1201,54 @@ function MobileHUD({
 
   return (
     <div className="sm:hidden fixed inset-x-2 bottom-9 z-30 pointer-events-auto">
+      {/* Regional interference indicator (Mobile) */}
+      <AnimatePresence>
+        {(() => {
+          const currentSystem = app.galaxy.systemById[app.playerSystemId];
+          const region = currentSystem?.regionId ? app.galaxy.regions?.find(r => r.id === currentSystem.regionId) : null;
+          if (!region || app.page !== "map") return null;
+
+          return (
+            <motion.div
+              key={region.id}
+              initial={{ opacity: 0, scale: 0.98, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: 10 }}
+              className="bg-black/50 backdrop-blur-lg border border-white/10 rounded-sm overflow-hidden flex flex-col mb-2 shadow-2xl relative"
+            >
+              <div 
+                className="h-[1px] w-full"
+                style={{ backgroundColor: `hsl(${region.hue}, 80%, 60%)` }}
+              />
+              <div className="px-3 py-2 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <ShieldAlert size={14} style={{ color: `hsl(${region.hue}, 90%, 75%)` }} />
+                  <div className="flex flex-col">
+                    <span className="text-[7px] uppercase tracking-[0.3em] text-white/30 font-bold leading-none">Incursion</span>
+                    <span 
+                      className="text-[11px] uppercase tracking-widest font-black leading-tight"
+                      style={{ color: `hsl(${region.hue}, 90%, 80%)` }}
+                    >
+                      {region.name}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 border-l border-white/5 pl-3">
+                   <div className="flex items-center gap-1.5">
+                      <div className="w-1 h-1 rounded-full bg-amber-500 animate-pulse" />
+                      <span className="text-[8px] font-black text-amber-500/90">-35%</span>
+                   </div>
+                   <div className="flex items-center gap-1.5">
+                      <div className="w-1 h-1 rounded-full bg-cyan-500 animate-pulse" />
+                      <span className="text-[8px] font-black text-cyan-500/90">+20%</span>
+                   </div>
+                </div>
+              </div>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
+
       <div className="hud-panel hud-corner overflow-hidden flex flex-col shadow-2xl shadow-primary/10">
         <div className="flex items-center gap-2 pr-3 bg-primary/5">
           <button
@@ -951,7 +1299,7 @@ function MobileHUD({
           {canJump && (
             <button
               onClick={() => {
-                app.initiateJump(app.system!.id);
+                onInitiateJump(app.system!.id);
                 onPlayClick();
               }}
               className="shrink-0 flex items-center gap-1.5 bg-primary text-background border border-primary px-3 py-1.5 rounded font-mono-hud font-bold text-[9px] tracking-widest hover:bg-primary/80 active:scale-95 transition-all"
@@ -986,8 +1334,10 @@ function MobileHUD({
                   playerSystemId={app.playerSystemId}
                   travel={app.travel}
                   arrival={app.arrival}
-                  initiateJump={app.initiateJump}
-                  getJumpCost={app.getJumpCost}
+                  initiateJump={onInitiateJump}
+                  calculatePath={app.calculatePath}
+                  getPathCost={app.getPathCost}
+                  getJumpCostBetween={app.getJumpCostBetween}
                   currentTime={app.currentTime}
                   isExplored={!app.fogOfWar || app.exploredSystemIds.has(app.system.id)}
                   hideHeader={true}
@@ -995,6 +1345,7 @@ function MobileHUD({
                   onPlayClick={onPlayClick}
                   onSelectEmpire={onSelectEmpire}
                   onEnterSystem={onEnterSystem}
+                  shipName={app.shipConfig.name}
                 />
               ) : (
                 <GalaxyOverview galaxy={app.galaxy} hideHeader={true} />
@@ -1008,14 +1359,17 @@ function MobileHUD({
                 playerSystemId={app.playerSystemId}
                 travel={app.travel}
                 arrival={app.arrival}
-                initiateJump={app.initiateJump}
-                getJumpCost={app.getJumpCost}
+                initiateJump={onInitiateJump}
+                calculatePath={app.calculatePath}
+                getPathCost={app.getPathCost}
+                getJumpCostBetween={app.getJumpCostBetween}
                 currentTime={app.currentTime}
                 isExplored={!app.fogOfWar || app.exploredSystemIds.has(app.system.id)}
                 hideHeader={true}
                 hideActions={true}
                 onPlayClick={onPlayClick}
                 onSelectEmpire={onSelectEmpire}
+                shipName={app.shipConfig.name}
               />
             )}
             {app.view === "body" && app.body && (
@@ -1029,17 +1383,22 @@ function MobileHUD({
                 playerBodyId={app.playerBodyId}
                 travel={app.travel}
                 initiateTravelToBody={app.initiateTravelToBody}
+                initiateJump={onInitiateJump}
+                calculatePath={app.calculatePath}
+                getPathCost={app.getPathCost}
                 currentTime={app.currentTime}
                 factories={app.factories}
                 bodyResources={app.bodyResources}
                 userResources={app.userResources}
                 currentJob={app.currentJob}
                 onBuildFactory={app.buildFactory}
+                onBuildInfrastructure={app.buildInfrastructure}
                 onApplyForJob={app.applyForJob}
                 onWorkJob={app.workJob}
                 onLeaveJob={app.leaveJob}
                 onCollect={app.collectFactory}
                 onUpgrade={app.upgradeFactory}
+                onUpgradeInfrastructure={app.upgradeInfrastructure}
                 onSaveSettings={app.updateFactorySettings}
                 factoryInputStorage={app.factoryInputStorage}
                 onDepositInput={app.depositFactoryInput}
@@ -1326,7 +1685,7 @@ function CouncilHemicycle({ empire }: { empire: Empire }) {
   );
 }
 
-function EmpireView({ app, onPlayClick, isPublic = false }: { app: GalaxyApp; onPlayClick: () => void, isPublic?: boolean }) {
+function EmpireView({ app, onPlayClick, isPublic = false, onBack }: { app: GalaxyApp; onPlayClick: () => void, isPublic?: boolean, onBack?: () => void }) {
   const [activeTab, setActiveTab] = useState<"overview" | "parliament" | "government" | "laws" | "diplomacy">("overview");
   const [newEmpireName, setNewEmpireName] = useState("");
   const [newEmpireTag, setNewEmpireTag] = useState("");
@@ -1377,61 +1736,46 @@ function EmpireView({ app, onPlayClick, isPublic = false }: { app: GalaxyApp; on
   const electionTimeLeft = activeElection ? Math.max(0, new Date(activeElection.endTime).getTime() - Date.now()) : 0;
   const electionExpired = activeElection && electionTimeLeft <= 0;
 
+  const headerActions = (
+    <div className="flex px-1 gap-1 overflow-x-auto no-scrollbar">
+      {[
+        { id: 'overview', label: 'State Overview', icon: LayoutGrid },
+        { id: 'parliament', label: 'Parliament', icon: Scale, restricted: true },
+        { id: 'government', label: 'Cabinet', icon: Crown, restricted: true },
+        { id: 'laws', label: 'Legislation', icon: BookOpen, restricted: true },
+        { id: 'diplomacy', label: 'Diplomacy', icon: Globe, restricted: true },
+      ].filter(t => !isPublic || !t.restricted).map(tab => {
+        const Icon = tab.icon;
+        return (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`flex items-center gap-2 px-4 py-2 font-display text-[10px] uppercase tracking-widest transition-all border-b-2 rounded-t ${
+              activeTab === tab.id 
+                ? 'border-primary text-primary bg-primary/10' 
+                : 'border-transparent text-muted-foreground hover:text-primary hover:bg-primary/5'
+            }`}
+          >
+            <Icon size={14} />
+            <span className="hidden sm:inline">{tab.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+
   return (
     <div className="flex-1 flex flex-col bg-background/40 backdrop-blur-sm animate-fade-in overflow-hidden relative">
       <div className="absolute inset-0 pointer-events-none scanline opacity-5" />
       
-      {/* Header */}
-      <header className="px-6 py-3 sm:py-4 border-b border-primary/20 flex flex-col sm:flex-row items-center justify-between gap-4 bg-primary/5">
-        <div className="flex items-center gap-6">
-          <EmpireLogo empire={empire} size={56} />
-          <div>
-            <h2 className="font-display text-lg sm:text-xl text-glow uppercase tracking-[0.2em]" style={{ color: `hsl(${empire.hue} 70% 55%)` }}>
-              {empire.name}
-            </h2>
-            <div className="flex items-center gap-3 mt-1">
-              <span className="font-mono-hud text-[8px] sm:text-[10px] uppercase tracking-[0.3em] text-muted-foreground">Sovereign State</span>
-              <span className="px-1.5 py-0.5 rounded bg-primary/20 text-primary font-mono-hud text-[8px] tracking-widest">{empire.tag}</span>
-            </div>
-          </div>
-        </div>
-        
-        <div className="flex gap-4">
-           <button 
-             onClick={() => { onPlayClick(); app.setPage("map"); }}
-             className="px-4 py-1.5 bg-primary text-background font-display text-[9px] uppercase tracking-widest hover:scale-105 transition-all rounded font-bold"
-           >
-             Return to Map
-           </button>
-        </div>
-      </header>
-
-      {/* Tabs */}
-      <div className="px-6 border-b border-primary/20 bg-background/20 flex gap-1 overflow-x-auto no-scrollbar">
-        {[
-          { id: 'overview', label: 'State Overview', icon: LayoutGrid },
-          { id: 'parliament', label: 'Parliament', icon: Scale, restricted: true },
-          { id: 'government', label: 'Cabinet', icon: Crown, restricted: true },
-          { id: 'laws', label: 'Legislation', icon: BookOpen, restricted: true },
-          { id: 'diplomacy', label: 'Diplomacy', icon: Globe, restricted: true },
-        ].filter(t => !isPublic || !t.restricted).map(tab => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 px-6 py-4 font-display text-[10px] uppercase tracking-widest transition-all border-b-2 ${
-                activeTab === tab.id 
-                  ? 'border-primary text-primary bg-primary/5' 
-                  : 'border-transparent text-muted-foreground hover:text-primary hover:bg-primary/5'
-              }`}
-            >
-              <Icon size={14} />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
+      <PageHeader
+        title={empire.name}
+        subtitle="Sovereign State Intelligence"
+        onBack={onBack}
+        hue={empire.hue}
+        icon={<EmpireLogo empire={empire} size={32} />}
+        actions={headerActions}
+      />
 
       <div className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar relative z-10">
         <div className="max-w-6xl mx-auto">

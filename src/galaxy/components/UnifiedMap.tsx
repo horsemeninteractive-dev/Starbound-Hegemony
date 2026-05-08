@@ -1,9 +1,9 @@
 import { useMemo, useRef, useEffect, useState, useCallback } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { CameraControls, Html, PerspectiveCamera, Line, Billboard, PositionalAudio, Environment } from "@react-three/drei";
-import { Rocket, ChevronUp } from "lucide-react";
+import { Rocket, ChevronUp, ShieldAlert } from "lucide-react";
 import * as THREE from "three";
-import type { Galaxy, StarSystem, Body, Empire, Sector, ContestState, StarType } from "@/galaxy/types";
+import type { Galaxy, StarSystem, Body, Empire, Sector, ContestState, StarType, GalacticRegion } from "@/galaxy/types";
 import type { FilterState, ViewMode } from "@/galaxy/useGalaxyApp";
 import { SpaceBackground } from "./SpaceBackground";
 import { StarVisual } from "./StarVisual";
@@ -12,6 +12,13 @@ import { PlanetaryRing } from "./PlanetaryRing";
 import { STAR_LUMINOSITY, STAR_META, STAR_BASE_SIZE, getOrbitalSpeed, BODY_META, getBodyPosition } from "@/galaxy/meta";
 import { ShipConfiguration } from "../shipPresets";
 import { ModularShip } from "./ModularShip";
+import { 
+  GalaxyVisualEffects, 
+  NebulaMaterial, 
+  IonStormMaterial,
+  GravityRiftMaterial,
+  FilamentMaterial 
+} from "./GalaxyVisualEffects";
 
 // --- AUDIO SYNTHESIS UTILITIES ---
 const createJumpBuffer = (ctx: AudioContext) => {
@@ -182,12 +189,12 @@ function CelestialAudio({ type, subtype, starType, scale, listener, quality }: {
         if (node.gain) {
           node.gain.gain.setTargetAtTime(0, node.context.currentTime, 0.1);
           setTimeout(() => {
-            try { node.stop(); } catch (_) {}
+            try { node.stop(); } catch (e) { /* ignore */ }
           }, 150);
         } else {
           node.stop();
         }
-      } catch (_) {}
+      } catch (err) { /* ignore */ }
       isPlayingRef.current = false;
       globalActiveVoices = Math.max(0, globalActiveVoices - 1);
     }
@@ -275,7 +282,25 @@ function CelestialAudio({ type, subtype, starType, scale, listener, quality }: {
 const tempVec = new THREE.Vector3();
 const tempVec2 = new THREE.Vector3();
 
-function CloudLayer({ body, visualSize, quality, starWorldPos, starViewPos }: { body: Body; visualSize: number; quality: string; starWorldPos: THREE.Vector3; starViewPos: THREE.Vector3 }) {
+function CloudLayer({ 
+  body, 
+  visualSize, 
+  quality, 
+  starWorldPos, 
+  starViewPos,
+  planetViewPos,
+  parentSize,
+  moonOccluders
+}: { 
+  body: Body; 
+  visualSize: number; 
+  quality: string; 
+  starWorldPos: THREE.Vector3; 
+  starViewPos: THREE.Vector3;
+  planetViewPos?: THREE.Vector3;
+  parentSize?: number;
+  moonOccluders?: THREE.Vector4[];
+}) {
   const cloudRef = useRef<THREE.Mesh>(null);
   const speed = useMemo(() => 0.05 + Math.random() * 0.1, []);
   const cloudLightDirRef = useRef(new THREE.Vector3(1, 0.5, 1).normalize());
@@ -301,6 +326,9 @@ function CloudLayer({ body, visualSize, quality, starWorldPos, starViewPos }: { 
         lightDir={cloudLightDirRef.current}
         starWorldPos={starWorldPos}
         starViewPos={starViewPosRef.current}
+        planetViewPos={planetViewPos}
+        parentSize={parentSize}
+        moonOccluders={moonOccluders}
         quality={quality as "low" | "medium" | "high"}
         terrainSeed={body.terrainSeed}
         geographyType={body.geographyType}
@@ -391,7 +419,7 @@ function MapContent({
     if (!listener) return;
     const ctx = listener.context;
     if (ctx.state === "suspended") {
-      ctx.resume().catch(() => {});
+      ctx.resume().catch((err) => { console.warn("Audio resume failed", err); });
     }
   }, [listener, system?.id]);
 
@@ -453,7 +481,7 @@ function MapContent({
     }
     
     lastViewRef.current = view;
-  }, [view, system, body?.id, camera]);
+  }, [view, system, body?.id, camera, currentSystemId, galaxy.systemById]);
 
   // Keyboard movement keys
   const keys = useRef<Record<string, boolean>>({});
@@ -606,6 +634,7 @@ function MapContent({
         {/* 1. Galactic Infrastructure (Only in Galaxy View) */}
         {view === "galaxy" && (
           <>
+            <GalaxyVisualEffects galaxy={galaxy} quality={graphicsQuality} />
             <HyperlaneLines 
               galaxy={galaxy} 
               filters={filters} 
@@ -622,11 +651,25 @@ function MapContent({
                 knownSystemIds={knownSystemIds}
               />
             )}
+            <RegionVisuals 
+              galaxy={galaxy} 
+              knownSystemIds={knownSystemIds} 
+              exploredSystemIds={exploredSystemIds} 
+              filters={filters}
+            />
           </>
         )}
 
         <group position={[-shiftX, -shiftY, -shiftZ]}>
-        {/* 2. Star Systems */}
+        {/* 2. System Atmosphere (Nebula/Dust) */}
+        {view === "system" && system && (
+          <SystemRegionAtmosphere 
+            region={system.regionId ? galaxy.regions?.find(r => r.id === system.regionId) || null : null} 
+            quality={graphicsQuality} 
+          />
+        )}
+
+        {/* 3. Star Systems */}
         {galaxy.systems
           .filter(s => view === "galaxy" ? (systemMatchesFilter(s) || s.id === system?.id) : s.id === system?.id)
           .map((s) => (
@@ -676,13 +719,49 @@ function MapContent({
         />
 
         {otherPlayers && otherPlayers.map(op => {
-          const opTravel = op.travel_type ? {
+          // RESOLVE MULTI-JUMP FOR OTHER PLAYERS (Lazy Resolution)
+          let opSystemId = op.system_id;
+          let opPath = op.travel_path || [];
+          let opStartTime = Number(op.travel_start_time);
+          let now = Date.now();
+          let resolvedTravel = op.travel_type ? {
             type: op.travel_type as "inter" | "intra",
             targetId: op.travel_target_id!,
             startTime: op.travel_start_time!,
             endTime: op.travel_end_time!,
             startPos: op.travel_start_pos_x != null ? { x: op.travel_start_pos_x, z: op.travel_start_pos_z! } : undefined
           } : null;
+
+          if (opPath.length > 1 && opStartTime > 0) {
+            while (opPath.length > 1) {
+              const fromId = opPath[0];
+              const toId = opPath[1];
+              const s1 = galaxy.systemById[fromId];
+              const s2 = galaxy.systemById[toId];
+              if (!s1 || !s2) break;
+
+              const dist = Math.hypot(s1.pos[0] - s2.pos[0], s1.pos[1] - s2.pos[1], s1.pos[2] - s2.pos[2]);
+              const duration = (15 + dist * 1.2) * 1000;
+
+              if (now >= opStartTime + duration) {
+                opSystemId = toId;
+                opPath.shift();
+                opStartTime += duration;
+                resolvedTravel = null;
+              } else {
+                // This is the current active jump leg
+                resolvedTravel = {
+                  type: 'inter',
+                  targetId: toId,
+                  startTime: opStartTime,
+                  endTime: opStartTime + duration,
+                  startPos: undefined
+                };
+                break;
+              }
+            }
+          }
+
           const opArrival = op.arrival_from_id ? {
             fromId: op.arrival_from_id,
             startTime: op.arrival_start_time!,
@@ -693,10 +772,10 @@ function MapContent({
             <PlayerFleetVisual 
               key={op.vessel_id || op.id}
               galaxy={galaxy}
-              playerSystemId={op.system_id}
+              playerSystemId={opSystemId}
               playerBodyId={op.body_id || "star"}
               viewedSystemId={system?.id || null}
-              travel={opTravel}
+              travel={resolvedTravel}
               view={view}
               controlsRef={controlsRef}
               trackingShip={false}
@@ -885,6 +964,20 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
       {isNear && (isFocused || view === "galaxy") && (
         <CelestialAudio type="star" starType={system.starType} scale={baseStarScale} listener={listener} quality={quality} />
       )}
+
+      {/* Regional Aura (Galaxy map only) */}
+      {view === "galaxy" && system.regionId && galaxy.regions && (
+        <Billboard>
+          <mesh scale={baseStarScale * 30}>
+            <planeGeometry />
+            <NebulaMaterial 
+              hue={galaxy.regions.find(r => r.id === system.regionId)?.hue || 0} 
+              opacity={(explored ? 0.35 : 0.12) * (1 - Math.min(1, Math.max(0, (camera.position.distanceTo(sysPos) - 1000) / 1000)))} 
+            />
+          </mesh>
+        </Billboard>
+      )}
+
       <group ref={starGroupRef}>
         <StarVisual 
           type={system.starType} 
@@ -1059,7 +1152,7 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
               {isKnown && (
                 <div className="flex flex-col items-center pointer-events-none whitespace-nowrap drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)]">
                   <span 
-                    className="font-mono-hud text-[7px] leading-none uppercase tracking-wider"
+                    className="font-mono-hud text-[7px] leading-none uppercase tracking-wider flex items-center"
                     style={{ 
                       color: system.ownerId 
                         ? `hsl(${galaxy.empires.find(e => e.id === system.ownerId)?.hue || 0} 75% 65%)` 
@@ -1067,6 +1160,20 @@ function SystemNode({ system, galaxy, view, controlsRef, isFocused, isBodyFocuse
                     }}
                   >
                     ★ {system.name}
+                    {system.regionId && galaxy.regions && (
+                      <span 
+                        className="ml-1.5 inline-flex items-center"
+                        title={galaxy.regions.find(r => r.id === system.regionId)?.name}
+                      >
+                        <ShieldAlert 
+                          size={8} 
+                          className="drop-shadow-[0_0_2px_rgba(0,0,0,1)]"
+                          style={{ 
+                            color: `hsl(${galaxy.regions.find(r => r.id === system.regionId)?.hue || 0} 90% 70%)`
+                          }}
+                        />
+                      </span>
+                    )}
                   </span>
                   {system.ownerId && (
                     <span className="font-mono-hud text-[5px] uppercase tracking-[0.2em] text-white/60 mt-0.5">
@@ -1267,21 +1374,32 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
       planetViewPosRef.current.setScalar(0);
     }
 
-    // Compute moon positions analytically for shadow casting (planet <- moon)
-    // localVec already holds this planet's world position at this point.
-    if (!parentBody) {
-      const moons = galaxy.systemById[body.systemId]?.bodies.filter((m) => m.parentId === body.id) || [];
+    // Compute occluders analytically for shadow casting
+    // This planet casts to its moons, AND sibling moons cast to each other
+    const targetSystem = galaxy.systemById[body.systemId];
+    if (targetSystem) {
+      const occluders = targetSystem.bodies.filter((m) => {
+        if (!parentBody) return m.parentId === body.id; // current is planet, occluders are its moons
+        return m.parentId === parentBody.id && m.id !== body.id; // current is moon, occluders are sibling moons
+      });
+
       for (let i = 0; i < 4; i++) {
-        if (i < moons.length) {
-          const moon = moons[i];
-          const moonSpeed = getOrbitalSpeed(moon.orbit, starType, true);
-          const moonAngle = (moon.phase || 0) + (t * moonSpeed) % (Math.PI * 2);
+        if (i < occluders.length) {
+          const occ = occluders[i];
+          const occSpeed = getOrbitalSpeed(occ.orbit, starType, true);
+          const occAngle = (occ.phase || 0) + (t * occSpeed) % (Math.PI * 2);
+          
+          // Get anchor (parent's world pos)
+          // if planet, anchor is localVec. if moon, anchor is localVec - meshRef.current.position
+          const anchorX = !parentBody ? localVec.x : (localVec.x - meshRef.current.position.x);
+          const anchorZ = !parentBody ? localVec.z : (localVec.z - meshRef.current.position.z);
+          
           moonVec.set(
-            localVec.x + Math.cos(moonAngle) * moon.orbit,
+            anchorX + Math.cos(occAngle) * occ.orbit,
             localVec.y,
-            localVec.z + Math.sin(moonAngle) * moon.orbit
+            anchorZ + Math.sin(occAngle) * occ.orbit
           ).applyMatrix4(state.camera.matrixWorldInverse);
-          moonOccluderBuf.current[i].set(moonVec.x, moonVec.y, moonVec.z, moon.size * 1.05);
+          moonOccluderBuf.current[i].set(moonVec.x, moonVec.y, moonVec.z, occ.size * 1.05);
         } else {
           moonOccluderBuf.current[i].set(0, 0, 0, 0);
         }
@@ -1469,7 +1587,7 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
               starViewPos={starViewPosRef.current}
               planetViewPos={parentBody ? planetViewPosRef.current : undefined}
               parentSize={parentBody ? parentBody.size * 1.05 : 0}
-              moonOccluders={!parentBody ? moonOccluderBuf.current : undefined}
+              moonOccluders={moonOccluderBuf.current}
               color={new THREE.Color(`#${STAR_META[starType]?.hex || "ffffff"}`)}
               showWeather={filters.layers.has("weatherSystems") && !!body.atmosphere}
               showCityLights={filters.layers.has("cityLights")}
@@ -1483,7 +1601,16 @@ function PlanetNode({ body, parentBody, view, controlsRef, isFocused, onSelect, 
 
         {/* Moving Weather System (Clouds) - Tilted with the planet */}
         {filters.layers.has("weatherSystems") && !!body.atmosphere && (
-          <CloudLayer body={body} visualSize={visualSize} quality={quality || "high"} starWorldPos={starWorldPos} starViewPos={starViewPosRef.current} />
+          <CloudLayer 
+            body={body} 
+            visualSize={visualSize} 
+            quality={quality || "high"} 
+            starWorldPos={starWorldPos} 
+            starViewPos={starViewPosRef.current} 
+            planetViewPos={parentBody ? planetViewPosRef.current : undefined}
+            parentSize={parentBody ? parentBody.size * 1.05 : 0}
+            moonOccluders={moonOccluderBuf.current}
+          />
         )}
 
         {/* Premium Atmospheric Effects - Tilted with the planet */}
@@ -1644,6 +1771,13 @@ const HyperlaneLines = memo(function HyperlaneLines({ galaxy, filters, matches, 
   knownSystemIds: Set<string>;
 }) {
   const show = filters.layers.has("hyperlanes");
+  const materialRef = useRef<THREE.ShaderMaterial>(null);
+
+  useFrame((state) => {
+    if (materialRef.current) {
+      materialRef.current.uniforms.uTime.value = state.clock.elapsedTime;
+    }
+  });
   
   const laneData = useMemo(() => {
     if (!show) return new Float32Array(0);
@@ -1685,12 +1819,35 @@ const HyperlaneLines = memo(function HyperlaneLines({ galaxy, filters, matches, 
           itemSize={3}
         />
       </bufferGeometry>
-      <lineBasicMaterial 
-        color="#2bd4e8" 
+      <shaderMaterial 
+        ref={materialRef}
         transparent 
-        opacity={0.3} 
-        blending={THREE.AdditiveBlending} 
         depthWrite={false} 
+        blending={THREE.AdditiveBlending}
+        uniforms={{
+          uTime: { value: 0 },
+          uColor: { value: new THREE.Color("#2bd4e8") }
+        }}
+        vertexShader={`
+          varying float vDist;
+          void main() {
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            vDist = length(position.xyz) * 0.05;
+          }
+        `}
+        fragmentShader={`
+          varying float vDist;
+          uniform float uTime;
+          uniform vec3 uColor;
+          void main() {
+            float pulse = sin(vDist - uTime * 4.0) * 0.5 + 0.5;
+            pulse = pow(pulse, 3.0);
+            gl_FragColor = vec4(uColor, (0.15 + pulse * 0.25) * 0.8);
+          }
+        `}
+        onBeforeCompile={(shader) => {
+          shader.uniforms.uTime = { value: 0 };
+        }}
       />
     </lineSegments>
   );
@@ -2062,6 +2219,7 @@ function PlayerFleetVisual({
   const hasJumpedRef = useRef(false);
   const hasMattedRef = useRef(false);
   const intensityRef = useRef(0.4);
+  const isJumpingRef = useRef(false);
 
   // Ref callbacks: fire after the PositionalAudio node is added to the scene graph,
   // avoiding the useEffect race where the ref is still null on first render.
@@ -2087,7 +2245,7 @@ function PlayerFleetVisual({
 
   const setEngineRef = useCallback((node: THREE.PositionalAudio | null) => {
     if (engineSoundRef.current) {
-      try { engineSoundRef.current.stop(); } catch (_) {}
+      try { engineSoundRef.current.stop(); } catch (e) { /* ignore */ }
     }
     engineSoundRef.current = node;
     if (!node || !listener) return;
@@ -2139,6 +2297,7 @@ function PlayerFleetVisual({
     let engineIntensity = 0.4;
     let flashScale = 0;
     let flashOpacity = 0;
+    let isJumping = false;
 
     // Helper: calculate orbital position for idle states (dynamic over time)
     const getShipTargetPos = (sys: StarSystem, targetBodyId: string, time: number) => {
@@ -2285,6 +2444,7 @@ function PlayerFleetVisual({
             if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
           } else if (elapsed < transitTime + chargeTime) {
             const p = Math.max(0, Math.min(1, (elapsed - transitTime) / Math.max(0.0001, chargeTime)));
+            isJumping = true;
             if (view === 'galaxy') {
               const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
               globalPos.set(sourceSys.pos[0] + starRadius * 0.5, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 0.5);
@@ -2297,6 +2457,7 @@ function PlayerFleetVisual({
             if (view !== 'galaxy' && viewedSystemId !== playerSystemId) scale = 0;
           } else {
             const p = Math.max(0, Math.min(1, (elapsed - (transitTime + chargeTime)) / Math.max(0.0001, jumpTime)));
+            isJumping = true;
             if (view === 'galaxy') {
               const starRadius = STAR_BASE_SIZE[sourceSys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
               globalPos.set(sourceSys.pos[0] + starRadius * 0.5, sourceSys.pos[1], sourceSys.pos[2] - starRadius * 0.5);
@@ -2335,9 +2496,7 @@ function PlayerFleetVisual({
       }
     } else if (arrival) {
       const gatePos = getGateLocalPosition(sourceSys, arrival.fromId);
-      const appNow = now;
-      const arrivalAppStart = arrival.startTime - appStartTimeRef.current!;
-      const elapsed = appNow - arrivalAppStart;
+      const elapsed = now - arrival.startTime;
       
       const matTime = 800; 
       const duration = Math.max(1, arrival.duration);
@@ -2467,7 +2626,10 @@ function PlayerFleetVisual({
         }
       }
     }
-    if (trackingShip && controlsRef?.current) {
+    const totalTransit = travel ? (travel.endTime - travel.startTime) : 0;
+    const isDematerializing = isJumping && (travel ? (now - travel.startTime) > (totalTransit - 1000) : false);
+
+    if (trackingShip && scale > 0.1 && !isDematerializing && controlsRef?.current) {
       const controls = controlsRef.current;
       controls.smoothTime = 0;
       controls.restThreshold = 0.0001; 
@@ -2487,6 +2649,8 @@ function PlayerFleetVisual({
       hasInitialPosRef.current = false;
     }
     groupRef.current.scale.setScalar(Math.max(0.0001, scale * 0.5));
+    isJumpingRef.current = isJumping;
+
     if (flashRef.current) {
       const mat = flashRef.current.material as THREE.MeshBasicMaterial;
       flashRef.current.scale.setScalar(Math.max(0, flashScale));
@@ -2524,6 +2688,7 @@ function PlayerFleetVisual({
             }} 
             engineIntensityRef={intensityRef} 
             engineColor={isOtherPlayer ? "#ffffff" : config?.accentColor} 
+            isJumpingRef={isJumpingRef}
           />
         )}
 
@@ -2564,7 +2729,7 @@ function PlayerFleetVisual({
               )}
             </div>
             <div className="text-[6px] font-mono-hud mt-1 uppercase text-primary/80">
-              CMDR
+              {config?.name || (isOtherPlayer ? "Vessel" : "Command Ship")}
             </div>
             {isOtherPlayer && commanderName && (
               <div className="text-[5px] font-mono-hud mt-0.5 uppercase text-white/60 tracking-wider">
@@ -2584,6 +2749,148 @@ function PlayerFleetVisual({
             depthWrite={false}
           />
         </mesh>
+      </group>
+    </group>
+  );
+}
+
+/* ---------- Region Visuals & Labels ---------- */
+function RegionVisuals({ galaxy, knownSystemIds, exploredSystemIds, filters }: { 
+  galaxy: Galaxy; 
+  knownSystemIds: Set<string>; 
+  exploredSystemIds: Set<string>; 
+  filters: FilterState;
+}) {
+  const visibleRegions = useMemo(() => {
+    return (galaxy.regions || []).filter(region => {
+      const systemsInRegion = galaxy.systems.filter(s => s.regionId === region.id);
+      return systemsInRegion.some(s => knownSystemIds.has(s.id) || exploredSystemIds.has(s.id));
+    });
+  }, [galaxy.regions, galaxy.systems, knownSystemIds, exploredSystemIds]);
+
+  return (
+    <group>
+      {visibleRegions.map((region, index) => (
+        <group key={region.id} position={[region.pos[0], 0, region.pos[2]]}>
+          {/* Boundary Ring */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[region.radius * 0.99, region.radius, 128]} />
+            <meshBasicMaterial 
+              color={new THREE.Color().setHSL(region.hue / 360, 0.6, 0.4)} 
+              transparent 
+              opacity={0.15} 
+              blending={THREE.AdditiveBlending}
+              depthWrite={false}
+            />
+          </mesh>
+          
+          {/* Inner soft effects cluster */}
+          <Billboard>
+            <mesh scale={region.radius * 2.4}>
+              <planeGeometry />
+              {region.type === "ion_storm" ? (
+                <IonStormMaterial 
+                  hue={region.hue} 
+                  opacity={1.0} 
+                  seed={getRegionSeed(region.id)} 
+                />
+              ) : region.type === "gravity_rift" ? (
+                <GravityRiftMaterial hue={region.hue} opacity={0.8} />
+              ) : (
+                <NebulaMaterial hue={region.hue} opacity={region.type === "dust_cloud" ? 0.5 : 0.7} />
+              )}
+            </mesh>
+          </Billboard>
+          
+          {filters.layers.has("incursionLabels") && (
+            <Html 
+              center 
+              zIndexRange={[50, 0]}
+              style={{ pointerEvents: "none" }}
+              distanceFactor={800} 
+            >
+              <div className="flex flex-col items-center select-none whitespace-nowrap opacity-60 hover:opacity-100 transition-opacity">
+                <div 
+                  className="font-mono-hud text-[11px] uppercase tracking-[0.5em] font-bold drop-shadow-[0_4px_12px_rgba(0,0,0,1)]"
+                  style={{ color: `hsl(${region.hue}, 90%, 75%)` }}
+                >
+                  {region.name}
+                </div>
+                <div className="text-[8px] text-white/40 uppercase tracking-[0.4em] mt-2 px-3 py-0.5 border-t border-white/20 bg-black/10 backdrop-blur-sm">
+                  {region.type === "nebula" ? "Nebula Sector" : 
+                   region.type === "dust_cloud" ? "Particulate Cloud" : 
+                   region.type === "ion_storm" ? "Ionized Hazard" : 
+                   "Gravitational Rift"}
+                </div>
+              </div>
+            </Html>
+          )}
+        </group>
+      ))}
+    </group>
+  );
+}
+
+const getRegionSeed = (id: string) => {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (Math.imul(31, h) + id.charCodeAt(i)) | 0;
+  return Math.abs(h);
+};
+
+function SystemRegionAtmosphere({ region, quality }: { region: GalacticRegion | null; quality: string }) {
+  const baseSeed = useMemo(() => region ? getRegionSeed(region.id) : 0, [region]);
+  const count = quality === "low" ? 5 : 15;
+
+  const wisps = useMemo(() => {
+    if (!region) return [];
+    return [...Array(count)].map((_, i) => ({
+      position: [
+        (Math.random() - 0.5) * 600,
+        (Math.random() - 0.5) * 600,
+        (Math.random() - 0.5) * 400
+      ] as [number, number, number],
+      scale: 120 + Math.random() * 250,
+      seed: baseSeed + i * 137
+    }));
+  }, [count, baseSeed, region]);
+
+  if (!region) return null;
+
+  const opacity = (region.type === "nebula" || region.type === "ion_storm") ? 0.3 : 0.15;
+  const MaterialComponent = region.type === "ion_storm" 
+    ? IonStormMaterial 
+    : region.type === "gravity_rift" 
+      ? GravityRiftMaterial 
+      : NebulaMaterial;
+
+  return (
+    <group>
+      {/* Ambient background glow */}
+      <Billboard position={[0, 0, -200]}>
+        <mesh scale={1200}>
+          <planeGeometry />
+          <MaterialComponent 
+            hue={region.hue} 
+            opacity={opacity * 0.9} 
+            seed={baseSeed} 
+          />
+        </mesh>
+      </Billboard>
+
+      {/* Floating wisps */}
+      <group>
+        {wisps.map((w, i) => (
+          <Billboard key={i} position={w.position}>
+            <mesh scale={w.scale}>
+              <planeGeometry />
+              <MaterialComponent 
+                hue={region.hue} 
+                opacity={opacity * 0.7} 
+                seed={w.seed} 
+              />
+            </mesh>
+          </Billboard>
+        ))}
       </group>
     </group>
   );

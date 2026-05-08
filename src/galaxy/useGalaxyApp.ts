@@ -1,14 +1,14 @@
 // Central UI state for the map app. Galaxy data is generated once (deterministic).
 
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { generateGalaxy } from "./generate";
-import type { Galaxy, Empire, StarSystem, Body, ContestState, EconomicStatus, StarType, PlanetSubtype, Installation, BodyResource, UserResource, FactoryWorker, MarketListing, Party, PartyMember, PartyRole, Residency, ResidencyApplication, StateElection, StateVote, StateFormationVote, ElectionCandidate, MinisterialAssignment, PlayerEmpire } from "./types";
-import { STAR_META, CONTEST_META, ECON_META, BODY_META, STAR_BASE_SIZE, getOrbitalSpeed, getBodyPosition, RESOURCE_META, RICHNESS_VALUES, T2_RESOURCES, T3_RESOURCES } from "./meta";
-import { ShipConfiguration, DEFAULT_SHIP_CONFIG } from "./shipPresets";
+import type { Galaxy, Empire, StarSystem, Body, ContestState, EconomicStatus, StarType, PlanetSubtype, Installation, BodyResource, UserResource, FactoryWorker, MarketListing, Party, PartyMember, PartyRole, Residency, ResidencyApplication, StateElection, StateVote, StateFormationVote, ElectionCandidate, MinisterialAssignment, PlayerEmpire, Vessel, VesselClass, Fleet, FleetEntity, ConstructionQueueEntry, SiloInventoryEntry } from "./types";
+import { STAR_META, CONTEST_META, ECON_META, BODY_META, STAR_BASE_SIZE, getOrbitalSpeed, getBodyPosition, RESOURCE_META, RICHNESS_VALUES, T2_RESOURCES, T3_RESOURCES, INFRA_META, SHIP_BLUEPRINTS, ShipBlueprintKey } from "./meta";
+import { ShipConfiguration, DEFAULT_SHIP_CONFIG, SHIP_PARTS } from "./shipPresets";
 
 export type ViewMode = "galaxy" | "system" | "body" | "ship";
-export type DisplayLayer = "hyperlanes" | "sectorBorders" | "sectorLabels" | "objectLabels" | "habitableZones" | "orbitPaths" | "weatherSystems" | "cityLights" | "empireColors";
+export type DisplayLayer = "hyperlanes" | "sectorBorders" | "sectorLabels" | "objectLabels" | "habitableZones" | "orbitPaths" | "weatherSystems" | "cityLights" | "empireColors" | "incursionLabels";
 
 export interface FilterState {
   contest: Set<ContestState>;
@@ -20,7 +20,7 @@ export interface FilterState {
 const ALL_CONTEST: ContestState[] = ["controlled", "contested", "anarchic", "frontier"];
 const ALL_ECON: EconomicStatus[] = ["boom", "stable", "recession", "blockaded", "untapped"];
 const ALL_STAR: StarType[] = ["O", "B", "A", "F", "G", "K", "M", "whitedwarf", "neutron", "pulsar", "binary", "trinary", "blackhole", "whitehole", "magnetar", "protostar", "dyson_swarm"];
-const ALL_LAYERS: DisplayLayer[] = ["hyperlanes", "sectorBorders", "sectorLabels", "objectLabels", "habitableZones", "orbitPaths", "weatherSystems", "cityLights", "empireColors"];
+const ALL_LAYERS: DisplayLayer[] = ["hyperlanes", "sectorBorders", "sectorLabels", "objectLabels", "habitableZones", "orbitPaths", "weatherSystems", "cityLights", "empireColors", "incursionLabels"];
 
 import avatar from "@/assets/avatar.png";
 import avatar_alt1 from "@/assets/avatar_alt1.png";
@@ -36,6 +36,9 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [sessionLoading, setSessionLoading] = useState(true);
 
   const [vesselId, setVesselId] = useState<string | null>(null);
+  const [userVessels, setUserVessels] = useState<Vessel[]>([]);
+  const [selectedVesselId, setSelectedVesselId] = useState<string | null>(null);
+  const [isFleetSidebarOpen, setIsFleetSidebarOpen] = useState(false);
   const [otherPlayers, setOtherPlayers] = useState<any[]>([]);
 
   // Bake in a universal galaxy seed so all players see the exact same universe
@@ -43,13 +46,20 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const galaxy: Galaxy = useMemo(() => generateGalaxy(UNIVERSAL_SEED), []);
 
 
+  const vessel = useMemo(() => userVessels.find(v => v.id === selectedVesselId) || userVessels[0] || null, [userVessels, selectedVesselId]);
+
   const [view, setView] = useState<ViewMode>(() => {
     const saved = localStorage.getItem("view") as ViewMode;
     if (saved === "galaxy" || saved === "system") return saved;
     return "galaxy";
   });
-  const [playerSystemId, setPlayerSystemId] = useState<string>("sys-center");
-  const [playerBodyId, setPlayerBodyId] = useState<string>("star");
+  // Derived positions based on selected vessel
+  const [playerSystemIdState, setPlayerSystemId] = useState<string>("sys-center");
+  const [playerBodyIdState, setPlayerBodyId] = useState<string>("star");
+
+  const playerSystemId = playerSystemIdState;
+  const playerBodyId = playerBodyIdState;
+
   const [exploredSystemIds, setExploredSystemIds] = useState<Set<string>>(new Set(["sys-center"]));
   const [exploredBodyIds, setExploredBodyIds] = useState<Set<string>>(new Set(["sys-center:star"]));
   const [fogOfWar, setFogOfWarState] = useState(() => localStorage.getItem("fogOfWar") !== "false");
@@ -81,6 +91,22 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [isAdmin, setIsAdmin] = useState(false);
 
   const [initialDataLoaded, setInitialDataLoaded] = useState(false);
+
+  // Sync local active vessel position back into the userVessels fleet array for UI consistency
+  useEffect(() => {
+    if (vesselId && initialDataLoaded) {
+      setUserVessels(prev => {
+        const index = prev.findIndex(v => v.id === vesselId);
+        if (index === -1) return prev;
+        const current = prev[index];
+        if (current.systemId === playerSystemIdState && current.bodyId === playerBodyIdState) return prev;
+        
+        const next = [...prev];
+        next[index] = { ...current, systemId: playerSystemIdState, bodyId: playerBodyIdState };
+        return next;
+      });
+    }
+  }, [playerSystemIdState, playerBodyIdState, vesselId, initialDataLoaded, setUserVessels]);
   
   const [userResidency, setUserResidency] = useState<Residency | null>(null);
   const [residencyApplications, setResidencyApplications] = useState<ResidencyApplication[]>([]);
@@ -100,6 +126,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [viewedUserId, setViewedUserId] = useState<string | null>(null);
   const [viewedPartyId, setViewedPartyId] = useState<string | null>(null);
   const [viewedStateId, setViewedStateId] = useState<string | null>(null);
+  const [returnPage, setReturnPage] = useState<"map" | "profile" | "articles" | "market" | "factories" | "fleets" | "party" | "skills" | "shipyard" | "empire" | "wiki">("map");
   const [searchResults, setSearchResults] = useState<{ users: any[], parties: any[], states: any[] }>({ users: [], parties: [], states: [] });
   const [isSearching, setIsSearching] = useState(false);
 
@@ -140,6 +167,10 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [userPartyMember, setUserPartyMember] = useState<PartyMember | null>(null);
   const [npcMarketState, setNpcMarketState] = useState<Record<string, { basePrice: number, currentPrice: number, lastUpdated: string }>>({});
   
+  const [userFleets,        setUserFleets]        = useState<FleetEntity[]>([]);
+  const [constructionQueue, setConstructionQueue] = useState<ConstructionQueueEntry[]>([]);
+  const [siloInventory,     setSiloInventory]     = useState<SiloInventoryEntry[]>([]);
+  const [selectedEntityId,  setSelectedEntityId]  = useState<string | null>(null);
   // Action Points Tick Logic
   const AP_REGEN_INTERVAL = 300000; // 5 minutes
   const [lastApTick, setLastApTick] = useState(Date.now());
@@ -149,7 +180,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
   // Shared mapper: DB factory row → Installation
   const mapFactory = (f: any): Installation => {
     const storageTier = f.storage_tier ?? 0;
-    const storageCapacity = [100, 300, 750, 2000, 5000][Math.min(storageTier, 4)];
+    const baseCapacity = [100, 300, 750, 2000, 5000][Math.min(storageTier, 4)];
+    const storageCapacity = f.storage_capacity && f.storage_capacity > 0 ? f.storage_capacity : baseCapacity;
     return {
       id: f.id,
       systemId: f.system_id,
@@ -188,12 +220,19 @@ export function useGalaxyApp(initialSeed = 20260423) {
     return () => subscription.unsubscribe();
   }, []);
 
+  const lastUserIdRef = useRef<string | null>(null);
+  const lastLoadedPositionRef = useRef<{systemId: string, bodyId: string} | null>(null);
+
   // 2. Load User Data from Supabase
   useEffect(() => {
     if (!user) {
+      lastUserIdRef.current = null;
       setInitialDataLoaded(false);
       return;
     }
+
+    if (user.id === lastUserIdRef.current && initialDataLoaded) return;
+    lastUserIdRef.current = user.id;
 
     const loadData = async () => {
       try {
@@ -362,27 +401,121 @@ export function useGalaxyApp(initialSeed = 20260423) {
         if (pFact) setUserFactories(pFact.map(mapFactory));
 
 
-        // Load active Vessel
-        const { data: vessel } = await supabase
+        const { data: vss } = await supabase
           .from('vessels')
-          .select('*')
+          .select('*, fleet_positions(*), fleets(system_id, body_id)')
           .eq('user_id', user.id)
-          .eq('is_active', true)
-          .single();
+          .order('created_at', { ascending: false });
 
-        if (vessel) {
-          setVesselId(vessel.id);
-          setShipConfig({
-            name: vessel.name || "Aegis VII",
-            primaryColor: vessel.primary_color,
-            accentColor: vessel.accent_color,
-            hullId: vessel.hull_id,
-            wingsId: vessel.wings_id,
-            enginesId: vessel.engines_id,
-            bridgeId: vessel.bridge_id,
+        if (vss) {
+          const mappedVessels: Vessel[] = vss.map(v => {
+            const pos = v.fleet_positions?.[0];
+            return {
+              id: v.id,
+              userId: v.user_id,
+              name: v.name,
+              class: (v.vessel_class || (v.is_active ? 'commander' : 'freighter')) as VesselClass,
+              systemId: pos?.system_id || (v.fleets as any)?.system_id || "sys-center",
+              bodyId: pos?.body_id || (v.fleets as any)?.body_id || "star",
+              cargoCapacity: v.cargo_capacity || (v.vessel_class === 'freighter' ? 15000 : 5000),
+              status: v.status || 'idle',
+              health: v.health || 100,
+              maxHealth: v.max_health || 100,
+              config: {
+                hullId: v.hull_id,
+                wingsId: v.wings_id,
+                enginesId: v.engines_id,
+                bridgeId: v.bridge_id,
+                primaryColor: v.primary_color,
+                accentColor: v.accent_color,
+              }
+            };
           });
-        } else {
-          setVesselId(null);
+          setUserVessels(mappedVessels);
+          
+          const activeVessel = mappedVessels.find(v => (vss.find(dbV => dbV.id === v.id) as any)?.is_active);
+          const currentV = activeVessel || mappedVessels[0];
+          if (currentV) {
+            setVesselId(currentV.id);
+            setSelectedVesselId(currentV.id);
+            setShipConfig(currentV.config as any);
+            setPlayerSystemId(currentV.systemId);
+            setPlayerBodyId(currentV.bodyId || "star");
+            lastLoadedPositionRef.current = { systemId: currentV.systemId, bodyId: currentV.bodyId || "star" };
+
+            // Restore travel/arrival state from the fetched position
+            const dbV = vss.find(dbV => dbV.id === currentV.id) as any;
+            const pos = dbV?.fleet_positions?.[0];
+            if (pos) {
+              // RESOLVE OFFLINE JOURNEY PROGRESS
+              let currentSystem = pos.system_id;
+              let currentPath = pos.travel_path || [];
+              let startTime = Number(pos.travel_start_time);
+              let now = Date.now();
+              let fastForwarded = false;
+
+              if (currentPath.length > 1 && startTime > 0) {
+                while (currentPath.length > 1) {
+                  const fromId = currentPath[0];
+                  const toId = currentPath[1];
+                  const s1 = galaxy.systemById[fromId];
+                  const s2 = galaxy.systemById[toId];
+                  if (!s1 || !s2) break;
+
+                  const dist = Math.hypot(s1.pos[0] - s2.pos[0], s1.pos[1] - s2.pos[1], s1.pos[2] - s2.pos[2]);
+                  const duration = (15 + dist * 1.2) * 1000;
+
+                  if (now >= startTime + duration) {
+                    // Jump finished while offline
+                    currentSystem = toId;
+                    currentPath.shift();
+                    startTime += duration;
+                    fastForwarded = true;
+                  } else {
+                    // Jump still in progress
+                    break;
+                  }
+                }
+
+                if (fastForwarded) {
+                  console.log(`[Navigation] Fast-forwarded journey to ${currentSystem}. Steps remaining: ${currentPath.length - 1}`);
+                  setPlayerSystemId(currentSystem);
+                  setJumpPath(currentPath);
+                }
+              }
+
+              if (pos.travel_type) {
+                // If we fast-forwarded, we need to adjust the travel state for the *current* leg
+                const nextTargetId = currentPath[1];
+                if (nextTargetId) {
+                  const s1 = galaxy.systemById[currentSystem];
+                  const s2 = galaxy.systemById[nextTargetId];
+                  const dist = s1 && s2 ? Math.hypot(s1.pos[0] - s2.pos[0], s1.pos[1] - s2.pos[1], s1.pos[2] - s2.pos[2]) : 10;
+                  const duration = (15 + dist * 1.2) * 1000;
+                  
+                  setTravel({
+                    targetId: nextTargetId,
+                    startTime: startTime,
+                    endTime: startTime + duration,
+                    type: 'inter',
+                    startPos: undefined
+                  });
+                } else {
+                  setTravel(null);
+                }
+              }
+              if (pos.arrival_from_id) {
+                setArrival({
+                  fromId: pos.arrival_from_id,
+                  startTime: Number(pos.arrival_start_time),
+                  duration: Number(pos.arrival_duration)
+                });
+              }
+              if (pos.travel_path) {
+                setJumpPath(pos.travel_path);
+              }
+            }
+          }
         }
 
         // Load Exploration — always overwrite local state with DB truth
@@ -411,37 +544,6 @@ export function useGalaxyApp(initialSeed = 20260423) {
           .eq('user_id', user.id);
         if (skills) setPlayerSkills(skills.map(s => s.skill_id));
 
-        // Load Fleet Position (Current Location)
-        const { data: pos } = await supabase
-          .from('fleet_positions')
-          .select('system_id, body_id, travel_type, travel_target_id, travel_start_time, travel_end_time, travel_start_pos_x, travel_start_pos_z, arrival_from_id, arrival_start_time, arrival_duration')
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-        if (pos) {
-          if (pos.system_id) setPlayerSystemId(pos.system_id);
-          if (pos.body_id) setPlayerBodyId(pos.body_id);
-          
-          if (pos.travel_type) {
-            setTravel({
-              targetId: pos.travel_target_id,
-              startTime: Number(pos.travel_start_time),
-              endTime: Number(pos.travel_end_time),
-              type: pos.travel_type as any,
-              startPos: (pos.travel_start_pos_x !== null && pos.travel_start_pos_z !== null) 
-                ? { x: pos.travel_start_pos_x, z: pos.travel_start_pos_z } 
-                : undefined
-            });
-          }
-
-          if (pos.arrival_from_id) {
-            setArrival({
-              fromId: pos.arrival_from_id,
-              startTime: Number(pos.arrival_start_time),
-              duration: Number(pos.arrival_duration)
-            });
-          }
-        }
       } catch (err) {
         console.error("Error loading user data:", err);
       } finally {
@@ -452,25 +554,35 @@ export function useGalaxyApp(initialSeed = 20260423) {
     loadData();
   }, [user]);
 
-  // 3. Save Data to Supabase (Debounced/Automatic via useEffects)
+  // 3. Profiles Realtime Sync
   useEffect(() => {
     if (!user || !initialDataLoaded) return;
-    const updateProfile = async () => {
-      await supabase.from('profiles').upsert({
-        id: user.id,
-        commander_name: playerName,
-        avatar_url: playerAvatar,
-        level: playerLevel,
-        xp: playerXP,
-        credits: sc,
-        updated_at: new Date().toISOString()
-      });
+
+    const channel = supabase
+      .channel(`public:profiles:id=eq.${user.id}`)
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'profiles',
+        filter: `id=eq.${user.id}` 
+      }, (payload) => {
+        const p = payload.new;
+        if (p.commander_name !== undefined) setPlayerName(p.commander_name);
+        if (p.avatar_url !== undefined) setPlayerAvatar(p.avatar_url);
+        if (p.level !== undefined) setPlayerLevel(p.level);
+        if (p.xp !== undefined) setPlayerXP(p.xp);
+        if (p.credits !== undefined) setSc(p.credits);
+        if (p.action_points !== undefined) setAp(p.action_points);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
     };
-    updateProfile();
-  }, [user, initialDataLoaded, playerName, playerAvatar, playerLevel, playerXP, sc]);
+  }, [user, initialDataLoaded]);
 
   useEffect(() => {
-    if (!user || !initialDataLoaded) return;
+    if (!user || !vesselId || !initialDataLoaded) return;
     const updateVessel = async () => {
       await supabase.from('vessels').upsert({
         user_id: user.id,
@@ -485,13 +597,27 @@ export function useGalaxyApp(initialSeed = 20260423) {
       }, { onConflict: 'user_id' }); 
     };
     updateVessel();
-  }, [user, initialDataLoaded, shipConfig]);
+  }, [user, initialDataLoaded, shipConfig, vesselId]);
 
   // Sync location to Supabase fleet_positions
   useEffect(() => {
     if (!user || !vesselId || !initialDataLoaded) return;
+
+    // CRITICAL: Prevent overwriting DB state with default "sys-center" during early initialization
+    const isDefaultPosition = playerSystemId === "sys-center" && playerBodyId === "star" && !travel && !arrival;
+    
+    // If we are at the same position we just loaded from the DB, and not currently moving, 
+    // no need to sync back immediately (prevents overwriting if loadData is still propagating)
+    if (lastLoadedPositionRef.current && 
+        playerSystemId === lastLoadedPositionRef.current.systemId && 
+        playerBodyId === lastLoadedPositionRef.current.bodyId &&
+        !travel && !arrival) {
+      return;
+    }
     
     const syncPosition = async () => {
+      // If we are at default position, only sync if initialDataLoaded has been true for a bit
+      // or if we have explicitly moved there. For now, a simple guard:
       await supabase.from('fleet_positions').upsert({
         user_id: user.id,
         vessel_id: vesselId,
@@ -506,39 +632,101 @@ export function useGalaxyApp(initialSeed = 20260423) {
         arrival_from_id: arrival?.fromId || null,
         arrival_start_time: arrival?.startTime || null,
         arrival_duration: arrival?.duration || null,
+        travel_path: jumpPath && jumpPath.length > 0 ? jumpPath : null,
       }, { onConflict: 'vessel_id' });
     };
-    syncPosition();
+    
+    // Only sync if we've moved away from center or after a short delay to allow DB load to settle
+    const timer = setTimeout(syncPosition, isDefaultPosition ? 2000 : 500);
+    return () => clearTimeout(timer);
   }, [user, vesselId, initialDataLoaded, playerSystemId, playerBodyId, travel, arrival]);
 
   const knownSystemIds = useMemo(() => {
     // 1. Start with all explored systems (stay visible forever)
     const known = new Set<string>(exploredSystemIds);
     
-    // 2. Add systems within 2 jumps of current position (sensor range)
-    const queue: [string, number][] = [[playerSystemId, 0]];
-    known.add(playerSystemId);
+    // 2. Add systems within sensor range of ALL active user vessels
+    userVessels.forEach(v => {
+      const vSystemId = v.systemId;
+      const currentSystem = galaxy.systemById[vSystemId];
+      if (!currentSystem) return;
+      
+      const region = currentSystem.regionId ? galaxy.regions?.find(r => r.id === currentSystem.regionId) : null;
+      const sensorRange = (region?.type === "dust_cloud") ? 1 : 2;
+
+      const queue: [string, number][] = [[vSystemId, 0]];
+      known.add(vSystemId);
+      
+      const bfsVisited = new Set<string>([vSystemId]);
+      let head = 0;
+      while (head < queue.length) {
+        const [id, depth] = queue[head++];
+        if (depth >= sensorRange) continue;
+        
+        for (const lane of galaxy.hyperlanes) {
+          let neighbor = "";
+          if (lane.a === id) neighbor = lane.b;
+          else if (lane.b === id) neighbor = lane.a;
+          
+          if (neighbor && !bfsVisited.has(neighbor)) {
+            bfsVisited.add(neighbor);
+            known.add(neighbor);
+            queue.push([neighbor, depth + 1]);
+          }
+        }
+      }
+    });
+
+    return known;
+  }, [exploredSystemIds, galaxy, userVessels]);
+
+  const [jumpPath, setJumpPath] = useState<string[]>([]);
+  const [journeyTargetBodyId, setJourneyTargetBodyId] = useState<string | null>(null);
+
+  const calculatePath = useCallback((startId: string, targetId: string) => {
+    // Dijkstra/BFS to find path through known systems
+    const queue: [string, string[]][] = [[startId, [startId]]];
+    const visited = new Set<string>([startId]);
     
-    const bfsVisited = new Set<string>([playerSystemId]);
     let head = 0;
     while (head < queue.length) {
-      const [id, depth] = queue[head++];
-      if (depth >= 2) continue;
-      
+      const [currentId, path] = queue[head++];
+      if (currentId === targetId) return path;
+
+      // Only travel through hyperlanes
       for (const lane of galaxy.hyperlanes) {
         let neighbor = "";
-        if (lane.a === id) neighbor = lane.b;
-        else if (lane.b === id) neighbor = lane.a;
-        
-        if (neighbor && !bfsVisited.has(neighbor)) {
-          bfsVisited.add(neighbor);
-          known.add(neighbor);
-          queue.push([neighbor, depth + 1]);
+        if (lane.a === currentId) neighbor = lane.b;
+        else if (lane.b === currentId) neighbor = lane.a;
+
+        // Constraint: Must be known or in sensor range
+        if (neighbor && !visited.has(neighbor) && knownSystemIds.has(neighbor)) {
+          visited.add(neighbor);
+          queue.push([neighbor, [...path, neighbor]]);
         }
       }
     }
-    return known;
-  }, [exploredSystemIds, galaxy, playerSystemId]);
+    return null;
+  }, [galaxy.hyperlanes, knownSystemIds]);
+
+  const getJumpCostBetween = useCallback((s1Id: string, s2Id: string) => {
+    const s1 = galaxy.systemById[s1Id];
+    const s2 = galaxy.systemById[s2Id];
+    if (!s1 || !s2) return 0;
+    const dist = Math.hypot(s1.pos[0] - s2.pos[0], s1.pos[1] - s2.pos[1], s1.pos[2] - s2.pos[2]);
+    const sourceRegion = s1.regionId ? galaxy.regions?.find(r => r.id === s1.regionId) : null;
+    const penalty = (sourceRegion?.type === "gravity_rift") ? 1.5 : 1.0;
+    const baseCost = 10 + dist / 30;
+    return Math.floor(baseCost * penalty);
+  }, [galaxy]);
+
+  const getPathCost = useCallback((path: string[]) => {
+    let total = 0;
+    for (let i = 0; i < path.length - 1; i++) {
+      total += getJumpCostBetween(path[i], path[i+1]);
+    }
+    return total;
+  }, [getJumpCostBetween]);
 
   // Poll other players' positions
   useEffect(() => {
@@ -551,8 +739,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
       const { data } = await supabase
         .from('fleet_positions')
         .select('*, profiles(commander_name)')
-        .neq('user_id', user.id)
-        .in('system_id', systemArray); 
+        .or(`system_id.in.(${systemArray.join(',')}),travel_target_id.in.(${systemArray.join(',')}),travel_path.ov.{${systemArray.join(',')}}`);
         
       if (data) {
         setOtherPlayers(data);
@@ -618,7 +805,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
 
   // 12. Listen for App Updates (Deployment) via polling
   useEffect(() => {
-    const CURRENT_VERSION = "v0.2.4-sb"; // This should match what's in public/version.txt
+    const CURRENT_VERSION = "v0.3.0-sb"; // This should match what's in public/version.txt
     
     const checkVersion = async () => {
       try {
@@ -779,7 +966,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
       return starBody;
     }
     return system.bodies.find((b) => b.id === bodyId) ?? null;
-  }, [system, bodyId]);
+  }, [system, bodyId, shipConfig.name]);
 
 
   const getJumpCost = useCallback((targetId: string) => {
@@ -787,8 +974,21 @@ export function useGalaxyApp(initialSeed = 20260423) {
     const s2 = galaxy.systemById[targetId];
     if (!s1 || !s2) return 0;
     const dist = Math.hypot(s1.pos[0] - s2.pos[0], s1.pos[1] - s2.pos[1], s1.pos[2] - s2.pos[2]);
+    
+    // Check for Gravity Rift in source system
+    const sourceRegion = s1.regionId ? galaxy.regions?.find(r => r.id === s1.regionId) : null;
+    const penalty = (sourceRegion?.type === "gravity_rift") ? 1.5 : 1.0;
+
     // Formula: 10 AP base + 1 AP per 30 scene units
-    return Math.floor(10 + dist / 30);
+    const baseCost = 10 + dist / 30;
+    return Math.floor(baseCost * penalty);
+  }, [galaxy, playerSystemId]);
+
+  const getActionCost = useCallback((baseCost: number) => {
+    const sys = galaxy.systemById[playerSystemId];
+    const region = sys?.regionId ? galaxy.regions?.find(r => r.id === sys.regionId) : null;
+    const multiplier = (region?.type === "ion_storm") ? 2.0 : 1.0;
+    return Math.floor(baseCost * multiplier);
   }, [galaxy, playerSystemId]);
 
   const getGateLocalPos = useCallback((sysId: string, targetId: string) => {
@@ -839,6 +1039,93 @@ export function useGalaxyApp(initialSeed = 20260423) {
       return body ? getBodyPosition(body, sys.starType, time) : { x: 0, z: 0 };
     }
   }, [galaxy, playerSystemId, travel, arrival, playerBodyId, getGateLocalPos]);
+
+  const commissionVessel = async (vesselClass: VesselClass, name: string, config: ShipConfiguration) => {
+    if (!user) return;
+    const cost = vesselClass === 'freighter' ? 25000 : 10000;
+    if (sc < cost) {
+      toast.error("Insufficient credits", { description: `You need ${cost.toLocaleString()} SC to commission a ${vesselClass}.` });
+      return;
+    }
+
+    try {
+      // 1. Create Vessel
+      const { data: v, error: vErr } = await supabase.from('vessels').insert({
+        user_id: user.id,
+        name,
+        vessel_class: vesselClass,
+        primary_color: config.primaryColor,
+        accent_color: config.accentColor,
+        hull_id: config.hullId,
+        wings_id: config.wingsId,
+        engines_id: config.enginesId,
+        bridge_id: config.bridgeId,
+        cargo_capacity: vesselClass === 'freighter' ? 15000 : 5000,
+        status: 'idle',
+        health: 100,
+        max_health: 100
+      }).select().single();
+
+      if (vErr) throw vErr;
+
+      // 2. Create Position (In orbit of current body or system center)
+      const { error: pErr } = await supabase.from('fleet_positions').insert({
+        user_id: user.id,
+        vessel_id: v.id,
+        system_id: playerSystemId,
+        body_id: playerBodyId === 'ship' ? 'star' : playerBodyId
+      });
+
+      if (pErr) throw pErr;
+
+      // 3. Deduct credits
+      const { error: sErr } = await supabase.from('profiles').update({ credits: sc - cost }).eq('id', user.id);
+      if (sErr) throw sErr;
+
+      setSc(prev => prev - cost);
+      
+      const newVessel: Vessel = {
+        id: v.id,
+        userId: user.id,
+        name,
+        class: vesselClass,
+        systemId: playerSystemId,
+        bodyId: playerBodyId === 'ship' ? 'star' : playerBodyId,
+        cargoCapacity: vesselClass === 'freighter' ? 15000 : 5000,
+        status: 'idle',
+        health: 100,
+        maxHealth: 100,
+        config: {
+          hullId: config.hullId,
+          wingsId: config.wingsId,
+          enginesId: config.enginesId,
+          bridgeId: config.bridgeId,
+          primaryColor: config.primaryColor,
+          accentColor: config.accentColor,
+        }
+      };
+
+      setUserVessels(prev => [...prev, newVessel]);
+      setFleetCount(prev => prev + 1);
+      toast.success(`${vesselClass.toUpperCase()} Commissioned`, { description: `The ${name} is now in orbit.` });
+      logAction('military', 'Vessel Commissioned', `Acquired new ${vesselClass} class vessel: ${name}`);
+
+    } catch (err: any) {
+      toast.error("Handshake failed", { description: err.message });
+    }
+  };
+
+  const selectVessel = (id: string) => {
+    setSelectedVesselId(id);
+    const v = userVessels.find(v => v.id === id);
+    if (v) {
+      setPlayerSystemId(v.systemId);
+      setPlayerBodyId(v.bodyId || 'star');
+      toast.info(`Controlling ${v.name}`);
+    }
+  };
+
+  const toggleFleetSidebar = () => setIsFleetSidebarOpen(prev => !prev);
 
   const fetchEconomyData = useCallback(async () => {
     // 1. Fetch articles with votes and comments (Public access)
@@ -1001,6 +1288,384 @@ export function useGalaxyApp(initialSeed = 20260423) {
     fetchEconomyData();
   }, [user, fetchEconomyData]);
 
+  const fetchConstructionQueue = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('ship_construction_queue')
+      .select('*')
+      .eq('owner_id', user.id)
+      .in('status', ['building', 'hangared']);
+    if (data) {
+      setConstructionQueue(data.map((q: any) => ({
+        id:          q.id,
+        shipyardId:  q.shipyard_id,
+        bodyId:      q.body_id,
+        systemId:    q.system_id,
+        vesselClass: q.vessel_class,
+        vesselName:  q.vessel_name,
+        shipConfig:  q.ship_config ?? {},
+        startedAt:   q.started_at,
+        completesAt: q.completes_at,
+        status:      q.status,
+      })));
+    }
+  }, [user]);
+ 
+  const fetchFleets = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('fleets')
+      .select('*, fleet_vessels(vessel_id), fleet_positions(*)')
+      .eq('owner_id', user.id)
+      .neq('status', 'disbanded');
+    if (data) {
+      setUserFleets(data.map((f: any) => ({
+        id:        f.id,
+        ownerId:   f.owner_id,
+        name:      f.name,
+        systemId:  f.fleet_positions?.find((p: any) => p.fleet_id === f.id)?.system_id ?? f.system_id,
+        bodyId:    f.fleet_positions?.find((p: any) => p.fleet_id === f.id)?.body_id   ?? f.body_id,
+        status:    f.status,
+        vesselIds: (f.fleet_vessels ?? []).map((fv: any) => fv.vessel_id),
+        travel:    null,
+        path:      f.fleet_positions?.find((p: any) => p.fleet_id === f.id)?.travel_path ?? undefined,
+      })));
+    }
+  }, [user]);
+ 
+  const fetchSiloInventory = useCallback(async () => {
+    if (!user) return;
+    // Get all silos owned by player
+    const silos = (userFactories ?? []).filter((f: any) => f.type === 'Resource Silo');
+    if (silos.length === 0) { setSiloInventory([]); return; }
+    const siloIds = silos.map((s: any) => s.id);
+    const { data } = await supabase
+      .from('silo_inventory')
+      .select('*')
+      .in('silo_id', siloIds);
+    if (data) {
+      setSiloInventory(data.map((r: any) => ({
+        siloId:       r.silo_id,
+        resourceType: r.resource_type,
+        amount:       r.amount,
+      })));
+    }
+  }, [user, userFactories]);
+ 
+  // Poll build queue — check for completions every 30s
+  useEffect(() => {
+    if (!user) return;
+    const poll = async () => {
+      // Ask DB to mark any overdue builds as 'hangared'
+      await supabase.rpc('check_and_complete_builds', { p_user_id: user.id });
+      await fetchConstructionQueue();
+    };
+    poll();
+    const interval = setInterval(poll, 30000);
+    return () => clearInterval(interval);
+  }, [user, fetchConstructionQueue]);
+
+  useEffect(() => {
+    if (user && initialDataLoaded) {
+      fetchConstructionQueue();
+      fetchFleets();
+      fetchSiloInventory();
+    }
+  }, [user, initialDataLoaded, fetchConstructionQueue, fetchFleets, fetchSiloInventory]);
+
+  const queueShipBuild = useCallback(async (
+    shipyardId:  string,
+    vesselClass: ShipBlueprintKey,
+    vesselName:  string,
+    config:      ShipConfiguration,
+    siloId:      string,
+  ) => {
+    if (!user) return;
+    const blueprint = SHIP_BLUEPRINTS[vesselClass];
+ 
+    const { data, error } = await supabase.rpc('queue_ship_build', {
+      p_user_id:      user.id,
+      p_shipyard_id:  shipyardId,
+      p_vessel_class: vesselClass,
+      p_vessel_name:  vesselName,
+      p_ship_config:  config,
+      p_cost_sc:      blueprint.costSC,
+      p_build_secs:   blueprint.buildTimeSecs,
+      p_materials:    blueprint.materials,
+      p_silo_id:      siloId,
+    });
+ 
+    if (error || (data as any)?.error) {
+      toast.error('Commission failed', { description: (data as any)?.error ?? error?.message });
+      return;
+    }
+ 
+    setSc(prev => prev - blueprint.costSC);
+    toast.success(`${blueprint.label} commissioned`, {
+      description: `Build underway — completes in ${blueprint.buildTimeSecs / 3600}h. Track progress in Fleet Registry.`,
+    });
+    fetchConstructionQueue();
+  }, [user, fetchConstructionQueue]);
+ 
+  const transferShipToDrydock = useCallback(async (queueId: string) => {
+    if (!user) return;
+    const { data, error } = await supabase.rpc('transfer_ship_to_drydock', {
+      p_user_id:  user.id,
+      p_queue_id: queueId,
+    });
+    if (error || (data as any)?.error) {
+      toast.error('Transfer failed', { description: (data as any)?.error ?? error?.message });
+      return;
+    }
+    toast.success('Ship transferred to Drydock', {
+      description: `Now available in the Docked Ships pool. Form a fleet to deploy.`,
+    });
+    // Refresh vessels and queue
+    fetchConstructionQueue();
+    // Re-fetch vessels — reuse existing vessel fetch pattern
+    const { data: vss } = await supabase
+      .from('vessels').select('*, fleet_positions(*)').eq('user_id', user.id);
+    if (vss) {
+      setUserVessels(vss.map((v: any) => {
+        const pos = v.fleet_positions?.[0];
+        return {
+          id: v.id,
+          userId: v.user_id,
+          name: v.name,
+          class: (v.vessel_class || (v.is_active ? 'commander' : 'freighter')) as VesselClass,
+          systemId: pos?.system_id || "sys-center",
+          bodyId: pos?.body_id || "star",
+          cargoCapacity: v.cargo_capacity || (v.vessel_class === 'freighter' ? 15000 : 5000),
+          status: v.status || 'idle',
+          health: v.health || 100,
+          maxHealth: v.max_health || 100,
+          config: {
+            hullId: v.hull_id,
+            wingsId: v.wings_id,
+            enginesId: v.engines_id,
+            bridgeId: v.bridge_id,
+            primaryColor: v.primary_color,
+            accentColor: v.accent_color,
+          }
+        };
+      }));
+    }
+  }, [user, fetchConstructionQueue]);
+
+  const updateVesselConfig = useCallback(async (targetVesselId: string, config: ShipConfiguration) => {
+    if (!user) return;
+    
+    // Update local state optimistically
+    setUserVessels(prev => prev.map(v => v.id === targetVesselId ? { ...v, config, name: config.name } : v));
+    
+    // Persist to DB
+    const { error } = await supabase.from('vessels').update({
+      name: config.name,
+      primary_color: config.primaryColor,
+      accent_color: config.accentColor,
+      hull_id: config.hullId,
+      wings_id: config.wingsId,
+      engines_id: config.enginesId,
+      bridge_id: config.bridgeId,
+    }).eq('id', targetVesselId).eq('user_id', user.id);
+
+    if (error) {
+      toast.error("Refit failed", { description: error.message });
+    } else {
+      toast.success("Vessel refitted", { description: `${config.name} has been updated.` });
+      // If this is the active commander vessel, update the main shipConfig as well
+      if (targetVesselId === vesselId) {
+        setShipConfig(config);
+      }
+    }
+  }, [user, vesselId]);
+ 
+  const formFleet = useCallback(async (
+    name:       string,
+    vesselIds:  string[],
+    drydockId:  string,
+  ) => {
+    if (!user) return;
+    const { data, error } = await supabase.rpc('form_fleet', {
+      p_user_id:    user.id,
+      p_name:       name,
+      p_vessel_ids: vesselIds,
+      p_drydock_id: drydockId,
+    });
+    if (error || (data as any)?.error) {
+      toast.error('Fleet formation failed', { description: (data as any)?.error ?? error?.message });
+      return;
+    }
+    toast.success(`${name} deployed`, {
+      description: 'Fleet is now active. Select it in the Fleet Registry to issue orders.',
+    });
+    fetchFleets();
+    // Refresh vessel statuses
+    const { data: vss } = await supabase
+      .from('vessels').select('*, fleet_positions(*)').eq('user_id', user.id);
+    if (vss) {
+      setUserVessels(vss.map((v: any) => {
+        const pos = v.fleet_positions?.[0];
+        return {
+          id: v.id,
+          userId: v.user_id,
+          name: v.name,
+          class: (v.vessel_class || (v.is_active ? 'commander' : 'freighter')) as VesselClass,
+          systemId: pos?.system_id || "sys-center",
+          bodyId: pos?.body_id || "star",
+          cargoCapacity: v.cargo_capacity || (v.vessel_class === 'freighter' ? 15000 : 5000),
+          status: v.status || 'idle',
+          health: v.health || 100,
+          maxHealth: v.max_health || 100,
+          config: {
+            hullId: v.hull_id,
+            wingsId: v.wings_id,
+            enginesId: v.engines_id,
+            bridgeId: v.bridge_id,
+            primaryColor: v.primary_color,
+            accentColor: v.accent_color,
+          }
+        };
+      }));
+    }
+  }, [user, fetchFleets]);
+ 
+  const disbandFleet = useCallback(async (fleetId: string) => {
+    if (!user) return;
+    const { data, error } = await supabase.rpc('disband_fleet', {
+      p_user_id:  user.id,
+      p_fleet_id: fleetId,
+    });
+    if (error || (data as any)?.error) {
+      toast.error('Disband failed', { description: (data as any)?.error ?? error?.message });
+      return;
+    }
+    const docked = (data as any)?.docked;
+    toast.success('Fleet disbanded', {
+      description: docked
+        ? 'Vessels returned to drydock and available for reassignment.'
+        : 'Warning: no local drydock — vessels are stranded in system orbit.',
+    });
+    fetchFleets();
+    const { data: vss } = await supabase
+      .from('vessels').select('*, fleet_positions(*)').eq('user_id', user.id);
+    if (vss) {
+      setUserVessels(vss.map((v: any) => {
+        const pos = v.fleet_positions?.[0];
+        return {
+          id: v.id,
+          userId: v.user_id,
+          name: v.name,
+          class: (v.vessel_class || (v.is_active ? 'commander' : 'freighter')) as VesselClass,
+          systemId: pos?.system_id || "sys-center",
+          bodyId: pos?.body_id || "star",
+          cargoCapacity: v.cargo_capacity || (v.vessel_class === 'freighter' ? 15000 : 5000),
+          status: v.status || 'idle',
+          health: v.health || 100,
+          maxHealth: v.max_health || 100,
+          config: {
+            hullId: v.hull_id,
+            wingsId: v.wings_id,
+            enginesId: v.engines_id,
+            bridgeId: v.bridge_id,
+            primaryColor: v.primary_color,
+            accentColor: v.accent_color,
+          }
+        };
+      }));
+    }
+  }, [user, fetchFleets]);
+ 
+  const initiateFleetJump = useCallback((fleetId: string, targetSystemId: string) => {
+    const fleet = userFleets.find(f => f.id === fleetId);
+    if (!fleet) return;
+ 
+    const path = fleet.systemId === targetSystemId
+      ? [fleet.systemId]
+      : calculatePath(fleet.systemId, targetSystemId);
+ 
+    if (!path || path.length < 2) {
+      toast.error("No valid route", { description: "Cannot plot a course to that system." });
+      return;
+    }
+ 
+    const nextTarget = path[1];
+    // Fleets (cargo/science) cost same AP as commander jump
+    const jumpCost = getJumpCostBetween(fleet.systemId, nextTarget);
+ 
+    if (ap < jumpCost) {
+      toast.error(`Insufficient AP`, { description: `Fleet jump requires ${jumpCost} AP.` });
+      return;
+    }
+ 
+    const dist = (() => {
+      const s1 = galaxy.systems.find((s: any) => s.id === fleet.systemId);
+      const s2 = galaxy.systems.find((s: any) => s.id === nextTarget);
+      if (!s1 || !s2) return 10;
+      return Math.hypot(s2.pos[0] - s1.pos[0], s2.pos[1] - s1.pos[1]);
+    })();
+    const durationMs = Math.max(8000, (15 + dist * 1.2) * 1000);
+    const now = Date.now();
+ 
+    setAp(prev => prev - jumpCost);
+ 
+    // Update fleet travel state locally
+    setUserFleets(prev => prev.map(f =>
+      f.id === fleetId
+        ? { ...f, status: 'traveling' as const, travel: {
+            targetId: nextTarget, startTime: now,
+            endTime: now + durationMs, type: 'inter' as const, path,
+          }}
+        : f
+    ));
+ 
+    // Persist fleet position travel
+    supabase.from('fleet_positions').upsert({
+      fleet_id:          fleetId,
+      user_id:           user!.id,
+      system_id:         fleet.systemId,
+      travel_type:       'inter',
+      travel_target_id:  nextTarget,
+      travel_start_time: now,
+      travel_end_time:   now + durationMs,
+    });
+ 
+    // Arrival handler
+    setTimeout(async () => {
+      setUserFleets(prev => prev.map(f =>
+        f.id === fleetId
+          ? { ...f, systemId: nextTarget, status: 'idle', travel: null }
+          : f
+      ));
+
+      // CRITICAL: Update vessel positions in userVessels so sensor range/hyperlanes refresh
+      setUserVessels(prev => prev.map(v => 
+        fleet.vesselIds.includes(v.id) 
+          ? { ...v, systemId: nextTarget, bodyId: 'star', status: 'idle', travel: null }
+          : v
+      ));
+
+      await supabase.from('fleets').update({ system_id: nextTarget }).eq('id', fleetId);
+      await supabase.from('fleet_positions').upsert({
+        fleet_id: fleetId, 
+        user_id: user!.id, 
+        system_id: nextTarget,
+        body_id: 'star',
+        travel_type: null, 
+        travel_target_id: null,
+        travel_path: path.length > 2 ? path.slice(1) : null
+      }, { onConflict: 'fleet_id' });
+      toast.success(`${fleet.name} arrived`, {
+        description: `Fleet reached ${galaxy.systems.find((s: any) => s.id === nextTarget)?.name ?? nextTarget}.`,
+      });
+      // If more hops needed, continue immediately
+      if (path.length > 2) {
+        setTimeout(() => initiateFleetJump(fleetId, targetSystemId), 800);
+      }
+    }, durationMs);
+ 
+  }, [userFleets, ap, galaxy, calculatePath, getJumpCostBetween, user]);
+
   /** Award XP via the server-side grant_xp RPC and update local state. */
   const grantXP = useCallback(async (reason: XPReason, bonusFlat = 0) => {
     if (!user) return;
@@ -1031,45 +1696,71 @@ export function useGalaxyApp(initialSeed = 20260423) {
   }, [user, playerSkills]);
 
 
-  const initiateJump = useCallback((targetId: string) => {
+  const initiateJump = useCallback((targetId: string, targetBodyId: string | null = null) => {
     if (travel) return; // Already moving
     
-    const cost = getJumpCost(targetId);
-    if (ap < cost) {
-      toast.error(`Insufficient AP! Jump requires ${cost} AP (Current: ${Math.floor(ap)})`, {
-      description: "AP regenerates at 20/hour (distributed on the hour)."
+    // Check if we need to calculate a multi-jump path
+    const isAdjacent = galaxy.hyperlanes.some(h => (h.a === playerSystemId && h.b === targetId) || (h.a === targetId && h.b === playerSystemId));
+    let path = [playerSystemId, targetId];
+
+    if (!isAdjacent) {
+      const calcPath = calculatePath(playerSystemId, targetId);
+      if (!calcPath || calcPath.length < 2) {
+        toast.error("No valid route found", { description: "Destination must be reachable through known hyperlanes." });
+        return;
+      }
+      path = calcPath;
+    }
+
+    const totalCost = getPathCost(path);
+    if (ap < totalCost) {
+      toast.error(`Insufficient AP! Journey requires ${totalCost} AP`, {
+        description: `Your batteries don't have enough charge to reach ${galaxy.systemById[targetId]?.name || targetId}.`
       });
       return;
     }
 
-    const currentPos = galaxy.systemById[playerSystemId].pos;
-    const targetPos = galaxy.systemById[targetId].pos;
+    // Start the first jump
+    const nextTargetId = path[1];
+    setJumpPath(path); // Store the FULL path
+    setJourneyTargetBodyId(targetBodyId);
+
+    const nextCost = getJumpCostBetween(playerSystemId, nextTargetId);
+    
+    const currentSystem = galaxy.systemById[playerSystemId];
+    const sourceRegion = currentSystem.regionId ? galaxy.regions?.find(r => r.id === currentSystem.regionId) : null;
+    const slowdown = (sourceRegion?.type === "nebula") ? 2.5 : 1.0;
+
+    const currentPos = currentSystem.pos;
+    const targetPos = galaxy.systemById[nextTargetId].pos;
     const dist = Math.hypot(currentPos[0] - targetPos[0], currentPos[1] - targetPos[1], currentPos[2] - targetPos[2]);
     
-    const durationMs = instantJump ? 0 : (15 + dist * 1.2) * 1000;
+    const durationMs = instantJump ? 0 : (15 + dist * 1.2 * slowdown) * 1000;
     const now = Date.now();
     const currentLocalPos = getVesselLocalPos(now);
     
-    setAp(prev => prev - cost);
+    setAp(prev => prev - totalCost);
     setTravel({ 
-      targetId, 
+      targetId: nextTargetId, 
       startTime: now, 
       endTime: now + durationMs, 
       type: "inter",
-      startPos: currentLocalPos // Capture starting orbital position for sync
+      startPos: currentLocalPos 
     });
-    setArrival(null); // Clear any pending arrival animation
-    logAction('navigation', `Hyperspace Jump Initiated`, `Vessel targeting ${galaxy.systemById[targetId]?.name || targetId}. Estimated transit: ${Math.floor(durationMs / 1000)}s.`);
-  }, [playerSystemId, galaxy, travel, instantJump, ap, getJumpCost, getVesselLocalPos, logAction]);
+    setArrival(null);
+    logAction('navigation', `Multi-Jump Journey Initiated`, `Vessel targeting ${galaxy.systemById[targetId]?.name || targetId} (${path.length - 1} jumps). Total AP dedicated: ${totalCost}.`);
+  }, [playerSystemId, galaxy, travel, instantJump, ap, calculatePath, getPathCost, getJumpCostBetween, getVesselLocalPos, logAction, setAp]);
 
   const initiateTravelToBody = useCallback((targetBodyId: string) => {
     // 1. Calculate current position for starting (supports mid-flight redirection)
     const now = Date.now();
     const currentLocalPos = getVesselLocalPos(now);
     
-    // 2. Intra-system travel distance
     const currentSystem = galaxy.systemById[playerSystemId];
     if (!currentSystem) return;
+
+    const sourceRegion = currentSystem.regionId ? galaxy.regions?.find(r => r.id === currentSystem.regionId) : null;
+    const slowdown = (sourceRegion?.type === "nebula") ? 2.0 : 1.0;
 
     const targetBody = targetBodyId === "star" ? null : currentSystem.bodies.find(b => b.id === targetBodyId);
     const targetPos = targetBody ? getBodyPosition(targetBody, currentSystem.starType, now) : { x: 0, z: 0 };
@@ -1078,7 +1769,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
     const dz = targetPos.z - currentLocalPos.z;
     const dist = Math.sqrt(dx*dx + dz*dz);
 
-    const cost = 5 + Math.floor(dist / 250); 
+    const baseCost = 5 + Math.floor(dist / 250); 
+    const cost = getActionCost(baseCost);
     if (ap < cost) {
       toast.error(`Insufficient AP! Travel requires ${cost} AP`, {
         description: "Intra-system sub-light travel requires fuel based on distance."
@@ -1086,8 +1778,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
       return;
     }
 
-    const travelSpeed = 0.015; 
-    const durationMs = instantJump ? 0 : Math.max(5000, dist / travelSpeed);    
+    const travelSpeed = 0.015 / slowdown; 
+    const durationMs = instantJump ? 0 : Math.max(5000, dist / travelSpeed);
     
     setAp(prev => prev - cost);
     // Important: Capture currentLocalPos as the explicit startPos for the travel lerp
@@ -1100,7 +1792,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
     });
     setArrival(null); // Stop any arrival sequence
     logAction('navigation', `Sub-light Transit Engaged`, `Destination: ${targetBodyId === 'star' ? 'System Star' : targetBodyId}. Speed: ${travelSpeed * 1000} u/s.`);
-  }, [ap, instantJump, playerSystemId, galaxy, getVesselLocalPos, logAction]);
+  }, [ap, instantJump, playerSystemId, galaxy, getVesselLocalPos, logAction, getActionCost]);
 
   const createArticle = useCallback(async (title: string, content: string, type: string) => {
     if (!user) return;
@@ -1429,6 +2121,132 @@ export function useGalaxyApp(initialSeed = 20260423) {
     }
   }, [user, body, playerSystemId, sc, factories, logAction, fetchEconomyData, grantXP, playerSkills]);
 
+  const buildInfrastructure = useCallback(async (infraKey: keyof typeof INFRA_META) => {
+    if (!user || !body) return;
+    
+    // Check for Sanctum systems
+    const isSanctum = body.systemId.startsWith('sys-inner-') || body.systemId === 'sys-center';
+    if (isSanctum) {
+      toast.error("Construction prohibited!", { description: "The Sanctum systems are under NPC jurisdiction." });
+      return;
+    }
+
+    const meta = INFRA_META[infraKey];
+    const firstTier = meta.tiers[0];
+    const cost = firstTier.costSC;
+
+    if (sc < cost) {
+      toast.error("Insufficient Credits!", { description: `Building a ${meta.label} requires ${cost.toLocaleString()} SC.` });
+      return;
+    }
+
+    // Check materials
+    for (const mat of firstTier.mats) {
+      const userRes = userResources.find(r => r.resourceType === mat.resource);
+      if ((userRes?.amount || 0) < mat.qty) {
+        toast.error("Insufficient Materials!", { description: `Construction of ${meta.label} requires ${mat.qty}× ${mat.resource}.` });
+        return;
+      }
+    }
+
+    // Insert infrastructure record
+    // We reuse the factories table for now as it has all the standard fields
+    const { data: newInfra, error } = await supabase.from('factories').insert({
+      system_id: playerSystemId,
+      body_id: body.id,
+      owner_id: user.id,
+      resource_type: 'Structure',
+      type: meta.type,
+      tier: 1,
+      storage_capacity: meta.type === 'Resource Silo' ? firstTier.capacity : (meta.type === 'Drydock' ? firstTier.capacity : 0),
+      max_jobs: 0, // Infrastructure doesn't strictly need workers for now
+      jobs_available: 0,
+      wage: 0
+    }).select().single();
+
+    if (error) {
+      toast.error("Build failed", { description: error.message });
+    } else {
+      // Consume SC and materials
+      // In a real app we'd use a single transaction or RPC, but for now we'll do it sequentially
+      // Spend SC
+      await supabase.from('profiles').update({ credits: sc - cost }).eq('id', user.id);
+      
+      // Consume mats
+      for (const mat of firstTier.mats) {
+        await supabase.rpc('consume_user_resource', {
+          p_user_id: user.id,
+          p_resource_type: mat.resource,
+          p_amount: mat.qty
+        });
+      }
+
+      setSc(prev => prev - cost);
+      toast.success(`${meta.label} Commissioned!`, { description: `Level 1 ${meta.label} has been established on ${body.name}.` });
+      logAction('infra_build', `Infrastructure Built: ${meta.label}`, `Established a persistent ${meta.label} at the ${body.name} orbital station.`);
+      grantXP('factory_built'); // Reuse factory xp for now
+      fetchEconomyData();
+    }
+  }, [user, body, playerSystemId, sc, userResources, fetchEconomyData, logAction, grantXP]);
+
+  const upgradeInfrastructure = useCallback(async (infraId: string) => {
+    if (!user) return;
+    const infra = userFactories.find(f => f.id === infraId);
+    if (!infra) return;
+
+    const nextTier = (infra.tier || 1) + 1;
+    if (nextTier > 3) {
+      toast.error("Maximum tier reached!");
+      return;
+    }
+
+    const infraKey = Object.keys(INFRA_META).find(k => (INFRA_META as any)[k].type === infra.type) as keyof typeof INFRA_META;
+    if (!infraKey) return;
+
+    const meta = (INFRA_META as any)[infraKey];
+    const tierConfig = meta.tiers[nextTier - 1];
+    const cost = tierConfig.costSC;
+
+    if (sc < cost) {
+      toast.error("Insufficient Credits!", { description: `Upgrading to T${nextTier} requires ${cost.toLocaleString()} SC.` });
+      return;
+    }
+
+    // Check materials
+    for (const mat of tierConfig.mats) {
+      const userRes = userResources.find(r => r.resourceType === mat.resource);
+      if ((userRes?.amount || 0) < mat.qty) {
+        toast.error("Insufficient Materials!", { description: `Upgrade requires ${mat.qty}× ${mat.resource}.` });
+        return;
+      }
+    }
+
+    // Apply upgrade
+    const { error } = await supabase.from('factories').update({
+       tier: nextTier,
+       storage_capacity: (meta.type === 'Resource Silo' || meta.type === 'Drydock') ? tierConfig.capacity : 0
+    }).eq('id', infraId);
+
+    if (error) {
+      toast.error("Upgrade failed", { description: error.message });
+    } else {
+       // Consume resources
+       await supabase.from('profiles').update({ credits: sc - cost }).eq('id', user.id);
+       for (const mat of tierConfig.mats) {
+         await supabase.rpc('consume_user_resource', {
+           p_user_id: user.id,
+           p_resource_type: mat.resource,
+           p_amount: mat.qty
+         });
+       }
+
+       setSc(prev => prev - cost);
+       toast.success(`${meta.label} Upgraded!`, { description: `Facility enhanced to Tier ${nextTier}.` });
+       logAction('infra_upgrade', `Infrastructure Upgraded: ${meta.label}`, `Completed structural enhancements for Level ${nextTier} ${meta.label}.`);
+       fetchEconomyData();
+    }
+  }, [user, userFactories, sc, userResources, fetchEconomyData, logAction]);
+
   const depositFactoryInput = useCallback(async (factoryId: string, resourceType: string, amount: number) => {
     if (!user) return;
     const { error } = await supabase.rpc('deposit_factory_input', {
@@ -1486,16 +2304,22 @@ export function useGalaxyApp(initialSeed = 20260423) {
       return;
     }
 
+    const cost = getActionCost(5);
+    if (ap < cost) {
+      toast.error(`Insufficient AP! Shift requires ${cost} AP`);
+      return;
+    }
+
     const { data, error } = await supabase.rpc('work_at_factory', {
       p_user_id: user.id,
       p_factory_id: currentJob.factoryId,
-      p_ap_cost: 5
+      p_ap_cost: cost
     });
 
     if (error || (data as any)?.error) {
       toast.error("Work failed", { description: (data as any)?.error || error?.message });
     } else {
-      setAp(prev => prev - 5);
+      setAp(prev => prev - cost);
       // We don't manually update SC/Resource here, we let the polling/profile sync handle it
       // but we should trigger a refresh
       fetchEconomyData();
@@ -1517,7 +2341,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
       const xpBonus = computeSkillBonus('factory_xp_bonus', playerSkills);
       grantXP('factory_worked', xpBonus);
     }
-  }, [user, currentJob, ap, fetchEconomyData, grantXP, playerSkills]);
+  }, [user, currentJob, ap, fetchEconomyData, grantXP, playerSkills, getActionCost]);
 
   const collectFactory = useCallback(async (factoryId: string) => {
     if (!user) return;
@@ -1811,11 +2635,22 @@ export function useGalaxyApp(initialSeed = 20260423) {
     }
   }, [playerSystemId, playerBodyId, exploredSystemIds, exploredBodyIds, initialDataLoaded, user]);
 
+  const lastResolvedTravelRef = useRef<string | null>(null);
+
   // Arrive at destination
   useEffect(() => {
-    if (travel && currentTime >= travel.endTime) {
+    if (!initialDataLoaded || !travel) return;
+    
+    // Create a unique key for this specific jump
+    const jumpKey = `${travel.targetId}:${travel.startTime}`;
+    if (lastResolvedTravelRef.current === jumpKey) return;
+
+    if (currentTime >= travel.endTime) {
+      lastResolvedTravelRef.current = jumpKey;
       const targetId = travel.targetId;
       const travelType = travel.type ?? "inter";
+
+      console.log(`[Navigation] Resolving ${travelType} transit to ${targetId}`);
 
       if (travelType === "intra") {
         setPlayerBodyId(targetId);
@@ -1844,8 +2679,13 @@ export function useGalaxyApp(initialSeed = 20260423) {
         setPlayerBodyId("star"); // Default to star on jump arrival
         setTravel(null);
         
+        // Auto-focus the camera and UI on the new system if we are already viewing the player's old system
+        if (view === "system" && systemId === playerSystemId) {
+          setSystemId(targetId);
+        }
+        
         // Set arrival sequence (approx 10s sub-light transit to star)
-        setArrival({ fromId, startTime: currentTime, duration: 10000 });
+        setArrival({ fromId, startTime: Date.now(), duration: 10000 });
 
         setExploredSystemIds(prev => {
           const next = new Set(prev);
@@ -1871,9 +2711,48 @@ export function useGalaxyApp(initialSeed = 20260423) {
           next.add(`${targetId}:star`);
           return next;
         });
+
+        // Update path tracking
+        setJumpPath(prev => {
+          if (prev.length > 1 && prev[1] === targetId) {
+            return prev.slice(1);
+          }
+          if (prev.length > 0 && prev[0] === targetId) {
+             return prev; // Already arrived at first step
+          }
+          return []; // Path broken or finished
+        });
       }
     }
-  }, [travel, currentTime, playerSystemId, playerSkills, grantXP, logAction, galaxy, user]);
+  }, [travel, currentTime, playerSystemId, playerSkills, grantXP, logAction, galaxy, user, initialDataLoaded]);
+
+  // Multi-jump journey auto-continuation
+  useEffect(() => {
+    if (!initialDataLoaded || travel) return;
+
+    // Check if we are in an arrival sequence but have more jumps to do
+    // We allow continuation even during arrival for a smoother journey
+    if (jumpPath.length > 1) {
+      // Trigger the next jump in the sequence
+      const nextStepId = jumpPath[1];
+      const finalDestId = jumpPath[jumpPath.length - 1];
+      
+      const timer = setTimeout(() => {
+        // Journey is already paid for upfront
+        initiateJump(finalDestId, journeyTargetBodyId);
+      }, 800);
+
+      return () => clearTimeout(timer);
+    } else if (jumpPath.length === 1 && journeyTargetBodyId && journeyTargetBodyId !== "star") {
+      // Arrived at final system, now initiate sub-light travel to the target body
+      const timer = setTimeout(() => {
+        initiateTravelToBody(journeyTargetBodyId);
+        setJourneyTargetBodyId(null);
+        setJumpPath([]);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [travel, arrival, jumpPath, initiateJump, initiateTravelToBody, initialDataLoaded, playerSystemId, ap, getJumpCostBetween, journeyTargetBodyId]);
 
   // --- BACKGROUND PRE-CACHING ---
   // During hyperspace jumps, use the transit time to pre-synthesize audio for the target system
@@ -2047,7 +2926,10 @@ export function useGalaxyApp(initialSeed = 20260423) {
     playerBodyId,
     travel,
     arrival,
-    getJumpCost,
+    getJumpCostBetween,
+    getPathCost,
+    calculatePath,
+    jumpPath,
     initiateJump,
     initiateTravelToBody,
     currentTime,
@@ -2086,6 +2968,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
     factoryInputStorage,
     depositFactoryInput,
     buildFactory,
+    buildInfrastructure,
+    upgradeInfrastructure,
     applyForJob,
     workJob,
     leaveJob,
@@ -2108,7 +2992,22 @@ export function useGalaxyApp(initialSeed = 20260423) {
     voteArticle,
     postComment,
     userLogs,
+    userFleets,
+    setUserFleets,
+    constructionQueue,
+    fetchConstructionQueue,
+    fetchFleets,
+    siloInventory,
+    fetchSiloInventory,
+    queueShipBuild,
+    updateVesselConfig,
+    transferShipToDrydock,
+    formFleet,
+    disbandFleet,
+    initiateFleetJump,
     fleetCount,
+    selectedEntityId,
+    setSelectedEntityId,
     logAction,
     cargoUsed: userResources.reduce((sum, r) => sum + r.amount, 0),
     parties,
@@ -2136,6 +3035,12 @@ export function useGalaxyApp(initialSeed = 20260423) {
     isAdmin,
     searchResults,
     isSearching,
+    userVessels,
+    selectedVesselId,
+    selectVessel,
+    commissionVessel,
+    isFleetSidebarOpen,
+    toggleFleetSidebar,
 
     performSearch: useCallback(async (query: string) => {
       if (!query || query.length < 2) {
@@ -2167,25 +3072,29 @@ export function useGalaxyApp(initialSeed = 20260423) {
     viewedStateId,
 
     navigateToPublicProfile: useCallback((id: string) => {
+      setReturnPage(page);
       setViewedUserId(id);
       setPage('profile');
-    }, []),
+    }, [page]),
 
     navigateToPublicParty: useCallback((id: string) => {
+      setReturnPage(page);
       setViewedPartyId(id);
       setPage('party');
-    }, []),
+    }, [page]),
 
     navigateToPublicState: useCallback((id: string) => {
+      setReturnPage(page);
       setViewedStateId(id);
       setPage('empire');
-    }, []),
+    }, [page]),
 
     resetPublicViews: useCallback(() => {
       setViewedUserId(null);
       setViewedPartyId(null);
       setViewedStateId(null);
-    }, []),
+      setPage(returnPage);
+    }, [returnPage]),
 
     // XP & Skill Tree
     playerSkills,
@@ -2484,41 +3393,75 @@ export function useGalaxyApp(initialSeed = 20260423) {
     completeOnboarding: async (name: string, avatar: string, config: ShipConfiguration) => {
       if (!user) return;
       
-      // 1. Create/Update Profile
-      const { error: profileError } = await supabase.from('profiles').upsert({
-        id: user.id,
-        commander_name: name,
-        avatar_url: avatar,
-        credits: 15000,
-        level: 1,
-        xp: 0,
-        onboarding_completed: true,
-        updated_at: new Date().toISOString()
-      });
-      if (profileError) { toast.error("Failed to create profile: " + profileError.message); return; }
+      // Momentarily pause sync effects during the multi-stage initialization
+      setInitialDataLoaded(false);
 
-      // 2. Create Vessel
-      const { data: vessel, error: vesselError } = await supabase.from('vessels').insert({
-        user_id: user.id,
-        name: config.name,
-        primary_color: config.primaryColor,
-        accent_color: config.accentColor,
-        hull_id: config.hullId,
-        wings_id: config.wingsId,
-        engines_id: config.enginesId,
-        bridge_id: config.bridgeId,
-        is_active: true
-      }).select().single();
-      
-      if (vesselError) { toast.error("Failed to commission vessel: " + vesselError.message); return; }
+      try {
+        // 1. Create/Update Profile
+        const { error: profileError } = await supabase.from('profiles').upsert({
+          id: user.id,
+          commander_name: name,
+          avatar_url: avatar,
+          credits: 15000,
+          cargo_capacity: 5000,
+          level: 1,
+          xp: 0,
+          onboarding_completed: true,
+          updated_at: new Date().toISOString()
+        });
+        if (profileError) throw new Error("Failed to create profile: " + profileError.message);
 
-      setPlayerName(name);
-      setPlayerAvatar(avatar);
-      setShipConfig(config);
-      setVesselId(vessel.id);
-      setSc(15000);
-      toast.success("Welcome to the Hegemony, Commander.");
+        // 2. Deactivate any existing commander vessels for this user
+        await supabase.from('vessels').update({ is_active: false }).eq('user_id', user.id);
+
+        // 3. Create Vessel
+        const { data: vessel, error: vesselError } = await supabase.from('vessels').insert({
+          user_id: user.id,
+          name: config.name,
+          primary_color: config.primaryColor,
+          accent_color: config.accentColor,
+          hull_id: config.hullId,
+          wings_id: config.wingsId,
+          engines_id: config.enginesId,
+          bridge_id: config.bridgeId,
+          is_active: true
+        }).select().single();
+        
+        if (vesselError) throw new Error("Failed to commission vessel: " + vesselError.message);
+
+        // 3. Create initial Fleet Position at Central Star
+        const { error: posError } = await supabase.from('fleet_positions').insert({
+          user_id: user.id,
+          vessel_id: vessel.id,
+          system_id: 'sys-center',
+          body_id: 'star'
+        });
+        if (posError) console.error("Initial position insertion error (ignoring):", posError);
+
+        // 4. Update local state
+        setPlayerName(name);
+        setPlayerAvatar(avatar);
+        setShipConfig(config);
+        setVesselId(vessel.id);
+        setSc(15000);
+        setCargoCapacity(5000);
+        setPlayerSystemId('sys-center');
+        setPlayerBodyId('star');
+        
+        toast.success("Welcome to the Hegemony, Commander.");
+      } catch (err: any) {
+        toast.error(err.message);
+      } finally {
+        // Always resume data sync after the attempt
+        setInitialDataLoaded(true);
+      }
     },
+    logout: async () => {
+      await supabase.auth.signOut();
+      setPage("map");
+      setInitialDataLoaded(false);
+      lastUserIdRef.current = null;
+    }
   };
 }
 

@@ -1,7 +1,9 @@
 import type { Galaxy, StarSystem, Body, Installation, BodyResource, UserResource, FactoryWorker, Residency, ResidencyApplication } from "@/galaxy/types";
-import { STAR_META, CONTEST_META, ECON_META, BODY_META } from "@/galaxy/meta";
-import { Zap, Scale, Crown, Shield } from "lucide-react";
+import { STAR_META, CONTEST_META, ECON_META, BODY_META, RESOURCE_META, INFRA_META, RICHNESS_VALUES, T1_RESOURCES, T2_RESOURCES, T3_RESOURCES } from "@/galaxy/meta";
+import { Zap, Scale, Crown, Shield, Building2, Pickaxe, UserPlus, LogOut, Briefcase as JobIcon, Coins as SC_Icon, Package, Settings, ArrowUp, ChevronRight, Thermometer, Wind, Mountain, Users, Globe, Activity, CircleDot, Anchor, Hammer } from "lucide-react";
 import { GalaxyIcon } from "./ResourceIcon";
+import { useMemo, useState } from "react";
+import { PlanetSurface } from "./PlanetSurface";
 
 /* ======================= GALAXY OVERVIEW ======================= */
 export function GalaxyOverview({ galaxy, hideHeader }: { galaxy: Galaxy; hideHeader?: boolean }) {
@@ -24,15 +26,18 @@ export function GalaxyOverview({ galaxy, hideHeader }: { galaxy: Galaxy; hideHea
 }
 
 /* ======================= SYSTEM OVERVIEW ======================= */
-export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, travel, arrival, initiateJump, getJumpCost, currentTime, isExplored, hideHeader, hideActions, onPlayClick, onSelectEmpire, onEnterSystem, shipName }: {
+export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, originSystemId, travel, arrival, initiateJump, calculatePath, getPathCost, getJumpCostBetween, currentTime, isExplored, hideHeader, hideActions, onPlayClick, onSelectEmpire, onEnterSystem, shipName }: {
   system: StarSystem;
   galaxy: Galaxy;
   onSelectBody: (id: string) => void;
   playerSystemId: string;
+  originSystemId?: string;
   travel: { targetId: string; startTime: number; endTime: number } | null;
   arrival: { fromId: string; startTime: number; duration: number } | null;
   initiateJump: (id: string) => void;
-  getJumpCost: (id: string) => number;
+  calculatePath: (startId: string, targetId: string) => string[] | null;
+  getPathCost: (path: string[]) => number;
+  getJumpCostBetween: (s1Id: string, s2Id: string) => number;
   currentTime: number;
   isExplored: boolean;
   hideHeader?: boolean;
@@ -42,6 +47,7 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, t
   onEnterSystem?: () => void;
   shipName?: string;
 }) {
+  const [activeTab, setActiveTab] = useState<"info" | "bodies">("info");
   const explored = isExplored || system.id === "sys-center";
   const meta = STAR_META[system.starType];
   const sector = galaxy.sectorById[system.sectorId];
@@ -55,149 +61,239 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, t
     if (b.ownerId) owners.set(b.ownerId, (owners.get(b.ownerId) ?? 0) + 1);
   }
 
-  const isAdjacent = galaxy.hyperlanes.some(h => (h.a === playerSystemId && h.b === system.id) || (h.a === system.id && h.b === playerSystemId));
+  const originSysId = originSystemId || playerSystemId;
   const isCurrent = playerSystemId === system.id;
+  const isOriginCurrent = originSysId === system.id;
   const isTravelingToThis = travel?.targetId === system.id;
+
+  const path = useMemo(() => {
+    if (isOriginCurrent) return null;
+    return calculatePath(originSysId, system.id);
+  }, [calculatePath, originSysId, system.id, isOriginCurrent]);
+
+  const pathCost = useMemo(() => {
+    if (!path || path.length < 2) return 0;
+    return getPathCost(path);
+  }, [getPathCost, path]);
+
+  const canJump = path && path.length >= 2;
+  const isAdjacent = canJump && path.length === 2;
 
   return (
     <Panel title={system.name} subtitle={sector?.name ?? "Unknown Sector"} hideHeader={hideHeader}>
-      {!hideActions && onEnterSystem && (
-        <button
-          onClick={() => {
-            onEnterSystem();
-            onPlayClick?.();
-          }}
-          className="w-full mb-4 py-3 bg-primary text-background font-display text-[10px] font-bold uppercase tracking-[0.2em] rounded border border-primary/40 hover:bg-primary/80 transition-all flex items-center justify-center gap-2 group"
-        >
-          <Zap size={14} fill="currentColor" className="group-hover:scale-110 transition-transform" />
-          Enter System
-        </button>
-      )}
+      {/* High-Level System Actions */}
+      <div className="space-y-3 mb-4">
+        {!hideActions && onEnterSystem && (
+          <button
+            onClick={() => {
+              onEnterSystem();
+              onPlayClick?.();
+            }}
+            className="w-full py-2.5 bg-primary text-background font-display text-[10px] font-bold uppercase tracking-[0.2em] rounded border border-primary/40 hover:bg-primary/80 transition-all flex items-center justify-center gap-2 group"
+          >
+            <Zap size={14} fill="currentColor" className="group-hover:scale-110 transition-transform" />
+            Enter System
+          </button>
+        )}
 
-      {isCurrent && (
-        <div className="mb-4 bg-primary/10 border border-primary/20 px-3 py-2 rounded flex items-center justify-between">
-          <span className="text-[10px] font-bold text-primary">CURRENT LOCATION</span>
-          <span className={`text-[10px] font-bold ${(travel || arrival) ? "text-warning animate-pulse" : "text-primary/60"}`}>
-            {(travel || arrival) ? "IN TRANSIT" : "STATIONARY"}
-          </span>
-        </div>
-      )}
-
-      {isTravelingToThis && travel && (
-        <div className="mb-4 bg-warning/10 border border-warning/20 px-3 py-2 rounded">
-          <div className="flex justify-between mb-1">
-            <span className="text-[10px] font-bold text-warning uppercase">FTL Travel in Progress</span>
-            <span className="text-[10px] text-warning">EST. ARRIVAL: {Math.ceil((travel.endTime - currentTime) / 1000)}s</span>
+        {isCurrent && (
+          <div className="bg-primary/10 border border-primary/20 px-3 py-1.5 rounded flex items-center justify-between">
+            <span className="text-[9px] font-bold text-primary tracking-widest">STATIONARY</span>
+            <span className="text-[9px] text-primary/60 font-mono-hud uppercase">Current Location</span>
           </div>
-          <div className="h-1 w-full bg-warning/20 rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-warning animate-pulse" 
-              style={{ width: `${Math.min(100, ((currentTime - travel.startTime) / (travel.endTime - travel.startTime)) * 100)}%` }} 
-            />
-          </div>
-        </div>
-      )}
+        )}
 
-      <Row k="Star Class" v={explored ? meta.label : "???"} accent={explored ? meta.color : "text-muted-foreground"} />
-      <Row k="Description" v={explored ? meta.description : "???"} small />
-      <Row k="Temperature" v={explored ? meta.temp : "???"} small />
-      
-      {!hideActions && !isCurrent && !travel && isAdjacent && (
+        {!isCurrent && isOriginCurrent && (
+          <div className="bg-primary/10 border border-primary/20 px-3 py-1.5 rounded flex items-center justify-between">
+            <span className="text-[9px] font-bold text-primary tracking-widest">STATIONARY</span>
+            <span className="text-[9px] text-primary/60 font-mono-hud uppercase">Selected Entity Location</span>
+          </div>
+        )}
+
+        {isTravelingToThis && travel && (
+          <div className="bg-warning/10 border border-warning/20 px-3 py-2 rounded">
+            <div className="flex justify-between mb-1">
+              <span className="text-[10px] font-bold text-warning uppercase">FTL Transit</span>
+              <span className="text-[10px] text-warning font-mono-hud">{Math.ceil((travel.endTime - currentTime) / 1000)}s</span>
+            </div>
+            <div className="h-1 w-full bg-warning/20 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-warning animate-pulse" 
+                style={{ width: `${Math.min(100, ((currentTime - travel.startTime) / (travel.endTime - travel.startTime)) * 100)}%` }} 
+              />
+            </div>
+          </div>
+        )}
+
+        {!hideActions && !isOriginCurrent && !travel && canJump && (
+          <button 
+            onClick={() => {
+              onPlayClick?.();
+              initiateJump(system.id);
+            }}
+            className="w-full bg-primary hover:bg-primary/80 text-background font-bold py-2 px-4 rounded text-xs tracking-widest transition-colors flex items-center justify-between gap-2"
+          >
+            <span className="flex items-center gap-2 text-[10px]">
+              <Zap size={12} />
+              <span>{isAdjacent ? "FTL JUMP" : `JOURNEY [${path.length - 1} JUMPS]`}</span>
+            </span>
+            <span className="text-[9px] font-mono-hud text-background/80 border-l border-background/20 pl-2">{pathCost} AP</span>
+          </button>
+        )}
+      </div>
+
+      {/* Navigation Tabs */}
+      <div className="flex border-b border-primary/20 mb-4 sticky top-0 bg-background/80 backdrop-blur-sm z-10">
         <button 
-          onClick={() => {
-            onPlayClick?.();
-            initiateJump(system.id);
-          }}
-          className="w-full mt-4 bg-primary hover:bg-primary/80 text-background font-bold py-2 px-4 rounded text-xs tracking-widest transition-colors flex items-center justify-between gap-2"
+          onClick={() => { onPlayClick?.(); setActiveTab("info"); }}
+          className={`flex-1 py-2 text-[9px] uppercase tracking-widest font-bold transition-all flex items-center justify-center gap-2 ${activeTab === "info" ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-primary/60"}`}
         >
-          <span className="flex items-center gap-2">
-            <span>INITIATE FTL JUMP</span>
-            <span className="opacity-60">→</span>
-          </span>
-          <span className="text-[9px] font-mono-hud text-background/80 border-l border-background/20 pl-2">{getJumpCost(system.id)} AP</span>
+          <Activity size={12} /> Intelligence
         </button>
-      )}
+        <button 
+          onClick={() => { onPlayClick?.(); setActiveTab("bodies"); }}
+          className={`flex-1 py-2 text-[9px] uppercase tracking-widest font-bold transition-all flex items-center justify-center gap-2 ${activeTab === "bodies" ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-primary/60"}`}
+        >
+          <Globe size={12} /> Bodies
+        </button>
+      </div>
 
-      <Divider />
-      <Row k="Status" v={explored ? CONTEST_META[system.contest].label : "???"} accent={explored ? CONTEST_META[system.contest].color : "text-muted-foreground"} />
-      <Row k="Economy" v={explored ? ECON_META[system.economy].label : "???"} accent={explored ? ECON_META[system.economy].color : "text-muted-foreground"} />
-      <Row k="Jump Gates" v={explored ? system.gates.length : "???"} />
-      <Divider />
-      <Row k="Planets" v={explored ? planets.length : "???"} />
-      <Row k="Moons" v={explored ? moons : "???"} />
-      <Row k="Asteroids" v={explored ? asteroids : "???"} />
-      <Row k="Stations" v={explored ? stations : "???"} />
-      
-      {!explored && (
-        <div className="mt-4 p-3 border border-dashed border-primary/20 rounded bg-primary/5">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="w-2 h-2 bg-warning rounded-full animate-pulse" />
-            <span className="text-[9px] font-mono-hud uppercase text-warning tracking-widest font-bold">Uncharted Territory</span>
+      {activeTab === "info" ? (
+        <div className="animate-in fade-in slide-in-from-right-2 duration-300">
+          <Row k="Star Class" v={explored ? meta.label : "???"} accent={explored ? meta.color : "text-muted-foreground"} />
+          <Row k="Description" v={explored ? meta.description : "???"} small />
+          <Row k="Temperature" v={explored ? meta.temp : "???"} small />
+          
+          <Divider />
+          <Row k="Status" v={explored ? CONTEST_META[system.contest].label : "???"} accent={explored ? CONTEST_META[system.contest].color : "text-muted-foreground"} />
+          <Row k="Economy" v={explored ? ECON_META[system.economy].label : "???"} accent={explored ? ECON_META[system.economy].color : "text-muted-foreground"} />
+          <Row k="Jump Gates" v={explored ? system.gates.length : "???"} />
+          
+          {explored && system.regionId && galaxy.regions && (
+            <>
+              <Divider />
+              {(() => {
+                const region = galaxy.regions.find(r => r.id === system.regionId);
+                if (!region) return null;
+                return (
+                  <>
+                    <Row k="Regional Zone" v={region.name} accent="text-warning" />
+                    <Row k="Hazard Class" v={region.type.replace('_', ' ').toUpperCase()} small />
+                    <div className="mt-2 space-y-1">
+                      {region.type === "nebula" && (
+                        <div className="flex items-center gap-2 text-[8px] text-warning/80 font-mono-hud uppercase tracking-widest pl-2 border-l border-warning/30">
+                          <Zap size={10} /> Dimensional Drag: -35% Warp Speed
+                        </div>
+                      )}
+                      {region.type === "dust_cloud" && (
+                        <div className="flex items-center gap-2 text-[8px] text-warning/80 font-mono-hud uppercase tracking-widest pl-2 border-l border-warning/30">
+                          <Activity size={10} /> Sensor Interference: Range 1 Jump
+                        </div>
+                      )}
+                      {region.type === "ion_storm" && (
+                        <div className="flex items-center gap-2 text-[8px] text-warning/80 font-mono-hud uppercase tracking-widest pl-2 border-l border-warning/30">
+                          <Zap size={10} /> Neural Scattering: +100% AP Cost
+                        </div>
+                      )}
+                      {region.type === "gravity_rift" && (
+                        <div className="flex items-center gap-2 text-[8px] text-warning/80 font-mono-hud uppercase tracking-widest pl-2 border-l border-warning/30">
+                          <Zap size={10} /> Gravity Well: +50% Departure AP
+                        </div>
+                      )}
+                    </div>
+                  </>
+                );
+              })()}
+            </>
+          )}
+          
+          <Divider />
+          <div className="grid grid-cols-2 gap-2">
+            <StatCard icon={Globe} label="Planets" value={explored ? planets.length.toString() : "???"} />
+            <StatCard icon={CircleDot} label="Moons" value={explored ? moons.toString() : "???"} />
+            <StatCard icon={Mountain} label="Asteroids" value={explored ? asteroids.toString() : "???"} />
+            <StatCard icon={Building2} label="Stations" value={explored ? stations.toString() : "???"} />
           </div>
-          <p className="text-[10px] text-primary/60 leading-relaxed font-mono-hud italic">
-            Detailed system intelligence unavailable. Establish physical presence to reveal tactical data.
-          </p>
+          
+          {!explored && (
+            <div className="mt-4 p-3 border border-dashed border-primary/20 rounded bg-primary/5">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="w-1.5 h-1.5 bg-warning rounded-full animate-pulse" />
+                <span className="text-[9px] font-mono-hud uppercase text-warning tracking-widest font-bold">Uncharted</span>
+              </div>
+              <p className="text-[9px] text-primary/60 leading-tight font-mono-hud italic">
+                Intelligence blacked out. Physical exploration required for scanning.
+              </p>
+            </div>
+          )}
+
+          {explored && owners.size > 0 && (
+            <>
+              <Divider />
+              <SubTitle>Holdings</SubTitle>
+              <div className="space-y-1">
+                {Array.from(owners.entries()).map(([id, n]) => {
+                  const emp = galaxy.empires.find((e) => e.id === id);
+                  if (!emp) return null;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => {
+                        onPlayClick?.();
+                        onSelectEmpire?.(id);
+                      }}
+                      className="w-full flex items-center justify-between gap-3 text-[10px] hover:bg-primary/5 transition-colors p-1.5 rounded border border-primary/5"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="inline-block w-2 h-2 rounded-full" style={{ background: `hsl(${emp.hue} 70% 55%)` }} />
+                        <span className="font-mono-hud text-[9px] uppercase tracking-widest text-muted-foreground group-hover:text-primary transition-colors">{emp.tag}</span>
+                      </div>
+                      <span className="text-foreground font-bold">{n} Assets</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
-      )}
-
-      {explored && owners.size > 0 && (
-        <>
-          <Divider />
-          <SubTitle>Holdings</SubTitle>
-          {Array.from(owners.entries()).map(([id, n]) => {
-            const emp = galaxy.empires.find((e) => e.id === id);
-            if (!emp) return null;
-            return (
-              <button
-                key={id}
-                onClick={() => {
-                  onPlayClick?.();
-                  onSelectEmpire?.(id);
-                }}
-                className="w-full flex items-center justify-between gap-3 text-[11px] hover:bg-primary/5 transition-colors p-1 rounded group"
-              >
-                <span className="font-mono-hud text-[9px] uppercase tracking-widest text-muted-foreground group-hover:text-primary transition-colors">{emp.tag}</span>
-                <span className="flex items-center gap-1.5 text-right text-foreground">
-                  <span className="inline-block w-2 h-2 rounded-full" style={{ background: `hsl(${emp.hue} 70% 55%)` }} />
-                  {n} body{n > 1 ? "ies" : "y"}
-                </span>
-              </button>
-            );
-          })}
-        </>
-      )}
-
-      {explored && (
-        <>
-          <Divider />
-          <SubTitle>Bodies (tap to view)</SubTitle>
-          <div className="flex flex-col gap-1 max-h-[40vh] sm:max-h-[50vh] overflow-y-auto pr-1 custom-scrollbar">
-            {/* 1. Ships (Top of the list) */}
+      ) : (
+        <div className="animate-in fade-in slide-in-from-right-2 duration-300">
+          <SubTitle>Orbital Objects (tap to scan)</SubTitle>
+          <div className="flex flex-col gap-1 max-h-[40vh] sm:max-h-[55vh] overflow-y-auto pr-1 custom-scrollbar">
+            {/* 1. Internal Vessel Location */}
             {isCurrent && (
               <button
                 onClick={() => {
                   onPlayClick?.();
                   onSelectBody("ship");
                 }}
-                className="flex items-center justify-between gap-2 px-2 py-1 text-[10px] uppercase tracking-wider border border-primary/30 bg-primary/10 hover:bg-primary/20 text-left transition mb-1 shadow-[0_0_10px_rgba(16,185,129,0.1)]"
+                className="flex items-center justify-between gap-2 px-2 py-1.5 text-[9px] uppercase tracking-wider border border-primary/40 bg-primary/20 hover:bg-primary/30 text-left transition mb-1 shadow-[0_0_15px_rgba(var(--primary-rgb),0.1)]"
               >
-                <GalaxyIcon name={BODY_META.ship.icon} className="w-3 h-3 text-primary" />
-                <span className="flex-1 truncate text-primary font-bold">{shipName || "Commander's Vessel"}</span>
-                <span className="text-primary/60">{BODY_META.ship.label}</span>
+                <div className="flex items-center gap-2">
+                  <GalaxyIcon name={BODY_META.ship.icon} className="w-3 h-3 text-primary" />
+                  <span className="truncate text-primary font-bold">{shipName || "COMMAND SHIP"}</span>
+                </div>
+                <span className="text-primary/60 font-mono-hud">Flagship</span>
               </button>
             )}
 
-            {/* 2. Sorted Hierarchical Bodies (Planets -> Moons) */}
-            {system.bodies
-              .filter(b => !b.parentId) // Top-level only
-              .filter((b) => b.type !== "asteroid" || system.bodies.filter(x => x.type === "asteroid").indexOf(b) < 3) // Cap asteroids
-              .sort((a, b) => a.orbit - b.orbit) // Orbital order
-              .slice(0, 30) // Increased cap
-              .map((b) => (
-                <BodyListEntry key={b.id} body={b} onSelect={onSelectBody} depth={0} onPlayClick={onPlayClick} />
-              ))}
+            {!explored ? (
+              <div className="p-8 text-center border border-dashed border-primary/10 rounded">
+                <Globe size={24} className="mx-auto text-primary/20 mb-2" />
+                <div className="text-[9px] text-muted-foreground uppercase tracking-widest">Bodies detected, composition unknown</div>
+              </div>
+            ) : (
+              system.bodies
+                .filter(b => !b.parentId) // Top-level only
+                .filter((b) => b.type !== "asteroid" || system.bodies.filter(x => x.type === "asteroid").indexOf(b) < 3) // Cap asteroids
+                .sort((a, b) => a.orbit - b.orbit) // Orbital order
+                .slice(0, 40)
+                .map((b) => (
+                  <BodyListEntry key={b.id} body={b} onSelect={onSelectBody} depth={0} onPlayClick={onPlayClick} />
+                ))
+            )}
           </div>
-        </>
+        </div>
       )}
     </Panel>
   );
@@ -266,7 +362,9 @@ function formatLabel(raw: string): string {
   onPlayClick,
   onSelectEmpire,
   playerSystemId,
+  originSystemId,
   playerBodyId,
+  originBodyId,
   travel,
   initiateTravelToBody,
   currentTime,
@@ -288,7 +386,12 @@ function formatLabel(raw: string): string {
   bodyGovernance,
   onInitiateGovernance,
   factoryInputStorage,
-  onDepositInput
+  onDepositInput,
+  onUpgradeInfrastructure,
+  onBuildInfrastructure,
+  initiateJump,
+  calculatePath,
+  getPathCost
 }: { 
   body: Body; 
   galaxy: Galaxy; 
@@ -298,9 +401,14 @@ function formatLabel(raw: string): string {
   onPlayClick?: () => void;
   onSelectEmpire?: (id: string) => void;
   playerSystemId: string;
+  originSystemId?: string;
   playerBodyId: string;
+  originBodyId?: string;
   travel: { targetId: string; startTime: number; endTime: number; type?: "inter" | "intra"; startPos?: { x: number; z: number } } | null;
   initiateTravelToBody: (id: string) => void;
+  initiateJump?: (sysId: string, bodyId: string | null) => void;
+  calculatePath?: (startId: string, targetId: string) => string[] | null;
+  getPathCost?: (path: string[]) => number;
   currentTime: number;
   factories: Installation[];
   bodyResources: BodyResource[];
@@ -312,6 +420,7 @@ function formatLabel(raw: string): string {
   onLeaveJob: () => void;
   onCollect: (id: string) => void;
   onUpgrade: (id: string, type: 'storage' | 'slots' | 'replenish') => void;
+  onUpgradeInfrastructure?: (id: string) => void;
   onSaveSettings: (id: string, wage: number, jobs: number) => void;
   userId: string | null;
   userResidency: Residency | null;
@@ -321,8 +430,9 @@ function formatLabel(raw: string): string {
   onInitiateGovernance: (id: string) => void;
   factoryInputStorage: Record<string, Record<string, number>>;
   onDepositInput: (factoryId: string, resource: string, amount: number) => void;
+  onBuildInfrastructure?: (key: any) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<"info" | "economy">("info");
+  const [activeTab, setActiveTab] = useState<"info" | "economy" | "governance">("info");
   const owner = body.ownerId ? galaxy.empires.find((e) => e.id === body.ownerId) : null;
   
   const zoneColors = { hot: "text-error", temperate: "text-success", cold: "text-info" };
@@ -335,37 +445,100 @@ function formatLabel(raw: string): string {
   const isShip = body.type === "ship";
 
   const isTravelingToThis = travel?.targetId === body.id && travel?.type === "intra";
-  const isInSameSystem = playerSystemId === body.systemId;
-  const isAtThisBody = playerBodyId === body.id;
-  const effectiveIsVisited = isVisited || isAtThisBody;
+  const originSysId = originSystemId || playerSystemId;
+  const originBodId = originBodyId || playerBodyId;
+
+  const isInSameSystem = originSysId === body.systemId;
+  const isAtThisBody = originBodId === body.id;
+  const isCurrentCommanderAtThisBody = playerBodyId === body.id;
+  const effectiveIsVisited = isVisited || isAtThisBody || isCurrentCommanderAtThisBody;
+
+  const path = useMemo(() => {
+    if (isInSameSystem || !isExplored || !calculatePath) return null;
+    return calculatePath(originSysId, body.systemId);
+  }, [calculatePath, originSysId, body.systemId, isInSameSystem, isExplored]);
+
+  const pathCost = useMemo(() => {
+    if (!path || path.length < 2 || !getPathCost) return 0;
+    return getPathCost(path);
+  }, [getPathCost, path]);
+
+  const canJourney = path && path.length >= 2;
 
   const isSanctum = body.systemId.startsWith('sys-inner-') || body.systemId === 'sys-center';
   const residencyProhibited = isSanctum || body.type === 'asteroid' || body.type === 'gas_giant' || body.type === 'star';
 
   return (
     <Panel title={body.name} subtitle={BODY_META[body.type].label} hideHeader={hideHeader}>
+      {/* 1. High-Level Summary Header (Non-Scrolling) */}
+      {isExplored && (
+        <div className="grid grid-cols-4 gap-2 mb-4 animate-in fade-in slide-in-from-top-2 duration-500">
+          <BodyStatBadge 
+            icon={Globe} 
+            value={formatLabel(body.subtype).split(' ')[0]} 
+            label="Type" 
+          />
+          <BodyStatBadge 
+            icon={CircleDot} 
+            value={isStar 
+              ? `${(body.size * 0.4).toFixed(1)}R☉` 
+              : isShip 
+                ? `${(body.size * 100).toFixed(0)}m`
+                : `${(body.size * 6371).toFixed(0)}km`
+            } 
+            label="Size" 
+          />
+          <BodyStatBadge 
+            icon={Users} 
+            value={body.population > 0 ? (body.population > 1000 ? `${(body.population/1000).toFixed(1)}B` : `${body.population.toFixed(1)}M`) : "0"} 
+            label="Pop." 
+          />
+          <BodyStatBadge 
+            icon={Shield} 
+            value={owner?.tag ?? "NONE"} 
+            label="Sovereign" 
+            accent={owner ? "text-primary" : "text-muted-foreground"}
+          />
+        </div>
+      )}
+
       {/* Tabs */}
-      <div className="flex border-b border-primary/20 mb-4">
+      <div className="flex border-b border-primary/20 mb-4 sticky top-0 bg-background/80 backdrop-blur-sm z-10">
         <button 
           onClick={() => { onPlayClick?.(); setActiveTab("info"); }}
-          className={`flex-1 py-2 text-[10px] uppercase tracking-widest font-bold transition-all ${activeTab === "info" ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-primary/60"}`}
+          className={`flex-1 py-1.5 text-[9px] uppercase tracking-widest font-bold transition-all flex flex-col items-center justify-center gap-1 ${activeTab === "info" ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-primary/60"}`}
         >
-          Intelligence
+          <Activity size={12} /> 
+          <span>Intelligence</span>
         </button>
         {!isStar && !isShip && (
           <button 
             onClick={() => { onPlayClick?.(); setActiveTab("economy"); }}
-            className={`flex-1 py-2 text-[10px] uppercase tracking-widest font-bold transition-all ${activeTab === "economy" ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-primary/60"}`}
+            className={`flex-1 py-1.5 text-[9px] uppercase tracking-widest font-bold transition-all flex flex-col items-center justify-center gap-1 ${activeTab === "economy" ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-primary/60"}`}
           >
-            Economy
+            <Scale size={12} />
+            <span>Economy</span>
+          </button>
+        )}
+        {!isStar && !isShip && (
+          <button 
+            onClick={() => { onPlayClick?.(); setActiveTab("governance"); }}
+            className={`flex-1 py-1.5 text-[9px] uppercase tracking-widest font-bold transition-all flex flex-col items-center justify-center gap-1 ${activeTab === "governance" ? "text-primary border-b-2 border-primary" : "text-muted-foreground hover:text-primary/60"}`}
+          >
+            <Shield size={12} />
+            <span>Governance</span>
           </button>
         )}
       </div>
 
       {activeTab === "info" ? (
-        <div className="animate-in fade-in slide-in-from-left-2 duration-300">
+        <div className="animate-in fade-in slide-in-from-left-2 duration-300 space-y-4">
+          {(isPlanet || isMoon || isStar || body.type === "asteroid") && (
+            <PlanetSurface body={body} galaxy={galaxy} className="mb-0" />
+          )}
+
           {isTravelingToThis && travel && (
-            <div className="mb-4 bg-warning/10 border border-warning/20 px-3 py-2 rounded">
+            <div className="bg-warning/10 border border-warning/20 px-3 py-2 rounded">
               <div className="flex justify-between mb-1">
                 <span className="text-[10px] font-bold text-warning uppercase text-glow">Sub-Light Transit</span>
                 <span className="text-[10px] text-warning">ETA: {Math.ceil((travel.endTime - currentTime) / 1000)}s</span>
@@ -385,7 +558,7 @@ function formatLabel(raw: string): string {
                 onPlayClick?.();
                 initiateTravelToBody(body.id);
               }}
-              className="w-full mb-4 bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary font-bold py-2.5 px-4 rounded text-[10px] tracking-[0.2em] transition-all flex items-center justify-between group"
+              className="w-full bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary font-bold py-2.5 px-4 rounded text-[10px] tracking-[0.2em] transition-all flex items-center justify-between group"
             >
               <span className="flex items-center gap-2">
                 <Zap size={12} fill="currentColor" className="group-hover:scale-110 transition-transform" />
@@ -395,44 +568,71 @@ function formatLabel(raw: string): string {
             </button>
           )}
 
+          {!isInSameSystem && canJourney && !travel && !isShip && initiateJump && (
+            <button 
+              onClick={() => {
+                onPlayClick?.();
+                initiateJump(body.systemId, body.id);
+              }}
+              className="w-full bg-primary hover:bg-primary/80 text-background font-bold py-2.5 px-4 rounded text-[10px] tracking-[0.2em] transition-all flex items-center justify-between group"
+            >
+              <span className="flex items-center gap-2">
+                <Zap size={12} fill="currentColor" className="group-hover:scale-110 transition-transform" />
+                <span>JOURNEY TO BODY</span>
+              </span>
+              <span className="text-[9px] font-mono-hud text-background/80 border-l border-background/20 pl-2">{pathCost + 5} AP</span>
+            </button>
+          )}
+
           {isAtThisBody && isInSameSystem && !travel && !isShip && (
-            <div className="mb-4 bg-primary/10 border border-primary/20 px-3 py-2 rounded flex items-center justify-between">
+            <div className="bg-primary/10 border border-primary/20 px-3 py-2 rounded flex items-center justify-between">
               <span className="text-[10px] font-bold text-primary tracking-widest uppercase">Vessel in Orbit</span>
               <span className="text-[10px] font-bold text-primary/60">STATIONARY</span>
             </div>
           )}
 
           {isExplored && !effectiveIsVisited && !isShip && !isStar && (
-            <div className="mb-4 bg-info/10 border border-info/20 px-3 py-2 rounded">
+            <div className="bg-info/10 border border-info/20 px-3 py-2 rounded">
               <div className="flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full bg-info animate-pulse" />
                 <span className="text-[10px] font-bold text-info uppercase tracking-widest">Awaiting Survey</span>
               </div>
-              <p className="text-[9px] text-info/60 mt-1 italic">Orbital sensors have identified resource signatures. Surface survey required for tactical quantification.</p>
+              <p className="text-[9px] text-info/60 mt-1 italic leading-tight">Orbital sensors have identified resource signatures. Surface survey required for tactical quantification.</p>
             </div>
           )}
 
-          <Row k={isStar ? "Stellar Class" : "Type"} v={formatLabel(body.subtype)} />
-          {!isStar && !isShip && <Row k="Orbit" v={`${body.orbit.toFixed(2)} AU`} />}
-          
-          <Row 
-            k="Size" 
-            v={isStar 
-              ? `${(body.size * 0.4).toFixed(2)} R☉` // Approximate Solar Radii
-              : isShip 
-                ? `${(body.size * 100).toFixed(0)} m length`
-                : `${(body.size * 6371).toFixed(0)} km radius`
-            } 
-          />
-
-          {isPlanet && (
-            <Row k="Satellites" v={body.children?.length ? (isExplored ? `${body.children.length} Moons` : "???") : "None"} />
+          {isExplored && (
+            <div className="grid grid-cols-2 gap-2">
+              <StatCard 
+                icon={Thermometer} 
+                label="Climate" 
+                value={`${body.temperature} K`} 
+              />
+              <StatCard 
+                icon={Mountain} 
+                label="Environment" 
+                value={formatLabel(body.habitabilityZone)} 
+                accent={zoneColors[body.habitabilityZone]}
+              />
+              <StatCard 
+                icon={Wind} 
+                label="Atmosphere" 
+                value={body.atmosphere ?? "Vacuum"} 
+                caption={isStar ? "Stellar Envelope" : undefined}
+              />
+              <StatCard 
+                icon={Zap} 
+                label="Economy" 
+                value={ECON_META[body.economy].label} 
+                accent={ECON_META[body.economy].color}
+              />
+            </div>
           )}
 
-          <Divider />
+          {!isStar && !isShip && <Divider />}
 
           {!isExplored ? (
-            <div className="p-3 border border-dashed border-primary/20 rounded bg-primary/5 mb-2">
+            <div className="p-3 border border-dashed border-primary/20 rounded bg-primary/5">
               <div className="flex items-center gap-2 mb-2">
                 <span className="w-2 h-2 bg-warning rounded-full animate-pulse" />
                 <span className="text-[9px] font-mono-hud uppercase text-warning tracking-widest font-bold">Data Corrupted</span>
@@ -442,126 +642,17 @@ function formatLabel(raw: string): string {
               </p>
             </div>
           ) : (
-            <>
-              <Row k="Temperature" v={`${body.temperature} K`} />
-              <Row k="Environment" v={formatLabel(body.habitabilityZone)} accent={zoneColors[body.habitabilityZone]} />
-              <Row k="Atmosphere" v={body.atmosphere ?? "None"} />
-              
-              <Divider />
-              
-              <Row k="Population" v={body.population > 0 ? `${body.population.toFixed(1)} M` : "Uninhabited"} />
-              <Row k="Economy" v={ECON_META[body.economy].label} accent={ECON_META[body.economy].color} />
-              <button
-                onClick={() => {
-                  if (owner) {
-                    onPlayClick?.();
-                    onSelectEmpire?.(owner.id);
-                  }
-                }}
-                className={`w-full flex items-center justify-between gap-3 text-[11px] p-1 rounded transition-colors ${owner ? 'hover:bg-primary/5 group' : ''}`}
-              >
-                <span className={`font-mono-hud text-[9px] uppercase tracking-widest text-muted-foreground ${owner ? 'group-hover:text-primary transition-colors' : ''}`}>Sovereign</span>
-                <span className="flex items-center gap-1.5 text-right text-foreground">
-                  {owner && <span className="inline-block w-2 h-2 rounded-full" style={{ background: `hsl(${owner.hue} 70% 55%)` }} />}
-                  {owner?.name ?? "Unclaimed"}
-                </span>
-              </button>
-              
+            <div className="space-y-4 pb-2">
               {body.type === "terrestrial" && (
-                <>
-                  <Divider />
-                  <SubTitle>Biosphere</SubTitle>
-              <Row k="Flora"  v={formatLabel(body.flora)}  accent={bioColors[body.flora]} />
-                  <Row k="Fauna"  v={formatLabel(body.fauna)}  accent={bioColors[body.fauna]} />
-                </>
-              )}
-              {/* Residency Section */}
-              {!isShip && !isStar && isExplored && !residencyProhibited && (
-                <div className="mt-4 border-t border-primary/20 pt-4">
-                  <SubTitle>Citizenship</SubTitle>
-                  {userResidency?.bodyId === body.id ? (
-                    <div className="bg-success/10 border border-success/20 px-3 py-2 rounded flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 bg-success rounded-full shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
-                        <span className="text-[10px] font-bold text-success uppercase tracking-widest">Permanent Resident</span>
-                      </div>
-                      <span className="text-[9px] text-success/60 font-mono-hud">Joined {new Date(userResidency.joinedAt).toLocaleDateString()}</span>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-2">
-                      {residencyApplications.find(a => a.bodyId === body.id && a.status === 'pending') ? (
-                        <div className="bg-warning/10 border border-warning/20 px-3 py-2 rounded flex items-center justify-between animate-pulse">
-                           <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 bg-warning rounded-full" />
-                            <span className="text-[10px] font-bold text-warning uppercase tracking-widest">Application Pending</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => { onPlayClick?.(); onClaimResidency(body.id, !body.ownerId); }}
-                          className="w-full bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-bold py-2 px-4 rounded text-[9px] tracking-[0.2em] transition-all flex items-center justify-center gap-2 group"
-                        >
-                          <UserPlus size={12} className="group-hover:scale-110 transition-transform" />
-                          {body.ownerId ? "APPLY FOR RESIDENCY" : "CLAIM RESIDENCY"}
-                        </button>
-                      )}
-                      {userResidency && userResidency.bodyId !== body.id && (
-                        <p className="text-[8px] text-muted-foreground text-center italic">Current Residency: {userResidency.bodyId}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Local Governance Section */}
-              {!isShip && !isStar && isExplored && !body.ownerId && !residencyProhibited && (
-                <div className="mt-4 border-t border-primary/20 pt-4">
-                  <SubTitle>Local Governance</SubTitle>
-                  {bodyGovernance[body.id] ? (
-                    <div className="bg-primary/10 border border-primary/20 px-3 py-2 rounded">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[10px] font-bold text-primary uppercase tracking-widest">
-                          {bodyGovernance[body.id].status === 'governed' ? "Provisional Council" : "Imperial Territory"}
-                        </span>
-                        <span className="text-[8px] text-primary/60 font-mono-hud uppercase">
-                          {bodyGovernance[body.id].status === 'governed' ? "Active Cycle" : "Established"}
-                        </span>
-                      </div>
-                      {bodyGovernance[body.id].electionEndTime && (
-                        <div className="text-[8px] font-mono-hud text-muted-foreground mt-1 uppercase mb-3">
-                          Council Formed: {new Date(bodyGovernance[body.id].electionEndTime).toLocaleDateString()}
-                        </div>
-                      )}
-                      <button
-                        onClick={() => { 
-                          onPlayClick?.(); 
-                          const targetId = bodyGovernance[body.id].status === 'governed' ? body.id : bodyGovernance[body.id].empireId;
-                          if (targetId) onSelectEmpire?.(targetId); 
-                        }}
-                        className="w-full bg-primary/20 hover:bg-primary/40 border border-primary/40 text-primary font-bold py-1.5 px-4 rounded text-[9px] tracking-[0.2em] transition-all flex items-center justify-center gap-2"
-                      >
-                        <Scale size={12} />
-                        ACCESS COUNCIL
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-2">
-                      <p className="text-[8px] text-muted-foreground italic leading-relaxed">
-                        This body is an independent region. Establish a local council to begin the path to statehood.
-                      </p>
-                      <button
-                        onClick={() => { onPlayClick?.(); onInitiateGovernance(body.id); }}
-                        disabled={userResidency?.bodyId !== body.id}
-                        className="w-full bg-warning/10 hover:bg-warning/20 border border-warning/30 text-warning font-bold py-2 px-4 rounded text-[9px] tracking-[0.2em] transition-all flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Scale size={12} className="group-hover:rotate-12 transition-transform" />
-                        INITIATE GOVERNANCE
-                      </button>
-                      {userResidency?.bodyId !== body.id && (
-                        <p className="text-[7px] text-destructive/60 uppercase text-center tracking-widest">Permanent Residency Required</p>
-                      )}
-                    </div>
-                  )}
+                <div className="grid grid-cols-2 gap-2 p-2 border border-primary/10 rounded">
+                  <div className="space-y-0.5">
+                    <div className="text-[8px] text-muted-foreground uppercase font-mono-hud">Biosphere: Flora</div>
+                    <div className={`text-[10px] font-bold ${bioColors[body.flora]}`}>{formatLabel(body.flora)}</div>
+                  </div>
+                  <div className="space-y-0.5">
+                    <div className="text-[8px] text-muted-foreground uppercase font-mono-hud">Biosphere: Fauna</div>
+                    <div className={`text-[10px] font-bold ${bioColors[body.fauna]}`}>{formatLabel(body.fauna)}</div>
+                  </div>
                 </div>
               )}
 
@@ -578,43 +669,107 @@ function formatLabel(raw: string): string {
                   </div>
                 </>
               )}
+            </div>
+          )}
+        </div>
+      ) : activeTab === "governance" ? (
+        <div className="animate-in fade-in slide-in-from-right-2 duration-300 space-y-4">
+          {isExplored && (
+            <div className="space-y-4 pb-2">
+              {/* Sovereignty Info (Compact) */}
+              <div className="flex items-center justify-between p-2 rounded bg-primary/5 border border-primary/10">
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${owner ? "" : "bg-muted-foreground"}`} style={owner ? { background: `hsl(${owner.hue} 70% 55%)` } : {}} />
+                  <span className="text-[9px] font-mono-hud uppercase text-muted-foreground tracking-widest text-glow">Sovereign Control</span>
+                </div>
+                <button
+                  disabled={!owner}
+                  onClick={() => owner && onSelectEmpire?.(owner.id)}
+                  className={`text-[10px] font-bold ${owner ? "text-primary hover:underline hover:text-primary-bright" : "text-muted-foreground"}`}
+                >
+                  {owner?.name ?? "Independent Area"}
+                </button>
+              </div>
 
-              {!isStar && body.deposits.length > 0 && (
-                <>
-                  <Divider />
-                  <SubTitle>Resources</SubTitle>
-                  <div className="flex flex-wrap gap-1.5">
-                    {body.deposits.map((d) => {
-                      const richnessColor = {
-                        trace: "text-muted-foreground/80",
-                        moderate: "text-info/90",
-                        significant: "text-primary/90",
-                        rich: "text-success/90",
-                        abundant: "text-warning/90"
-                      }[d.richness];
-                      const richnessSymbols = {
-                        trace: "★",
-                        moderate: "★★",
-                        significant: "★★★",
-                        rich: "★★★★",
-                        abundant: "★★★★★"
-                      }[d.richness];
-
-                      return (
-                        <div key={d.resource} className="px-2 py-1 flex flex-col border border-primary/20 bg-primary/5 rounded-sm min-w-[70px]">
-                          <span className="text-[9px] uppercase tracking-wider text-primary/80 font-bold leading-tight">
-                            {d.resource}
-                          </span>
-                          <span className={`text-[9px] font-mono-hud font-bold tracking-tighter ${effectiveIsVisited ? richnessColor : "text-muted-foreground"}`}>
-                            {effectiveIsVisited ? richnessSymbols : "???"}
-                          </span>
-                        </div>
-                      );
-                    })}
+              {/* Residency Section */}
+              {!isShip && !isStar && !residencyProhibited && (
+                <div className="p-3 bg-primary/5 border border-primary/10 rounded space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-primary uppercase tracking-widest">Residency Status</span>
+                    {userResidency?.bodyId === body.id && <span className="px-1.5 py-0.5 rounded bg-success/20 text-success text-[7px] font-bold uppercase tracking-widest border border-success/30">Citizen</span>}
                   </div>
-                </>
+                  
+                  {userResidency?.bodyId === body.id ? (
+                    <div className="bg-success/10 border border-success/20 px-3 py-2 rounded flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 bg-success rounded-full" />
+                        <span className="text-[9px] text-success font-mono-hud font-bold">Resident of {body.name}</span>
+                      </div>
+                      <span className="text-[8px] text-success/60 font-mono-hud">{new Date(userResidency.joinedAt).toLocaleDateString()}</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {residencyApplications.find(a => a.bodyId === body.id && a.status === 'pending') ? (
+                        <div className="bg-warning/10 border border-warning/20 px-3 py-2 rounded flex items-center justify-between">
+                           <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 bg-warning rounded-full animate-pulse" />
+                            <span className="text-[9px] font-bold text-warning uppercase">Application Under Review</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { onPlayClick?.(); onClaimResidency(body.id, !body.ownerId); }}
+                          className="w-full py-2 bg-primary/20 border border-primary/40 text-primary font-bold text-[9px] tracking-widest rounded hover:bg-primary/30 transition-all"
+                        >
+                          {body.ownerId ? "Request Citizenship" : "Establish First Residency"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
-            </>
+
+              {/* Local Governance Section */}
+              {!isShip && !isStar && !body.ownerId && !residencyProhibited && (
+                <div className="p-3 bg-primary/5 border border-primary/10 rounded space-y-3">
+                  <SubTitle>Territorial Administration</SubTitle>
+                  {bodyGovernance[body.id] && bodyGovernance[body.id].status !== 'neutral' && (bodyGovernance[body.id].status === 'governed' || bodyGovernance[body.id].empireId) ? (
+                    <div className="bg-primary/10 border border-primary/20 px-3 py-2 rounded">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] font-bold text-primary uppercase tracking-widest">
+                          {bodyGovernance[body.id].status === 'governed' ? "Local Council" : "Imperial Control"}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => { 
+                          onPlayClick?.(); 
+                          const targetId = bodyGovernance[body.id].status === 'governed' ? body.id : bodyGovernance[body.id].empireId;
+                          if (targetId) onSelectEmpire?.(targetId); 
+                        }}
+                        className="w-full bg-primary/20 hover:bg-primary/40 border border-primary/40 text-primary font-bold py-1.5 px-4 rounded text-[9px] tracking-[0.2em] transition-all flex items-center justify-center gap-2"
+                      >
+                        <Scale size={12} />
+                        MANAGE TERRITORY
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      <p className="text-[9px] text-muted-foreground italic leading-tight">
+                        This region lacks formal infrastructure. Establish a regional authority to unlock advanced features.
+                      </p>
+                      <button
+                        onClick={() => { onPlayClick?.(); onInitiateGovernance(body.id); }}
+                        disabled={userResidency?.bodyId !== body.id}
+                        className="w-full bg-warning/10 hover:bg-warning/20 border border-warning/30 text-warning font-bold py-2 px-4 rounded text-[9px] tracking-widest flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        <Scale size={12} />
+                        INITIATE GOVERNANCE
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
       ) : (
@@ -625,6 +780,7 @@ function formatLabel(raw: string): string {
           userResources={userResources}
           currentJob={currentJob}
           onBuildFactory={onBuildFactory}
+          onBuildInfrastructure={onBuildInfrastructure}
           onApplyForJob={onApplyForJob}
           onWorkJob={onWorkJob}
           onLeaveJob={onLeaveJob}
@@ -633,18 +789,16 @@ function formatLabel(raw: string): string {
           userId={userId}
           onCollect={onCollect}
           onUpgrade={onUpgrade}
+          onUpgradeInfrastructure={onUpgradeInfrastructure}
           onSaveSettings={onSaveSettings}
           factoryInputStorage={factoryInputStorage}
           onDepositInput={onDepositInput}
+          isVisited={effectiveIsVisited}
         />
       )}
     </Panel>
   );
 }
-
-import { Building2, Pickaxe, UserPlus, LogOut, Briefcase as JobIcon, Coins as SC_Icon, Package, Settings, ArrowUp, ChevronRight } from "lucide-react";
-import { RESOURCE_META, RICHNESS_VALUES, T1_RESOURCES, T2_RESOURCES, T3_RESOURCES } from "@/galaxy/meta";
-import { useState } from "react";
 
 const STORAGE_CAPACITY = [100, 300, 750, 2000, 5000];
 const STORAGE_COST = [2000, 6000, 15000, 40000];
@@ -655,7 +809,7 @@ const REPLENISH_COST = [3000, 8000, 20000];
 
 function FactoryCard({
   f, currentJob, isAtThisBody, userId, onPlayClick,
-  onWorkJob, onApplyForJob, onLeaveJob, onCollect, onUpgrade, onSaveSettings,
+  onWorkJob, onApplyForJob, onLeaveJob, onCollect, onUpgrade, onUpgradeInfrastructure, onSaveSettings,
   factoryInputStorage, onDepositInput, userResources, bodyName
 }: {
   f: Installation; currentJob: any; isAtThisBody: boolean; userId: string | null;
@@ -663,14 +817,16 @@ function FactoryCard({
   onWorkJob: () => void; onApplyForJob: (id: string) => void; onLeaveJob: () => void;
   onCollect: (id: string) => void;
   onUpgrade: (id: string, type: 'storage' | 'slots' | 'replenish') => void;
+  onUpgradeInfrastructure?: (id: string) => void;
   onSaveSettings: (id: string, wage: number, jobs: number) => void;
   factoryInputStorage: Record<string, Record<string, number>>;
   onDepositInput: (factoryId: string, resource: string, amount: number) => void;
   userResources: UserResource[];
   bodyName: string;
 }) {
-  const rMeta = (RESOURCE_META as any)[f.resourceType];
+  const rMeta = (RESOURCE_META as any)[f.resourceType] || Object.values(INFRA_META).find(m => m.type === f.type);
   const isWorkingHere = currentJob?.factoryId === f.id;
+  const isInfrastructure = f.resourceType === 'Structure';
   const isOwner = f.ownerId === userId && !f.isNpcOwned;
   const [showSettings, setShowSettings] = useState(false);
   const [showUpgrades, setShowUpgrades] = useState(false);
@@ -682,102 +838,85 @@ function FactoryCard({
   const storageFull = f.storage >= storageCapacity;
 
   return (
-    <div className={`border rounded transition-all ${isWorkingHere ? 'border-primary bg-primary/10 shadow-[0_0_15px_rgba(var(--primary-rgb),0.2)]' : 'border-primary/20 bg-primary/5'}`}>
-      {/* Header */}
-      <div className="p-3">
-        <div className="flex justify-between items-start">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-primary/10 border border-primary/20 rounded">
-              <Building2 size={16} className="text-primary" />
-            </div>
-            <div>
-              <div className="text-[10px] font-bold text-primary uppercase">{rMeta?.label || f.type}</div>
-              <div className="text-[8px] text-muted-foreground uppercase">{f.isNpcOwned ? "NPC Controlled" : "Player Owned"}</div>
-            </div>
+    <div className={`border rounded transition-all flex flex-col overflow-hidden ${isWorkingHere ? 'border-primary bg-primary/10' : 'border-primary/20 bg-primary/5'}`}>
+      {/* Condensed Header */}
+      <div className="px-3 py-2 border-b border-primary/10 flex items-center justify-between gap-2 overflow-hidden">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="p-1 bg-primary/10 rounded">
+            {isInfrastructure ? <GalaxyIcon name={rMeta?.icon} className="w-3 h-3 text-primary" /> : <Building2 size={12} className="text-primary/70 shrink-0" />}
           </div>
-          <div className="text-right flex items-center gap-2">
-            {!f.isNpcOwned && (
-              <div className="text-right">
-                <div className="text-[10px] font-bold text-success flex items-center gap-1 justify-end">
-                  <SC_Icon size={10} /> {f.wage} SC
-                </div>
-                <div className="text-[8px] text-muted-foreground uppercase mt-0.5">wage/shift</div>
-              </div>
-            )}
-            {isOwner && (
-              <div className="flex gap-1">
-                <button onClick={() => { setShowSettings(s => !s); setShowUpgrades(false); }}
-                  className={`p-1 rounded border transition-all ${showSettings ? 'border-primary bg-primary/20 text-primary' : 'border-primary/20 text-muted-foreground hover:border-primary/40 hover:text-primary'}`}
-                  title="Factory Settings">
-                  <Settings size={11} />
-                </button>
-                <button onClick={() => { setShowUpgrades(u => !u); setShowSettings(false); }}
-                  className={`p-1 rounded border transition-all ${showUpgrades ? 'border-info bg-info/20 text-info' : 'border-primary/20 text-muted-foreground hover:border-info/40 hover:text-info'}`}
-                  title="Upgrades">
-                  <ArrowUp size={11} />
-                </button>
-              </div>
-            )}
+          <div className="truncate">
+            <div className="text-[10px] font-bold text-primary uppercase leading-tight truncate">{rMeta?.label || f.type}</div>
+            <div className="text-[7px] text-muted-foreground uppercase leading-none">{isInfrastructure ? `Level ${f.tier} Station` : (f.isNpcOwned ? "NPC" : "Owned")}</div>
           </div>
         </div>
-
-        {/* Storage bar (player factories only) */}
-        {!f.isNpcOwned && (
-          <div className="mt-2 space-y-1">
-            <div className="flex justify-between text-[8px] font-mono-hud uppercase">
-              <span className="flex items-center gap-1 text-muted-foreground"><Package size={8} /> Output Storage</span>
-              <span className={storageFull ? "text-warning" : "text-primary"}>{f.storage} / {storageCapacity}</span>
+        
+        <div className="flex items-center gap-3 shrink-0">
+          {!f.isNpcOwned && (
+            <div className="text-right">
+              <div className="text-[10px] font-bold text-success flex items-center gap-1 leading-none">
+                <SC_Icon size={9} /> {f.wage}
+              </div>
             </div>
-            <div className="h-1 bg-primary/10 rounded-full overflow-hidden">
+          )}
+          {isOwner && (
+            <div className="flex gap-1">
+              <button 
+                onClick={() => { setShowSettings(s => !s); setShowUpgrades(false); }}
+                className={`p-1 rounded transition-all ${showSettings ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-primary'}`}
+              >
+                <Settings size={11} />
+              </button>
+              <button 
+                onClick={() => { setShowUpgrades(u => !u); setShowSettings(false); }}
+                className={`p-1 rounded transition-all ${showUpgrades ? 'bg-info/20 text-info' : 'text-muted-foreground hover:text-info'}`}
+              >
+                <ArrowUp size={11} />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="p-2 space-y-2">
+        {/* Storage bar */}
+        {!f.isNpcOwned && (
+          <div className="space-y-1">
+            <div className="flex justify-between text-[7px] font-mono-hud uppercase leading-none">
+              <span className="text-muted-foreground">Output: {f.storage}u</span>
+              <span className={storageFull ? "text-warning" : "text-primary/60"}>Cap: {storageCapacity}</span>
+            </div>
+            <div className="h-0.5 bg-primary/10 rounded-full overflow-hidden">
               <div className={`h-full transition-all ${storageFull ? 'bg-warning' : 'bg-primary'}`} style={{ width: `${storagePct}%` }} />
             </div>
           </div>
         )}
 
-        {/* Input Storage (T2/T3) */}
+        {/* Inputs (Grid-based if multiple) */}
         {(f.tier ?? 1) > 1 && (
-          <div className="mt-3 p-2 bg-primary/5 border border-primary/10 rounded space-y-2">
-            <div className="text-[7px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Raw Materials Required</div>
+          <div className="grid grid-cols-1 gap-1.5 p-1.5 bg-primary/5 rounded border border-primary/10">
             {rMeta?.inputs?.map((inp: any) => {
               const currentInput = factoryInputStorage[f.id]?.[inp.resource] ?? 0;
               const userInCargo = userResources.find(r => r.resourceType === inp.resource)?.amount ?? 0;
               const inputMeta = (RESOURCE_META as any)[inp.resource];
               
               return (
-                <div key={inp.resource} className="space-y-1">
-                  <div className="flex justify-between items-center text-[8px]">
-                    <div className="flex items-center gap-1">
-                      <GalaxyIcon name={inputMeta?.icon} className="w-2.5 h-2.5" color={inputMeta?.color} />
-                      <span className="text-primary/80 font-mono-hud uppercase">{inp.resource}</span>
-                    </div>
-                    <span className="font-mono-hud text-primary">{currentInput} units</span>
+                <div key={inp.resource} className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 overflow-hidden">
+                    <GalaxyIcon name={inputMeta?.icon} className="w-3 h-3 shrink-0" color={inputMeta?.color} />
+                    <span className="text-[8px] text-primary/80 font-mono-hud uppercase truncate leading-none">{inp.resource}</span>
                   </div>
-                  {isOwner && isAtThisBody && userInCargo > 0 && (
-                    <div className="flex gap-1 mt-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[8px] font-mono-hud text-primary leading-none">{currentInput}u</span>
+                    {isOwner && isAtThisBody && userInCargo > 0 && (
                       <button 
-                        onClick={() => onDepositInput(f.id, inp.resource, Math.min(userInCargo, 10))}
-                        className="flex-1 py-0.5 border border-primary/20 hover:bg-primary/10 text-[7px] text-primary uppercase rounded transition-all"
+                        onClick={() => onDepositInput(f.id, inp.resource, 10)}
+                        className="px-1 py-0.5 border border-primary/20 hover:bg-primary/10 text-[7px] text-primary uppercase rounded"
                       >
-                        Deposit 10 ({userInCargo})
+                        Add 10
                       </button>
-                      <button 
-                        onClick={() => onDepositInput(f.id, inp.resource, userInCargo)}
-                        className="px-1.5 py-0.5 border border-primary/20 hover:bg-primary/10 text-[7px] text-primary uppercase rounded transition-all"
-                      >
-                        All
-                      </button>
-                    </div>
-                  )}
-                  {isOwner && !isAtThisBody && (
-                    <div className="text-[6px] text-warning/70 uppercase tracking-widest mt-1 italic leading-tight">
-                      Proximity Required: Visit {bodyName} to deposit
-                    </div>
-                  )}
-                  {!isOwner && (
-                    <div className="text-[6px] text-muted-foreground uppercase tracking-tighter mt-1">
-                      Restricted: Owner transport required
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -785,38 +924,47 @@ function FactoryCard({
         )}
 
         {/* Action buttons */}
-        <div className="mt-3 flex gap-2">
-          {isWorkingHere ? (
-            <>
+        <div className="flex gap-1.5">
+          {!isInfrastructure && (
+            isWorkingHere ? (
+              <>
+                <button
+                  disabled={!isAtThisBody || storageFull}
+                  onClick={() => { onPlayClick?.(); onWorkJob(); }}
+                  className={`flex-1 py-1.5 bg-primary text-background font-bold text-[9px] uppercase tracking-wider rounded transition-all flex items-center justify-center gap-1.5 ${(!isAtThisBody || storageFull) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <Pickaxe size={11} />
+                  Shift
+                </button>
+                <button onClick={() => { onPlayClick?.(); onLeaveJob(); }}
+                  className="px-2 border border-error/40 text-error hover:bg-error/10 transition-all rounded">
+                  <LogOut size={11} />
+                </button>
+              </>
+            ) : (
               <button
-                disabled={!isAtThisBody || storageFull}
-                onClick={() => { onPlayClick?.(); onWorkJob(); }}
-                className={`flex-1 py-2 bg-primary text-background font-bold text-[9px] uppercase tracking-widest rounded shadow-lg hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 ${(!isAtThisBody || storageFull) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                disabled={!!currentJob || !isAtThisBody}
+                onClick={() => { onPlayClick?.(); onApplyForJob(f.id); }}
+                className={`flex-1 py-1.5 border border-primary text-primary font-bold text-[9px] uppercase tracking-wider rounded hover:bg-primary/10 transition-all flex items-center justify-center gap-1.5 ${(!!currentJob || !isAtThisBody) ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
-                <Pickaxe size={12} />
-                {storageFull ? "Storage Full" : (isOwner ? "Work (no wage)" : "Work (5 AP)")}
+                <UserPlus size={11} />
+                Contract
               </button>
-              <button onClick={() => { onPlayClick?.(); onLeaveJob(); }}
-                className="p-2 border border-error/40 text-error hover:bg-error/10 transition-all rounded" title="Quit Job">
-                <LogOut size={12} />
-              </button>
-            </>
-          ) : (
+            )
+          )}
+          {isInfrastructure && isOwner && isAtThisBody && (
             <button
-              disabled={!!currentJob || !isAtThisBody}
-              onClick={() => { onPlayClick?.(); onApplyForJob(f.id); }}
-              className={`flex-1 py-2 border border-primary text-primary font-bold text-[9px] uppercase tracking-widest rounded hover:bg-primary/10 transition-all flex items-center justify-center gap-2 ${(!!currentJob || !isAtThisBody) ? 'opacity-50 cursor-not-allowed' : ''}`}
+               onClick={() => setShowUpgrades(!showUpgrades)}
+               className="flex-1 py-1.5 bg-info/20 border border-info/40 text-info font-bold text-[9px] uppercase tracking-wider rounded flex items-center justify-center gap-1.5"
             >
-              <UserPlus size={12} />
-              {currentJob ? "Already Employed" : "Accept Job"}
+              <ArrowUp size={11} />
+              Upgrade Facility
             </button>
           )}
-          {/* Collect button — owner, at body, has stock */}
           {isOwner && isAtThisBody && f.storage > 0 && (
             <button onClick={() => { onPlayClick?.(); onCollect(f.id); }}
-              className="px-2 py-2 border border-success/40 text-success hover:bg-success/10 transition-all rounded flex items-center gap-1 text-[8px] font-bold uppercase"
-              title={`Collect ${f.storage} units`}>
-              <Package size={11} /> Collect
+              className="px-2 py-1.5 border border-success/40 text-success hover:bg-success/10 transition-all rounded flex items-center gap-1 text-[8px] font-bold uppercase truncate">
+              Collect
             </button>
           )}
         </div>
@@ -848,8 +996,55 @@ function FactoryCard({
       {/* Upgrades panel */}
       {showUpgrades && isOwner && (
         <div className="border-t border-primary/20 p-3 bg-info/5 space-y-2">
-          <div className="text-[8px] font-bold text-info/70 uppercase tracking-widest mb-1">Factory Upgrades</div>
-          {/* Storage */}
+          <div className="text-[8px] font-bold text-info/70 uppercase tracking-widest mb-1">{isInfrastructure ? "Structural Upgrades" : "Factory Upgrades"}</div>
+          {isInfrastructure ? (
+            (() => {
+              const infraKey = Object.keys(INFRA_META).find(k => (INFRA_META as any)[k].type === f.type) as keyof typeof INFRA_META;
+              if (!infraKey) return null;
+              const meta = (INFRA_META as any)[infraKey];
+              const currentTier = f.tier || 1;
+              const nextTierConfig = meta.tiers[currentTier]; // tiers are 0-indexed, so tiers[1] is T2
+
+              if (!nextTierConfig) return <div className="text-[9px] text-success italic font-mono-hud">Facility at maximum theoretical efficiency.</div>;
+
+              return (
+                <div className="space-y-2">
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <div className="text-[10px] font-bold text-foreground">Target: Tier {currentTier + 1}</div>
+                      <div className="text-[7px] text-muted-foreground uppercase">{meta.type === 'Resource Silo' ? `Capacity: ${nextTierConfig.capacity}u` : "Advanced Protocols"}</div>
+                    </div>
+                    <div className="text-right">
+                       <div className="text-[10px] text-info font-mono-hud">{nextTierConfig.costSC.toLocaleString()} SC</div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-black/20 p-2 rounded border border-info/10">
+                    <div className="text-[7px] text-muted-foreground uppercase tracking-widest mb-1">Required Materials:</div>
+                    <div className="flex flex-wrap gap-2">
+                      {nextTierConfig.mats.map((m: any) => {
+                         const has = userResources.find(ur => ur.resourceType === m.resource)?.amount || 0;
+                         return (
+                           <div key={m.resource} className={`text-[8px] font-mono-hud ${has >= m.qty ? 'text-success' : 'text-error'}`}>
+                             {m.resource}: {has}/{m.qty}
+                           </div>
+                         );
+                      })}
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={() => { onPlayClick?.(); onUpgradeInfrastructure?.(f.id); }}
+                    className="w-full py-1.5 bg-info text-background text-[8px] font-bold uppercase rounded hover:bg-info/90 shadow-[0_0_10px_rgba(var(--info-rgb),0.3)]"
+                  >
+                    Authorize Upgrade
+                  </button>
+                </div>
+              );
+            })()
+          ) : (
+            <>
+              {/* Storage */}
           {(() => {
             const tier = f.storageTier ?? 0;
             const nextCost = STORAGE_COST[tier];
@@ -905,6 +1100,8 @@ function FactoryCard({
               </div>
             );
           })()}
+          </>
+          )}
         </div>
       )}
     </div>
@@ -913,9 +1110,9 @@ function FactoryCard({
 
 function EconomyTab({ 
   body, factories, bodyResources, userResources, currentJob, 
-  onBuildFactory, onApplyForJob, onWorkJob, onLeaveJob, onPlayClick,
-  isAtThisBody, userId, onCollect, onUpgrade, onSaveSettings,
-  factoryInputStorage, onDepositInput
+  onBuildFactory, onBuildInfrastructure, onApplyForJob, onWorkJob, onLeaveJob, onPlayClick,
+  isAtThisBody, userId, onCollect, onUpgrade, onUpgradeInfrastructure, onSaveSettings,
+  factoryInputStorage, onDepositInput, isVisited
 }: {
   body: Body;
   factories: Installation[];
@@ -923,6 +1120,7 @@ function EconomyTab({
   userResources: UserResource[];
   currentJob: FactoryWorker | null;
   onBuildFactory: (res: string) => void;
+  onBuildInfrastructure?: (key: any) => void;
   onApplyForJob: (id: string) => void;
   onWorkJob: () => void;
   onLeaveJob: () => void;
@@ -931,22 +1129,37 @@ function EconomyTab({
   userId: string | null;
   onCollect: (id: string) => void;
   onUpgrade: (id: string, type: 'storage' | 'slots' | 'replenish') => void;
+  onUpgradeInfrastructure?: (id: string) => void;
   onSaveSettings: (id: string, wage: number, jobs: number) => void;
   factoryInputStorage: Record<string, Record<string, number>>;
   onDepositInput: (factoryId: string, resource: string, amount: number) => void;
+  isVisited: boolean;
 }) {
   const isSanctum = body.systemId.startsWith('sys-inner-') || body.systemId === 'sys-center';
-  
+  const [buildConfirm, setBuildConfirm] = useState<{ res: string; cost: number; isInfra?: boolean; infraKey?: any } | null>(null);
+
+  const richnessSymbols = {
+    trace: "★",
+    moderate: "★★",
+    significant: "★★★",
+    rich: "★★★★",
+    abundant: "★★★★★"
+  } as const;
+
   return (
     <div className="animate-in fade-in slide-in-from-right-2 duration-300 space-y-4">
       {/* Planetary Resources Section */}
       <section>
-        <SubTitle>Surface Resources</SubTitle>
-        <div className="space-y-2">
+        <div className="flex items-center justify-between mb-2">
+          <SubTitle>Surface Deposits</SubTitle>
+          {!isSanctum && (
+            <div className="text-[7px] text-muted-foreground uppercase tracking-widest bg-primary/5 px-1.5 py-0.5 rounded border border-primary/10">Extraction Possible</div>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
           {body.deposits.map((d) => {
             const bRes = bodyResources.find(r => r.resourceType === d.resource);
             const rMeta = (RESOURCE_META as any)[d.resource];
-            const richness = RICHNESS_VALUES[d.richness as keyof typeof RICHNESS_VALUES] || 1;
             
             let liveAmount = bRes?.currentAmount || 0;
             if (bRes) {
@@ -958,39 +1171,41 @@ function EconomyTab({
             
             const pct = bRes ? (liveAmount / bRes.maxAmount) * 100 : 100;
             const isDepleted = liveAmount <= 0;
+            const hasOwnFactory = factories.some((f: any) => f.resourceType === d.resource && f.ownerId === userId);
 
             return (
-              <div key={d.resource} className="p-3 border border-primary/20 bg-primary/5 rounded">
-                <div className="flex justify-between items-start mb-2">
-                  <div className="flex items-center gap-2">
-                    <GalaxyIcon name={rMeta?.icon} className="w-5 h-5" color={rMeta?.color} />
-                    <div>
-                      <div className="text-[10px] font-bold text-primary uppercase">{d.resource}</div>
-                      <div className="text-[8px] text-muted-foreground uppercase">Richness: {d.richness} ({richness}★)</div>
-                    </div>
+              <div key={d.resource} className={`p-2 border rounded bg-primary/5 transition-all ${hasOwnFactory ? "border-primary/40 bg-primary/10" : "border-primary/15"}`}>
+                <div className="flex justify-between items-start mb-1">
+                  <div className="flex items-center gap-1.5 overflow-hidden">
+                    <GalaxyIcon name={rMeta?.icon} className="w-4 h-4 shrink-0" color={rMeta?.color} />
+                    <div className="text-[9px] font-bold text-primary uppercase leading-tight truncate shrink">{d.resource}</div>
                   </div>
-                  {!isSanctum && !factories.some((f: any) => f.resourceType === d.resource && f.ownerId === userId) && (
+                  {!isSanctum && !hasOwnFactory && (
                     <button 
                       disabled={!isAtThisBody}
-                      onClick={() => { onPlayClick?.(); onBuildFactory(d.resource); }}
-                      className={`px-2 py-1 border border-primary/40 text-primary text-[8px] font-bold uppercase rounded hover:bg-primary/20 transition-all ${!isAtThisBody ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      onClick={() => { 
+                        onPlayClick?.(); 
+                        setBuildConfirm({ res: d.resource, cost: 0 }); // Free for T1
+                      }}
+                      className={`px-1.5 py-0.5 border border-primary/40 text-primary text-[7px] font-bold uppercase rounded hover:bg-primary/20 transition-all ${!isAtThisBody ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
-                      Build Factory
+                      Build
                     </button>
                   )}
+                  {hasOwnFactory && <div className="text-[7px] text-success font-bold uppercase tracking-tighter shrink-0">Owned</div>}
                 </div>
                 
                 <div className="space-y-1">
-                  <div className="flex justify-between text-[8px] font-mono-hud uppercase">
+                  <div className="flex justify-between text-[7px] font-mono-hud uppercase leading-none">
                     <span className={isDepleted ? "text-error" : "text-muted-foreground"}>
-                      {isDepleted ? "DEPLETED" : "AVAILABILITY"}
+                      {isDepleted ? "Empty" : isVisited ? richnessSymbols[d.richness as keyof typeof richnessSymbols] : "???"}
                     </span>
-                    <span className="text-primary">{bRes ? liveAmount : "???"} / {bRes ? bRes.maxAmount : "???"}</span>
+                    <span className="text-primary/70">{isVisited && bRes ? liveAmount : "???"}</span>
                   </div>
-                  <div className="h-1 bg-primary/10 rounded-full overflow-hidden">
+                  <div className="h-0.5 bg-primary/10 rounded-full overflow-hidden">
                     <div 
                       className={`h-full transition-all duration-1000 ${isDepleted ? 'bg-error' : 'bg-primary'}`} 
-                      style={{ width: `${pct}%` }} 
+                      style={{ width: `${isVisited ? pct : 100}%` }} 
                     />
                   </div>
                 </div>
@@ -1001,66 +1216,127 @@ function EconomyTab({
       </section>
 
       <Divider />
+      
+      {/* Infrastructure Section */}
+      {!isSanctum && (
+        <section className="space-y-3">
+          <SubTitle>Orbital Infrastructure</SubTitle>
+          <div className="grid grid-cols-1 gap-2">
+            {Object.entries(INFRA_META).map(([key, meta]) => {
+              const alreadyHas = factories.some(f => f.type === meta.type && f.ownerId === userId);
+              const firstTier = (meta as any).tiers[0];
+              const canBuild = !alreadyHas && isAtThisBody;
+
+              return (
+                <div key={key} className={`p-2 border rounded flex items-center justify-between transition-all ${alreadyHas ? 'border-primary/40 bg-primary/10 opacity-60' : 'border-primary/20 bg-primary/5 hover:border-primary/40'} ${!isAtThisBody && !alreadyHas ? 'opacity-30 cursor-not-allowed' : ''}`}>
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-primary/10 rounded border border-primary/20">
+                      <GalaxyIcon name={meta.icon} className="w-4 h-4 text-primary" />
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-bold text-foreground uppercase leading-tight">{meta.label}</div>
+                      <div className="text-[7px] text-muted-foreground uppercase tracking-widest">{alreadyHas ? "Active Facility" : `${firstTier.costSC.toLocaleString()} SC + Materials`}</div>
+                    </div>
+                  </div>
+                  {!alreadyHas && (
+                    <button
+                      disabled={!isAtThisBody}
+                      onClick={() => setBuildConfirm({ res: meta.label, cost: firstTier.costSC, isInfra: true, infraKey: key as any })}
+                      className="px-2 py-1 bg-primary text-background text-[8px] font-bold uppercase rounded hover:bg-primary/90 transition-all shadow-[0_0_10px_rgba(var(--primary-rgb),0.2)]"
+                    >
+                      Commission
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Advanced Industry Section */}
       {!isSanctum && (
-        <section>
-          <SubTitle>Advanced Industrial Development</SubTitle>
-          <div className="grid grid-cols-2 gap-2">
-            {/* T2 Category */}
-            <div className="p-2 border border-primary/20 bg-primary/5 rounded">
-              <div className="text-[8px] font-bold text-primary/70 uppercase tracking-[0.2em] mb-2 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                T2 Refineries
-              </div>
-              <div className="grid grid-cols-4 gap-1">
-                {T2_RESOURCES.map(res => {
-                  const meta = (RESOURCE_META as any)[res];
-                  const alreadyHas = factories.some(f => f.resourceType === res && f.ownerId === userId);
-                  return (
-                    <button
-                      key={res}
-                      disabled={alreadyHas || !isAtThisBody}
-                      onClick={() => onBuildFactory(res)}
-                      title={`Build ${meta.label} (20,000 SC)`}
-                      className={`aspect-square flex items-center justify-center border rounded transition-all ${alreadyHas ? 'border-success/40 bg-success/10 text-success' : 'border-primary/20 bg-background hover:border-primary/60 text-primary/60 hover:text-primary'} ${(!isAtThisBody) ? 'opacity-30' : ''}`}
-                    >
-                      <GalaxyIcon name={meta.icon} className="w-5 h-5" color={alreadyHas ? meta.color : 'currentColor'} />
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="mt-2 text-[7px] text-muted-foreground uppercase text-center">Cost: 20,000 SC</div>
-            </div>
-
-            {/* T3 Category */}
-            <div className="p-2 border border-accent/20 bg-accent/5 rounded">
-              <div className="text-[8px] font-bold text-accent/70 uppercase tracking-[0.2em] mb-2 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-                T3 Fabricators
-              </div>
-              <div className="grid grid-cols-3 gap-1">
-                {T3_RESOURCES.map(res => {
-                  const meta = (RESOURCE_META as any)[res];
-                  const alreadyHas = factories.some(f => f.resourceType === res && f.ownerId === userId);
-                  return (
-                    <button
-                      key={res}
-                      disabled={alreadyHas || !isAtThisBody}
-                      onClick={() => onBuildFactory(res)}
-                      title={`Build ${meta.label} (75,000 SC)`}
-                      className={`aspect-square flex items-center justify-center border rounded transition-all ${alreadyHas ? 'border-success/40 bg-success/10 text-success' : 'border-accent/20 bg-background hover:border-accent/60 text-accent/60 hover:text-accent'} ${(!isAtThisBody) ? 'opacity-30' : ''}`}
-                    >
-                      <GalaxyIcon name={meta.icon} className="w-5 h-5" color={alreadyHas ? meta.color : 'currentColor'} />
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="mt-2 text-[7px] text-muted-foreground uppercase text-center">Cost: 75,000 SC</div>
+        <section className="space-y-3">
+          <SubTitle>Specialized Industry (T2/T3)</SubTitle>
+          
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
+              {T2_RESOURCES.map(res => {
+                const meta = (RESOURCE_META as any)[res];
+                const alreadyHas = factories.some(f => f.resourceType === res && f.ownerId === userId);
+                return (
+                  <button
+                    key={res}
+                    disabled={alreadyHas || !isAtThisBody}
+                    onClick={() => setBuildConfirm({ res, cost: 20000 })}
+                    className={`flex-none w-28 p-1.5 border rounded flex flex-col gap-1 items-center transition-all ${alreadyHas ? 'border-success/40 bg-success/5 opacity-60' : 'border-primary/20 bg-primary/5 hover:border-primary/60 hover:bg-primary/10'} ${!isAtThisBody && !alreadyHas ? 'opacity-30 cursor-not-allowed' : ''}`}
+                  >
+                    <GalaxyIcon name={meta.icon} className="w-5 h-5" color={alreadyHas ? meta.color : meta.color + '80'} />
+                    <div className="text-[8px] font-bold text-foreground uppercase truncate w-full text-center">{meta.label}</div>
+                    <div className="text-[7px] text-muted-foreground tracking-widest">{alreadyHas ? "CONSTRUCTED" : "20K SC"}</div>
+                  </button>
+                );
+              })}
+              {T3_RESOURCES.map(res => {
+                const meta = (RESOURCE_META as any)[res];
+                const alreadyHas = factories.some(f => f.resourceType === res && f.ownerId === userId);
+                return (
+                  <button
+                    key={res}
+                    disabled={alreadyHas || !isAtThisBody}
+                    onClick={() => setBuildConfirm({ res, cost: 75000 })}
+                    className={`flex-none w-28 p-1.5 border rounded flex flex-col gap-1 items-center transition-all ${alreadyHas ? 'border-success/40 bg-success/5 opacity-60' : 'border-accent/20 bg-accent/5 hover:border-accent/60 hover:bg-accent/10'} ${!isAtThisBody && !alreadyHas ? 'opacity-30 cursor-not-allowed' : ''}`}
+                  >
+                    <GalaxyIcon name={meta.icon} className="w-5 h-5" color={alreadyHas ? meta.color : meta.color + '80'} />
+                    <div className="text-[8px] font-bold text-foreground uppercase truncate w-full text-center">{meta.label}</div>
+                    <div className="text-[7px] text-muted-foreground tracking-widest">{alreadyHas ? "CONSTRUCTED" : "75K SC"}</div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </section>
       )}
+
+      {/* Build Confirmation Overlay */}
+      {buildConfirm && (
+        <div className="p-3 bg-primary/10 border border-primary/30 rounded backdrop-blur-md animate-in zoom-in-95 duration-200">
+          <div className="flex justify-between items-start mb-3">
+            <div>
+              <div className="text-[7px] text-muted-foreground uppercase tracking-widest mb-1">Confirm Installation</div>
+              <div className="text-[10px] font-bold text-primary uppercase">Construction: {buildConfirm.res}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[7px] text-muted-foreground uppercase tracking-widest mb-1">Fee</div>
+              <div className="text-[10px] font-mono-hud text-success">{buildConfirm.cost.toLocaleString()} SC</div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setBuildConfirm(null)}
+              className="flex-1 py-1.5 border border-primary/20 text-muted-foreground text-[8px] font-bold uppercase rounded hover:bg-primary/10"
+            >
+              Cancel
+            </button>
+            <button 
+              onClick={() => {
+                onPlayClick?.();
+                if (buildConfirm.isInfra) {
+                  onBuildInfrastructure?.(buildConfirm.infraKey);
+                } else {
+                  onBuildFactory(buildConfirm.res);
+                }
+                setBuildConfirm(null);
+              }}
+              className="flex-1 py-1.5 bg-primary text-background text-[8px] font-bold uppercase rounded hover:bg-primary/90 shadow-lg"
+            >
+              Confirm Build
+            </button>
+          </div>
+        </div>
+      )}
+      
+      <Divider />
 
       <Divider />
 
@@ -1086,6 +1362,7 @@ function EconomyTab({
               onLeaveJob={onLeaveJob}
               onCollect={onCollect}
               onUpgrade={onUpgrade}
+              onUpgradeInfrastructure={onUpgradeInfrastructure}
               onSaveSettings={onSaveSettings}
               factoryInputStorage={factoryInputStorage}
               onDepositInput={onDepositInput}
@@ -1222,4 +1499,29 @@ function SubTitle({ children }: { children: React.ReactNode }) {
 
 function Hint({ children }: { children: React.ReactNode }) {
   return <div className="mt-2 text-[10px] text-muted-foreground italic">{children}</div>;
+}
+
+/* ======================= COMPACT UI PIECES ======================= */
+
+function BodyStatBadge({ icon: Icon, value, label, accent }: { icon: any; value: string | number; label: string; accent?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center p-2 rounded bg-primary/5 border border-primary/10 gap-0.5 hover:bg-primary/10 transition-colors">
+      <Icon size={12} className={accent || "text-primary/70"} />
+      <div className="text-[10px] font-bold text-foreground leading-none">{value}</div>
+      <div className="text-[7px] text-muted-foreground uppercase tracking-wider text-center">{label}</div>
+    </div>
+  );
+}
+
+function StatCard({ icon: Icon, label, value, caption, accent }: { icon: any; label: string; value: string; caption?: string; accent?: string }) {
+  return (
+    <div className="p-2 border border-primary/15 rounded bg-primary/5 flex flex-col gap-1 hover:border-primary/30 transition-all">
+      <div className="flex items-center gap-1.5">
+        <Icon size={10} className="text-primary/60" />
+        <span className="text-[8px] font-mono-hud uppercase tracking-widest text-muted-foreground truncate">{label}</span>
+      </div>
+      <div className={`text-[10px] font-medium truncate ${accent || "text-foreground"}`}>{value}</div>
+      {caption && <div className="text-[7px] text-muted-foreground italic leading-tight truncate">{caption}</div>}
+    </div>
+  );
 }

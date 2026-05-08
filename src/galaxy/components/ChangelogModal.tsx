@@ -11,6 +11,21 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.3.0",
+    title: "Persistent Navigation & Fleet Logistics",
+    date: "2026-05-08",
+    type: "feature",
+    changes: [
+      "Implemented Persistent Background Journeys: Ships now continue multi-jump paths while offline with upfront AP commitment",
+      "Added Ship Registry & Fleet Sidebar: New tactical interface for quick vessel management and health tracking",
+      "Expanded Shipyard: Introduced Science and Cargo vessel classes with unique class-specific hull configurations",
+      "Enabled Fleet Visual Refit: All owned vessels can now be customized with unique parts in the Shipyard",
+      "Implemented Deterministic Offline Resolution: Other players see offline ships moving based on calculated flight time",
+      "Visual Overhaul: Added Incursion Zone labels, regional interference indicators, and improved system-view fidelity",
+      "Standardized Galactic Navigation: Unified 'Back to Galaxy' flow across all views and improved mobile HUD ergonomics"
+    ]
+  },
+  {
     version: "0.2.4",
     title: "Galactic Reset & NPC Refresh",
     date: "2026-05-06",
@@ -376,7 +391,7 @@ export function ChangelogModal({ open, onOpenChange, onPlayClick }: { open: bool
             Acknowledge
           </button>
           <div className="font-mono-hud text-[8px] text-muted-foreground/30 uppercase tracking-[0.2em]">
-            Starbound Hegemony · Build v0.2.4-sb
+            Starbound Hegemony · Build v0.3.0-sb
           </div>
         </div>
       </div>

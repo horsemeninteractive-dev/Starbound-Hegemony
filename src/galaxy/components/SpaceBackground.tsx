@@ -209,16 +209,21 @@ export function SpaceBackground({ starType, view = "galaxy", quality = "high" }:
                 gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
               }
             `}
-            fragmentShader={`
-              varying vec3 vNormal;
-              uniform float uTime;
-              uniform vec3  uTint;
-              void main() {
-                float d = dot(vNormal, vec3(0.0, 1.0, 0.0));
-                vec3 col = mix(uTint * 0.2, uTint * 0.05, d * 0.5 + 0.5);
-                gl_FragColor = vec4(col, 0.04);
-              }
-            `}
+      fragmentShader={`
+                varying vec3 vNormal;
+                uniform float uTime;
+                uniform vec3  uTint;
+                void main() {
+                  float d = dot(vNormal, vec3(0.0, 1.0, 0.0));
+                  
+                  // Add a subtle flicker/shimmer to the dust
+                  float flicker = sin(uTime * 1.5 + vNormal.x * 20.0) * cos(uTime * 0.8 + vNormal.z * 15.0);
+                  flicker = flicker * 0.5 + 0.5;
+                  
+                  vec3 col = mix(uTint * 0.2, uTint * 0.05, d * 0.5 + 0.5);
+                  gl_FragColor = vec4(col, 0.04 + flicker * 0.02);
+                }
+              `}
           />
         </mesh>
       )}

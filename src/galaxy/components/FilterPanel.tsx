@@ -25,6 +25,7 @@ const LAYER_ORDER: { key: DisplayLayer; label: string; views?: string[] }[] = [
   { key: "orbitPaths",    label: "Orbit Paths",     views: ["system", "body"] },
   { key: "weatherSystems",label: "Weather Systems", views: ["body"] },
   { key: "cityLights",    label: "City Lights",     views: ["body"] },
+  { key: "incursionLabels", label: "Incursion Labels", views: ["galaxy"] },
 ];
 
 export function FilterPanel({ filters, onToggle, view, onPlayClick, onPlayExpand, onPlayCollapse }: Props) {

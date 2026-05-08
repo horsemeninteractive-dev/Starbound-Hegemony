@@ -23,21 +23,25 @@ export function AuthScreen({ onSuccess, playClick, playSuccess }: AuthScreenProp
     setLoading(true);
 
     try {
+      console.log("Starting auth attempt for mode:", mode);
       if (mode === "signup") {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { error, data } = await supabase.auth.signUp({ email, password });
+        console.log("Signup response:", { error, data });
         if (error) throw error;
-        toast.success("Account created!", {
-          description: "Check your email for the verification link."
+        toast.success("Identity Registered", {
+          description: "Commander registry initialized. Check your email to verify uplink."
         });
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error, data } = await supabase.auth.signInWithPassword({ email, password });
+        console.log("Login response:", { error, data });
         if (error) throw error;
         playSuccess();
         onSuccess();
       }
     } catch (error) {
+      console.error("Auth error caught:", error);
       const message = error instanceof Error ? error.message : "An unknown error occurred";
-      toast.error("Authentication Failed", {
+      toast.error("Uplink Failed", {
         description: message
       });
     } finally {
@@ -191,9 +195,9 @@ export function AuthScreen({ onSuccess, playClick, playSuccess }: AuthScreenProp
               </button>
             </div>
 
+          </div>
         </div>
       </div>
     </div>
-  </div>
-);
+  );
 }

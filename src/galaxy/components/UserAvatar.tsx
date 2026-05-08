@@ -1,6 +1,7 @@
+import React from "react";
 import { Shield, Flag, Globe, Users, Award, Building2, Fingerprint, Sparkles, Rocket, Compass, Crosshair, Target, Sword, Anchor, Zap } from "lucide-react";
 
-const PARTY_ICONS: Record<string, any> = {
+const PARTY_ICONS: Record<string, React.ComponentType<{ size?: string | number; style?: React.CSSProperties; className?: string }>> = {
   Shield, Flag, Globe, Users, Award, Building2, Fingerprint, 
   Sparkles, Rocket, Compass, Crosshair, Target, Sword, Anchor, Zap
 };

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
 import { 
   Globe, Zap, Shield, Rocket, TrendingUp, Anchor, History, Factory, Award, Hexagon,
   ShieldAlert, Coins, Newspaper, Sparkles, User as UserIcon, Users as UsersIcon
@@ -9,6 +10,7 @@ import { type GalaxyApp } from "@/galaxy/useGalaxyApp";
 import { RESOURCE_META } from "@/galaxy/meta";
 import { UserAvatar } from "./UserAvatar";
 import { supabase } from "@/lib/supabase";
+import { PageHeader } from "./PageHeader";
 
 
 
@@ -139,7 +141,7 @@ export function ProfileView({ app, onPlayClick, isPublic = false }: { app: Galax
   }, [isPublic, app.viewedUserId, app.user]);
 
   const handleAddFriend = async () => {
-    if (!app.user || !targetProfile) return;
+    if (!app.user || !targetProfile || app.user.id === targetProfile.id) return;
     const { error } = await supabase.from('friendships').insert({
       user_id: app.user.id,
       friend_id: targetProfile.id,
@@ -179,103 +181,120 @@ export function ProfileView({ app, onPlayClick, isPublic = false }: { app: Galax
   ].filter(t => !isPublic || !t.restricted);
 
   return (
-    <div className="flex-1 flex flex-col sm:flex-row bg-background/40 backdrop-blur-sm animate-fade-in overflow-hidden">
-      {/* Profile Sidebar */}
-      <aside className="w-full sm:w-[320px] border-b sm:border-b-0 sm:border-r border-primary/20 flex flex-col bg-primary/5 animate-in slide-in-from-left duration-500 shrink-0">
-        <div className="p-3 sm:p-6 border-b border-primary/20 flex flex-row sm:flex-col items-center justify-center sm:justify-start gap-4">
-          <UserAvatar 
-            avatarUrl={displayUser.avatar} 
-            level={displayUser.level}
-            partyIcon={isPublic ? undefined : app.playerPartyIcon}
-            partyHue={isPublic ? undefined : app.playerPartyHue}
-            size={window.innerWidth < 640 ? "lg" : "xl"}
-          />
-          <div className="flex flex-col text-left sm:text-center min-w-0">
-            <h2 className="font-display text-base sm:text-2xl text-primary text-glow uppercase tracking-[0.1em] truncate">{displayUser.name}</h2>
-            <p className="font-mono-hud text-[8px] sm:text-[10px] text-muted-foreground uppercase tracking-[0.2em] sm:tracking-[0.3em] truncate">{isPublic ? "Foreign Commander" : "Commander"}</p>
+    <div className="flex-1 flex flex-col bg-background/40 backdrop-blur-sm animate-fade-in overflow-hidden relative">
+      <div className="absolute inset-0 pointer-events-none scanline opacity-10" />
+      
+      <PageHeader 
+        title={isPublic ? displayUser.name : "Commander Profile"} 
+        subtitle={isPublic ? `Archive: ${displayUser.name}` : "Personal Personnel Records"}
+        icon={<UserIcon />}
+        onBack={() => app.setPage("map")}
+        actions={
+          isPublic && friendStatus === 'none' && targetProfile && targetProfile.id !== app.user?.id ? (
+            <Button 
+              onClick={handleAddFriend}
+              size="sm"
+              className="bg-primary text-background font-display text-[10px] font-bold uppercase tracking-widest rounded hover:bg-primary/80 transition-all flex items-center gap-1.5 shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)]"
+            >
+              <UsersIcon size={12} /> Add Friend
+            </Button>
+          ) : isPublic && friendStatus === 'pending_received' ? (
+            <Button 
+              onClick={() => targetProfile && handleAcceptFriend(targetProfile.id)}
+              size="sm"
+              className="bg-success text-background font-display text-[10px] font-bold uppercase tracking-widest rounded hover:bg-success/80 transition-all flex items-center gap-1.5 shadow-[0_0_15px_rgba(var(--success-rgb),0.3)]"
+            >
+              <UsersIcon size={12} /> Accept Request
+            </Button>
+          ) : null
+        }
+      />
+
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Profile Stats & Tabs Bar */}
+        <div className="border-b border-primary/20 bg-primary/5 shrink-0 px-4 py-1.5 md:py-4 md:px-8">
+          <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center md:items-start lg:items-center gap-2 md:gap-10">
+            <div className="flex items-center gap-3 w-full md:w-auto">
+              <UserAvatar 
+                avatarUrl={displayUser.avatar} 
+                level={displayUser.level}
+                partyIcon={isPublic ? undefined : app.playerPartyIcon}
+                partyHue={isPublic ? undefined : app.playerPartyHue}
+                size={window.innerWidth < 640 ? "sm" : "xl"}
+              />
+              
+              <div className="flex flex-col text-left min-w-0 flex-1">
+                <h2 className="font-display text-base md:text-4xl text-primary text-glow uppercase tracking-wider truncate leading-tight">{displayUser.name}</h2>
+                <p className="font-mono-hud text-[7px] md:text-sm text-muted-foreground uppercase tracking-widest mt-0.5">{isPublic ? "Foreign Commander" : "Hegemony Commander"}</p>
+                
+                <div className="flex flex-wrap items-center gap-2 mt-1">
+                  <div className="flex items-center gap-1.5 px-1.5 py-0.5 bg-primary/10 border border-primary/20 rounded">
+                    <Award className="w-2 h-2 md:w-3 md:h-3 text-primary" />
+                    <span className="font-mono-hud text-[7px] md:text-[8px] uppercase text-primary">LVL {displayUser.level}</span>
+                  </div>
+                  {isPublic && (
+                    <div className="flex items-center gap-1.5 px-1.5 py-0.5 bg-warning/10 border border-warning/20 rounded">
+                      <ShieldAlert className="w-2 h-2 md:w-3 md:h-3 text-warning" />
+                      <span className="font-mono-hud text-[7px] md:text-[8px] uppercase text-warning">Encrypted</span>
+                    </div>
+                  )}
+                  {isPublic && friendStatus === 'pending_sent' && (
+                    <div className="px-2 py-0.5 bg-primary/10 border border-primary/20 text-primary/60 font-display text-[7px] font-bold uppercase tracking-widest rounded flex items-center gap-1">
+                      <Sparkles size={8} /> Request Sent
+                    </div>
+                  )}
+                  {isPublic && friendStatus === 'accepted' && (
+                    <div className="px-2 py-0.5 bg-success/10 border border-success/20 text-success font-display text-[7px] font-bold uppercase tracking-widest rounded flex items-center gap-1">
+                      <Shield size={8} /> Trusted
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <nav className="flex items-center gap-1 overflow-x-auto no-scrollbar w-full md:w-auto mt-2 md:mt-0 pb-1 md:pb-0 scroll-smooth">
+              {TABS.map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.label}
+                    onClick={() => {
+                      setActiveTab(tab.label);
+                      onPlayClick();
+                    }}
+                    className={`flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded transition-all whitespace-nowrap ${
+                      activeTab === tab.label 
+                        ? "bg-primary/20 text-primary border border-primary/40 shadow-[inset_0_0_10px_hsl(var(--primary)/0.1)]" 
+                        : "text-muted-foreground hover:text-primary hover:bg-primary/5 border border-transparent"
+                    }`}
+                  >
+                    <Icon size={window.innerWidth < 640 ? 12 : 14} />
+                    <span className="font-display text-[9px] md:text-[10px] uppercase tracking-widest">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
           </div>
         </div>
 
-        <nav className="p-1 sm:p-2 flex flex-row sm:flex-col gap-1 overflow-x-auto sm:overflow-y-auto no-scrollbar">
-            {TABS.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.label}
-                  onClick={() => {
-                    setActiveTab(tab.label);
-                    onPlayClick();
-                  }}
-                  className={`flex items-center gap-1.5 sm:gap-3 px-2 sm:px-4 py-1.5 sm:py-3 rounded transition-all whitespace-nowrap ${
-                    activeTab === tab.label 
-                      ? "bg-primary/20 text-primary border border-primary/40 shadow-[inset_0_0_10px_hsl(var(--primary)/0.1)]" 
-                      : "text-muted-foreground hover:text-primary hover:bg-primary/5 border border-transparent"
-                  }`}
-                >
-                  <Icon size={14} className="sm:w-[18px] sm:h-[18px]" />
-                  <span className="font-display text-[10px] sm:text-sm uppercase tracking-widest">{tab.label}</span>
-                </button>
-              );
-            })}
-        </nav>
-      </aside>
-
-      {/* Profile Main Content Area */}
-      <main className="flex-1 flex flex-col overflow-hidden relative">
-        <div className="absolute inset-0 pointer-events-none scanline opacity-10" />
-        
-        <div className="flex-1 overflow-y-auto p-3 sm:p-10 custom-scrollbar relative z-10">
-          {isLoading ? (
-            <div className="flex-1 flex items-center justify-center h-full min-h-[400px]">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-            </div>
-          ) : (
-            <div className="max-w-4xl mx-auto">
-              {isPublic && (
-                <div className="mb-8 p-4 bg-primary/10 border border-primary/20 rounded-lg flex items-center justify-between">
-                   <div className="flex items-center gap-3">
-                      <ShieldAlert className="text-warning" size={20} />
-                      <div className="flex flex-col">
-                         <span className="font-display text-[10px] text-primary uppercase tracking-widest">Public Archive Access</span>
-                         <span className="font-mono-hud text-[8px] text-muted-foreground uppercase tracking-tighter">Sensitive data restricted by Hegemony Privacy Protocol</span>
-                      </div>
-                   </div>
-                    <div className="flex gap-2">
-                      {friendStatus === 'none' && (
-                        <button 
-                          onClick={handleAddFriend}
-                          className="px-4 py-1.5 bg-primary text-background font-display text-[9px] font-bold uppercase tracking-widest rounded hover:bg-primary/80 transition-all flex items-center gap-2"
-                        >
-                          <UsersIcon size={12} /> Add Friend
-                        </button>
-                      )}
-                      {friendStatus === 'pending_sent' && (
-                        <div className="px-4 py-1.5 bg-primary/10 border border-primary/20 text-primary/60 font-display text-[9px] font-bold uppercase tracking-widest rounded flex items-center gap-2">
-                          <Sparkles size={12} /> Request Sent
-                        </div>
-                      )}
-                      {friendStatus === 'pending_received' && (
-                        <button 
-                          onClick={() => targetProfile && handleAcceptFriend(targetProfile.id)}
-                          className="px-4 py-1.5 bg-success text-background font-display text-[9px] font-bold uppercase tracking-widest rounded hover:bg-success/80 transition-all flex items-center gap-2"
-                        >
-                          <UsersIcon size={12} /> Accept Request
-                        </button>
-                      )}
-                      {friendStatus === 'accepted' && (
-                        <div className="px-4 py-1.5 bg-success/10 border border-success/20 text-success font-display text-[9px] font-bold uppercase tracking-widest rounded flex items-center gap-2">
-                          <Shield size={12} /> Trusted Friend
-                        </div>
-                      )}
-                      <button 
-                        onClick={() => app.resetPublicViews()}
-                        className="px-3 py-1.5 bg-primary/20 border border-primary/30 text-[9px] font-mono-hud text-primary uppercase tracking-widest hover:bg-primary/30 transition-all rounded"
-                      >
-                        Close Archive
-                      </button>
+        {/* Profile Main Content Area */}
+        <main className="flex-1 overflow-y-auto p-4 md:p-10 custom-scrollbar relative z-10">
+          <div className="max-w-6xl mx-auto">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-full min-h-[400px]">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              </div>
+            ) : (
+              <div className="w-full">
+                {isPublic && (
+                  <div className="mb-8 p-3 bg-primary/5 border border-primary/20 rounded flex items-center gap-3">
+                    <ShieldAlert className="text-warning shrink-0" size={16} />
+                    <div className="flex flex-col">
+                       <span className="font-display text-[9px] text-primary uppercase tracking-widest">Public Archive Access</span>
+                       <span className="font-mono-hud text-[7px] text-muted-foreground uppercase tracking-tighter">Sensitive data restricted by Hegemony Privacy Protocol</span>
                     </div>
-                </div>
-              )}
+                  </div>
+                )}
             {activeTab === "Overview" && (
               <div className="space-y-6 sm:space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -673,5 +692,6 @@ export function ProfileView({ app, onPlayClick, isPublic = false }: { app: Galax
         </div>
       </main>
     </div>
-  );
+  </div>
+);
 }

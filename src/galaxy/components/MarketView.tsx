@@ -1,11 +1,12 @@
 import { useState, useMemo } from "react";
-import { ShoppingCart, Package, Tags, ArrowRight, AlertTriangle, LogOut, CheckCircle2, Factory, Coins as SC_Icon, Globe } from "lucide-react";
+import { ShoppingCart, Package, Tags, ArrowRight, AlertTriangle, LogOut, CheckCircle2, Factory, Coins as SC_Icon, Globe, ChevronLeft } from "lucide-react";
 import { GalaxyIcon } from "./ResourceIcon";
 import type { GalaxyApp } from "../useGalaxyApp";
 import { RESOURCE_META, BASE_PRICES, NPC_SELL_MULTIPLIER, NPC_BUY_MULTIPLIER } from "../meta";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { PageHeader } from "./PageHeader";
 
 export function MarketView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: () => void }) {
   const [activeTab, setActiveTab] = useState<"global" | "personal">("global");
@@ -62,45 +63,40 @@ export function MarketView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: 
     setSellPrice(100);
   };
 
+  const headerActions = (
+    <div className="flex gap-2">
+      <Button
+        variant={activeTab === "global" ? "default" : "outline"}
+        onClick={() => { onPlayClick?.(); setActiveTab("global"); }}
+        className="h-10 text-[10px] uppercase tracking-widest font-display"
+      >
+        Trade Hub
+      </Button>
+      <Button
+        variant={activeTab === "personal" ? "default" : "outline"}
+        onClick={() => { onPlayClick?.(); setActiveTab("personal"); }}
+        className="h-10 text-[10px] uppercase tracking-widest font-display"
+      >
+        My Escrow
+      </Button>
+    </div>
+  );
+
   return (
-    <div className="flex-1 bg-background/40 backdrop-blur-sm p-4 sm:p-12 overflow-y-auto custom-scrollbar animate-in slide-in-from-bottom-2 duration-500">
-      <div className="max-w-6xl mx-auto space-y-12 pb-24">
-        
-        {/* Header */}
-        <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 border-b border-primary/20 pb-10">
-          <div className="flex items-center gap-5">
-            <div className="p-4 bg-primary/10 border border-primary/20 rounded-xl shadow-[0_0_20px_hsl(var(--primary)/0.1)]">
-              <ShoppingCart size={32} className="text-primary" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-display text-white tracking-[0.2em] uppercase text-glow leading-none mb-2">Galactic Market</h1>
-              <div className="flex items-center gap-4 text-xs font-mono-hud uppercase tracking-[0.3em] text-muted-foreground">
-                <span className="flex items-center gap-1"><SC_Icon size={12} className="text-primary" /> {Math.floor(app.sc).toLocaleString()} SC Available</span>
-                <span className="text-primary/20">|</span>
-                <span className="flex items-center gap-1"><Package size={12} className="text-primary" /> Cargo: {app.cargoUsed}/{app.cargoCapacity}</span>
-              </div>
-            </div>
-          </div>
-        </header>
+    <div className="flex-1 flex flex-col bg-background/40 backdrop-blur-sm animate-fade-in overflow-hidden">
+      <PageHeader 
+        title="Galactic Market"
+        subtitle={`${Math.floor(app.sc).toLocaleString()} SC Available · Cargo: ${app.cargoUsed}/${app.cargoCapacity}`}
+        icon={<ShoppingCart />}
+        onBack={() => app.setPage("map")}
+        actions={headerActions}
+      />
 
-        {/* Tabs */}
-        <div className="flex gap-4 border-b border-primary/20 pb-px">
-          <button
-            onClick={() => { onPlayClick?.(); setActiveTab("global"); }}
-            className={`px-6 py-3 font-display uppercase tracking-widest text-sm transition-all border-b-2 ${activeTab === "global" ? "border-primary text-primary text-glow" : "border-transparent text-muted-foreground hover:text-primary/60"}`}
-          >
-            Trade Hub
-          </button>
-          <button
-            onClick={() => { onPlayClick?.(); setActiveTab("personal"); }}
-            className={`px-6 py-3 font-display uppercase tracking-widest text-sm transition-all border-b-2 ${activeTab === "personal" ? "border-primary text-primary text-glow" : "border-transparent text-muted-foreground hover:text-primary/60"}`}
-          >
-            My Escrow
-          </button>
-        </div>
-
-        {/* Global Market */}
-        {activeTab === "global" && (
+      <main className="flex-1 p-4 sm:p-12 overflow-y-auto custom-scrollbar">
+        <div className="max-w-6xl mx-auto space-y-12 pb-24">
+          
+          {/* Global Market */}
+          {activeTab === "global" && (
           <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-500">
             <div className="flex items-center gap-2 mb-6">
               <Globe size={18} className="text-primary" />
@@ -491,8 +487,8 @@ export function MarketView({ app, onPlayClick }: { app: GalaxyApp; onPlayClick: 
             </section>
           </div>
         )}
-
       </div>
-    </div>
-  );
+    </main>
+  </div>
+);
 }

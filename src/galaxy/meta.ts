@@ -152,6 +152,42 @@ export const RESOURCE_META = {
     inputs: [{ resource: "Nanomaterials", qty: 3 }, { resource: "Polymer Sheets", qty: 3 }] },
 } as const;
 
+export const INFRA_META = {
+  silo: {
+    label: "Resource Silo",
+    type: "Resource Silo",
+    icon: "Database",
+    description: "Deep storage facility for bulk resources. Required for managing large T3 industrial chains.",
+    tiers: [
+      { level: 1, capacity: 5000, costSC: 2000, mats: [{ resource: "Ore", qty: 50 }] },
+      { level: 2, capacity: 20000, costSC: 5000, mats: [{ resource: "Steel Alloy", qty: 100 }] },
+      { level: 3, capacity: 75000, costSC: 15000, mats: [{ resource: "Hull Plating", qty: 200 }] }
+    ]
+  },
+  shipyard: {
+    label: "Shipyard",
+    type: "Shipyard",
+    icon: "Rocket",
+    description: "Specialized construction hub for science vessels and heavy freighters.",
+    tiers: [
+      { level: 1, capacity: 1, costSC: 10000, mats: [{ resource: "Steel Alloy", qty: 200 }] },
+      { level: 2, capacity: 3, costSC: 50000, mats: [{ resource: "Hull Plating", qty: 400 }] },
+      { level: 3, capacity: 10, costSC: 250000, mats: [{ resource: "Quantum Reactors", qty: 100 }] }
+    ]
+  },
+  drydock: {
+    label: "Drydock",
+    type: "Drydock",
+    icon: "Anchor",
+    description: "Modular docking bay for fleet storage and passive hull maintenance.",
+    tiers: [
+      { level: 1, capacity: 5, costSC: 5000, mats: [{ resource: "Steel Alloy", qty: 100 }] },
+      { level: 2, capacity: 20, costSC: 25000, mats: [{ resource: "Hull Plating", qty: 200 }] },
+      { level: 3, capacity: 100, costSC: 125000, mats: [{ resource: "Xenotech Frames", qty: 150 }] }
+    ]
+  }
+} as const;
+
 export type ResourceKey = keyof typeof RESOURCE_META;
 
 /** Tier 1 raw resources (planet deposits drive extraction) */
@@ -219,3 +255,41 @@ export const NPC_SELL_MULTIPLIER = 0.65;
 /** Multiplier for NPC supply (players buy FROM the NPC). Ceiling price. */
 export const NPC_BUY_MULTIPLIER = 1.85;
 
+
+// ─── Ship Blueprints ──────────────────────────────────────────────────────────
+
+export const SHIP_BLUEPRINTS = {
+  freighter: {
+    label:        "Atlas-Class Freighter",
+    description:  "Bulk logistics vessel. Assign to automated trade routes for passive SC income.",
+    buildTimeSecs: 86400,   // 24h
+    costSC:        15000,
+    cargoCapacity: 15000,
+    health:        150,
+    materials: [
+      { resource: "Hull Plating",    qty: 5 },
+      { resource: "Warp Drives",     qty: 3 },
+      { resource: "Biotech Modules", qty: 2 },
+    ],
+  },
+  science: {
+    label:        "Veil-Class Survey Vessel",
+    description:  "Long-range survey ship for Sites of Interest and archaeological expeditions.",
+    buildTimeSecs: 172800,  // 48h
+    costSC:        30000,
+    cargoCapacity: 3000,
+    health:        120,
+    materials: [
+      { resource: "Neural Arrays",    qty: 5 },
+      { resource: "Xenotech Frames",  qty: 3 },
+      { resource: "Warp Drives",      qty: 3 },
+      { resource: "Biotech Modules",  qty: 2 },
+    ],
+  },
+  // Corvette intentionally excluded until warfare system is built
+} as const;
+
+export type ShipBlueprintKey = keyof typeof SHIP_BLUEPRINTS;
+
+/** AP cost multiplier for warship fleets — not used yet, reserved for warfare */
+export const WARSHIP_JUMP_MULTIPLIER = 0.2; // +20% per warship, max 3×

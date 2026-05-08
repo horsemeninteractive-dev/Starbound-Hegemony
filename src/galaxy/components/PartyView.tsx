@@ -3,7 +3,8 @@ import {
   Users, UserPlus, Shield, Flag, Globe, Coins, Settings, 
   MessageSquare, Award, ArrowRight, Lock, Plus, Search,
   Fingerprint, Sparkles, Building2,
-  Rocket, Compass, Crosshair, Target, Sword, Anchor, Zap
+  Rocket, Compass, Crosshair, Target, Sword, Anchor, Zap,
+  ChevronLeft
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +32,8 @@ const PARTY_ICONS = [
   { name: "Anchor", icon: Anchor },
   { name: "Zap", icon: Zap },
 ];
+
+import { PageHeader } from "./PageHeader";
 
 export function PartyView({ app, isPublic = false }: { app: GalaxyApp; isPublic?: boolean }) {
   const [activeTab, setActiveTab] = useState<"Browse" | "My Party">(isPublic ? "My Party" : "Browse");
@@ -82,51 +85,49 @@ export function PartyView({ app, isPublic = false }: { app: GalaxyApp; isPublic?
     setSelectedHue(200);
   };
 
+  const headerActions = (
+    <>
+      {!isPublic && (
+        <div className="flex items-center gap-2">
+          <Button 
+            variant={activeTab === "Browse" ? "default" : "outline"}
+            onClick={() => setActiveTab("Browse")}
+            className="h-10 text-[10px] uppercase tracking-widest font-display"
+          >
+            Browse Factions
+          </Button>
+          <Button 
+            variant={activeTab === "My Party" ? "default" : "outline"}
+            onClick={() => setActiveTab("My Party")}
+            className="h-10 text-[10px] uppercase tracking-widest font-display"
+          >
+            {app.userParty ? "My Faction" : "Join/Create"}
+          </Button>
+        </div>
+      )}
+      
+      {isPublic && (
+         <Button 
+           variant="outline"
+           onClick={() => app.resetPublicViews()}
+           className="h-10 text-[10px] uppercase tracking-widest font-display gap-2"
+         >
+           Return to Hub
+         </Button>
+      )}
+    </>
+  );
+
   return (
     <div className="flex-1 flex flex-col bg-background/40 backdrop-blur-sm animate-fade-in overflow-hidden">
-      {/* Header */}
-      <header className="p-4 sm:p-8 border-b border-primary/20 bg-primary/5 shrink-0">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
-          <div className="flex items-center gap-4">
-            <div className="p-3 bg-primary/20 rounded border border-primary/40 shadow-[0_0_20px_rgba(var(--primary-rgb),0.2)]">
-              <Users className="text-primary" size={28} />
-            </div>
-            <div>
-              <h1 className="font-display text-2xl sm:text-3xl text-primary text-glow uppercase tracking-[0.2em]">{isPublic ? "Faction Intel" : "Political Hub"}</h1>
-              <p className="font-mono-hud text-[10px] text-muted-foreground uppercase tracking-widest mt-1">{isPublic ? "Strategic Analysis · Archives" : "Ideology · Power · Governance"}</p>
-            </div>
-          </div>
-
-          {!isPublic && (
-            <div className="flex items-center gap-2">
-              <Button 
-                variant={activeTab === "Browse" ? "default" : "outline"}
-                onClick={() => setActiveTab("Browse")}
-                className="h-10 text-[10px] uppercase tracking-widest font-display"
-              >
-                Browse Factions
-              </Button>
-              <Button 
-                variant={activeTab === "My Party" ? "default" : "outline"}
-                onClick={() => setActiveTab("My Party")}
-                className="h-10 text-[10px] uppercase tracking-widest font-display"
-              >
-                {app.userParty ? "My Faction" : "Join/Create"}
-              </Button>
-            </div>
-          )}
-          
-          {isPublic && (
-             <Button 
-               variant="outline"
-               onClick={() => app.resetPublicViews()}
-               className="h-10 text-[10px] uppercase tracking-widest font-display gap-2"
-             >
-               Return to Hub
-             </Button>
-          )}
-        </div>
-      </header>
+      <PageHeader 
+        title={isPublic ? "Faction Intel" : "Political Hub"}
+        subtitle={isPublic ? "Strategic Analysis · Archives" : "Ideology · Power · Governance"}
+        icon={<Users />}
+        onBack={() => app.setPage("map")}
+        actions={headerActions}
+        hue={displayParty?.hue}
+      />
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto p-4 sm:p-8 custom-scrollbar">

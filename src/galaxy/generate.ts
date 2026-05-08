@@ -565,10 +565,26 @@ function generateHyperlanes(rng: Rng, systems: StarSystem[]): Hyperlane[] {
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
   };
 
+  // 0. Sanctum Hard-wiring: inner systems connect to center ONLY in terms of sanctum peers
   for (const s of systems) {
+    if (s.id.startsWith("sys-inner-")) {
+      const k = key(s.id, "sys-center");
+      if (!seen.has(k)) {
+        seen.add(k);
+        lanes.push({ id: `lane-${lanes.length}`, a: s.id, b: "sys-center" });
+      }
+    }
+  }
+
+  for (const s of systems) {
+    // Skip center/inner for standard proximity pass if they are already hardwired or have custom rules
+    // Actually, center should only connect to inner.
+    // Inner should connect to center AND the nearest non-sanctum neighbors.
+
+    const isSanctum = s.id === "sys-center" || s.id.startsWith("sys-inner-");
+
     const r = Math.hypot(s.pos[0], s.pos[2]);
     const isOuter = r > 2800;
-    const isCore = r < 1400;
 
     const sorted = systems
       .filter((o) => o.id !== s.id)
@@ -579,10 +595,17 @@ function generateHyperlanes(rng: Rng, systems: StarSystem[]): Hyperlane[] {
     const MAX_HUB_DIST = 1600;
 
     // 1. Proximity Pass: Link to the 2 absolute nearest neighbors (CLEAN MESH)
-    // This ensures that "stars almost next to each other" are connected.
     for (let i = 0; i < 2 && i < sorted.length; i++) {
       const [target, dist] = sorted[i];
       if (dist > MAX_LOCAL_DIST) continue;
+      
+      // SANCTUM RULES:
+      // - Center ONLY connects to Inner (handled by hard-wiring or just filtered here)
+      // - Inner NEVER connects to another Inner
+      if (s.id === "sys-center" && !target.id.startsWith("sys-inner-")) continue;
+      if (s.id.startsWith("sys-inner-") && target.id.startsWith("sys-inner-")) continue;
+      if (s.id.startsWith("sys-inner-") && target.id === "sys-center") continue; // already handled
+      if (!isSanctum && target.id === "sys-center") continue; // center only for inner
       
       // OCCLUSION CHECK: Never cross the galactic core
       const dx = target.pos[0] - s.pos[0];
@@ -592,7 +615,8 @@ function generateHyperlanes(rng: Rng, systems: StarSystem[]): Hyperlane[] {
       const closestX = s.pos[0] + t * dx;
       const closestZ = s.pos[2] + t * dz;
       const distToCore = Math.sqrt(closestX * closestX + closestZ * closestZ);
-      if (distToCore < 450) continue;
+      // Sanctum systems are allowed to be near core
+      if (!isSanctum && !target.id.startsWith("sys-inner-") && distToCore < 450) continue;
 
       const k = key(s.id, target.id);
       if (!seen.has(k)) {
@@ -689,6 +713,89 @@ function assignOwnership(rng: Rng, systems: StarSystem[], empires: Empire[]) {
     }
     sys.contest = (sys.id === "sys-center" || sys.id.startsWith("sys-inner-")) ? "frontier" : "anarchic";
   }
+}
+
+function generateRegions(rng: Rng, systems: StarSystem[]): GalacticRegion[] {
+  const regions: GalacticRegion[] = [];
+  
+  // Adjusted counts for better distribution without cluttering
+  const nebulaCount = 12;
+  const dustCount = 12;
+  const stormCount = 12;
+  const riftCount = 12;
+
+  const NEBULA_NAMES = ["Orion", "Carina", "Helix", "Eagle", "Tarantula", "Horsehead", "Veil", "Ring", "Crab", "Lagoon", "Omega", "Trifid", "Flame", "Rosette", "Bubble", "Cone", "Medusa", "Pencil", "Skull", "Trifid"];
+  const DUST_NAMES = ["Coal Sack", "Great Rift", "Serpens", "Musca", "Lupus", "Chamaeleon", "Pipe", "Snake", "Dark Doodad", "Barnard 68", "Dark Horse", "Ink Spot", "Coalsack", "Northern Coal Sack"];
+  const STORM_NAMES = ["Maelstrom", "Thunderhead", "Cyclops", "Supercell", "Hurricane", "Typhoon", "Solar Flare", "Ion Spike", "Gamma Burst", "Static Rift"];
+  const RIFT_NAMES = ["Event Horizon", "Singularity", "Void Anchor", "Gravity Well", "Spacetime Tear", "Omega Point", "Zero-G Abyss", "Mass Driver"];
+
+  const build = (type: RegionType, count: number, namePool: string[], hueBase: number, intensityRange: [number, number] = [0.6, 0.4]) => {
+    let placed = 0;
+    let attempts = 0;
+    
+    while (placed < count && attempts < count * 5) {
+        attempts++;
+        // Find a random system to center on
+        const anchor = systems[randInt(rng, 0, systems.length - 1)];
+        
+        // Randomize radius: Some are tiny (pocket hazards), some are massive (sector-wide)
+        // 150-1400 range for big variety
+        const radius = weightedPick(rng, [
+          [randInt(rng, 150, 400), 40],   // Small pockets
+          [randInt(rng, 450, 800), 40],   // Standard regions
+          [randInt(rng, 900, 1400), 20]   // Massive expanses
+        ]) as number;
+        
+        // COLLISION CHECK: Ensure no two regions overlap too much
+        // We use a buffer of 200 units to ensure clear separation
+        const isOverlap = regions.some(r => {
+          const dx = anchor.pos[0] - r.pos[0];
+          const dy = anchor.pos[1] - r.pos[1];
+          const dz = anchor.pos[2] - r.pos[2];
+          const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          return dist < (radius + r.radius + 200);
+        });
+
+        if (isOverlap) continue;
+
+        let suffix = "Expanse";
+        if (type === "nebula") suffix = "Nebula";
+        if (type === "ion_storm") suffix = "Ion Storm";
+        if (type === "gravity_rift") suffix = "Gravitational Rift";
+
+        const name = `${pick(rng, namePool)} ${suffix}`;
+        
+        const region: GalacticRegion = {
+            id: `reg-${type}-${placed}`,
+            type,
+            name,
+            pos: [...anchor.pos],
+            radius,
+            hue: (hueBase + (rng() - 0.5) * 60 + 360) % 360,
+            intensity: intensityRange[0] + rng() * intensityRange[1]
+        };
+        regions.push(region);
+        placed++;
+
+        // Tag systems within this region
+        for (const sys of systems) {
+            const dx = sys.pos[0] - region.pos[0];
+            const dy = sys.pos[1] - region.pos[1];
+            const dz = sys.pos[2] - region.pos[2];
+            const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (dist < region.radius) {
+                sys.regionId = region.id;
+            }
+        }
+    }
+  };
+
+  build("nebula", nebulaCount, NEBULA_NAMES, 240); // Blue/Purple/Cyan
+  build("dust_cloud", dustCount, DUST_NAMES, 35); // Amber/Red/Dark
+  build("ion_storm", stormCount, STORM_NAMES, 180); // Teal/Electric
+  build("gravity_rift", riftCount, RIFT_NAMES, 280); // Deep Violet/Magenta
+
+  return regions;
 }
 
 export function generateGalaxy(seed: number = 42, opts?: {
@@ -913,6 +1020,8 @@ export function generateGalaxy(seed: number = 42, opts?: {
   const empires = buildEmpires(rng);
   assignOwnership(rng, systems, empires);
 
+  const regions = generateRegions(rng, systems);
+
   const systemById = Object.fromEntries(systems.map((s) => [s.id, s]));
   const sectorById = Object.fromEntries(sectors.map((s) => [s.id, s]));
   const bodyById: Record<string, Body> = {};
@@ -925,5 +1034,5 @@ export function generateGalaxy(seed: number = 42, opts?: {
     }
   }
 
-  return { seed, sectors, systems, hyperlanes, empires, systemById, sectorById, bodyById };
+  return { seed, sectors, systems, regions, hyperlanes, empires, systemById, sectorById, bodyById };
 }

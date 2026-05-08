@@ -279,9 +279,9 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
           // Basic lighting factor (using world-space normal for stability)
           float nDotL = dot(vWorldNormal, lightDirWorld);
           
-          // Occlusion shadows — high quality only (planet<->moon eclipse casting)
+          // Occlusion shadows (planet<->moon eclipse casting)
           float shadowMult = 1.0;
-          if (uQuality > 1.5) {
+          if (uQuality > 0.5) {
             if (uParentSize > 0.0) {
               vec3 occluderDir = uPlanetViewPos - vViewPosition;
               float distToOccluder = length(occluderDir);
@@ -291,10 +291,15 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
                 float t = dot(occluderDir, lightDirView);
                 if (t > 0.0) {
                   float d2 = dot(occluderDir, occluderDir) - t * t;
-                  float r2 = uParentSize * uParentSize;
-                  if (d2 < r2) {
-                    float shadowSoftness = 0.15 * uParentSize;
-                    shadowMult = smoothstep(uParentSize - shadowSoftness, uParentSize, sqrt(d2));
+                  float dist = sqrt(max(0.0, d2));
+                  if (uQuality > 1.5) {
+                    // High: Soft edges
+                    float distFactor = clamp(distToOccluder / 50.0, 1.0, 10.0);
+                    float softness = 0.4 * uParentSize * distFactor;
+                    shadowMult = smoothstep(uParentSize - softness, uParentSize + softness * 0.2, dist);
+                  } else {
+                    // Medium: Block color
+                    if (dist < uParentSize) shadowMult = 0.0;
                   }
                 }
               }
@@ -310,10 +315,15 @@ export function PlanetMaterial({ color, type, size, subtype, hue, landColor, sea
                   float tm = dot(moonDir, lightDirView);
                   if (tm > 0.0) {
                     float dm2 = dot(moonDir, moonDir) - tm * tm;
-                    float rm2 = moonSize * moonSize;
-                    if (dm2 < rm2) {
-                      float softness = 0.15 * moonSize;
-                      shadowMult = min(shadowMult, smoothstep(moonSize - softness, moonSize, sqrt(dm2)));
+                    float dist = sqrt(max(0.0, dm2));
+                    if (uQuality > 1.5) {
+                      // High: Soft edges
+                      float distFactor = clamp(distToMoon / 50.0, 1.0, 10.0);
+                      float softness = 0.4 * moonSize * distFactor;
+                      shadowMult = min(shadowMult, smoothstep(moonSize - softness, moonSize + softness * 0.2, dist));
+                    } else {
+                      // Medium: Block color
+                      if (dist < moonSize) shadowMult = min(shadowMult, 0.0);
                     }
                   }
                 }

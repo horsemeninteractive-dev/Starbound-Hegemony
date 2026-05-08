@@ -207,4 +207,12 @@
     mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
     -webkit-mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
   }
+
+  @keyframes scanline-roll {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(300%); }
+  }
+  .animate-scanline {
+    animation: scanline-roll 4s linear infinite;
+  }
 }

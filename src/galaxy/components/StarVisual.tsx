@@ -235,11 +235,40 @@ function Sun({ scale, color, detailed, quality }: { scale: number; color: THREE.
       {/* Massive Volumetric Aura - Skip for far stars on low */}
       {(detailed || quality !== "low") && <StarAura scale={scale * (detailed ? 3.5 : 1.2)} color={color} />}
       
+      {/* Solar Prominences (Detailed view only) */}
+      {detailed && quality === "high" && (
+        <group rotation={[Math.PI / 4, 0, 0]}>
+          {[...Array(3)].map((_, i) => (
+            <mesh key={i} rotation={[0, (i * Math.PI * 2) / 3, 0]}>
+              <torusGeometry args={[scale * 1.05, scale * 0.02, 16, 32, Math.PI * 0.4]} />
+              <meshBasicMaterial color={color} transparent opacity={0.6} blending={THREE.AdditiveBlending} />
+            </mesh>
+          ))}
+        </group>
+      )}
+
       {/* Multi-Layered Camera-Facing Flare - Skip for far stars on low */}
       {(detailed || quality !== "low") && (
-        <StarFlare scale={scale * (detailed ? 25.0 : 8.0)} color={color} opacity={detailed ? 0.7 : 0.5} />
+        <StarFlare scale={scale * (detailed ? 35.0 : 8.0)} color={color} opacity={detailed ? 0.9 : 0.5} />
       )}
-      {detailed && quality !== "low" && <StarFlare scale={scale * 6.0} color={new THREE.Color("#ffffff")} opacity={0.4} />}
+      {detailed && quality !== "low" && (
+        <>
+          <StarFlare scale={scale * 12.0} color={new THREE.Color("#ffffff")} opacity={0.6} />
+          {/* Third wide anamorphic layer for that "cinematic" look in system view */}
+          <Billboard>
+            <mesh raycast={() => null}>
+              <planeGeometry args={[scale * 100, scale * 2]} />
+              <meshBasicMaterial 
+                color={color} 
+                transparent 
+                opacity={0.15} 
+                blending={THREE.AdditiveBlending} 
+                depthWrite={false} 
+              />
+            </mesh>
+          </Billboard>
+        </>
+      )}
     </group>
   );
 }
@@ -320,13 +349,19 @@ function StarFlare({ scale, color, opacity = 0.5 }: { scale: number; color: THRE
               
               // 2. Diffraction Spikes (8-pointed star)
               float angle = atan(uv.y, uv.x);
-              float spikes = pow(max(0.0, cos(angle * 8.0)), 30.0) * pow(clamp(1.0 - d * 2.0, 0.0, 1.0), 4.0);
-              float spikes2 = pow(max(0.0, cos(angle * 4.0 + 0.8)), 40.0) * pow(clamp(1.0 - d * 2.5, 0.0, 1.0), 3.0);
+              float spikes = pow(max(0.0, cos(angle * 8.0)), 40.0) * pow(clamp(1.0 - d * 2.0, 0.0, 1.0), 4.0);
+              float spikes2 = pow(max(0.0, cos(angle * 4.0 + 0.8)), 50.0) * pow(clamp(1.0 - d * 2.5, 0.0, 1.0), 3.0);
               
-              // 3. Soft Halo
+              // 3. Anamorphic horizontal streaks
+              float hStreak = pow(clamp(1.0 - abs(uv.y * 50.0), 0.0, 1.0), 4.0) * pow(clamp(1.0 - abs(uv.x * 0.8), 0.0, 1.0), 2.0);
+              float hStreak2 = pow(clamp(1.0 - abs(uv.y * 150.0), 0.0, 1.0), 2.0) * pow(clamp(1.0 - abs(uv.x * 0.4), 0.0, 1.0), 1.0);
+              
+              // 4. Soft Helos/Rainbow rings
+              float ring = smoothstep(0.15, 0.18, d) * smoothstep(0.25, 0.18, d) * 0.3;
+              float ring2 = smoothstep(0.35, 0.38, d) * smoothstep(0.45, 0.38, d) * 0.2;
               float halo = pow(clamp(1.0 - d * 2.0, 0.0, 1.0), 8.0) * 0.5;
               
-              float finalIntensity = (core * 1.5 + spikes * 0.8 + spikes2 * 0.4 + halo) * uOpacity;
+              float finalIntensity = (core * 2.5 + spikes * 1.5 + spikes2 * 0.8 + hStreak * 1.2 + hStreak2 * 0.7 + halo + ring + ring2) * uOpacity;
               gl_FragColor = vec4(uColor, finalIntensity);
             }
           `}
@@ -472,7 +507,7 @@ function NeutronStar({ scale, color, pulsar, detailed, quality }: { scale: numbe
       
       {/* Soft Camera-Facing Flare - Skip for far stars on low */}
       {(detailed || quality !== "low") && (
-        <StarFlare scale={scale * (detailed ? 4.0 : 2.5)} color={color} opacity={detailed ? 0.4 : 0.3} />
+        <StarFlare scale={scale * (detailed ? 15.0 : 2.5)} color={color} opacity={detailed ? 0.7 : 0.3} />
       )}
 
       {detailed && <pointLight color={color} intensity={6} distance={80} />}
@@ -480,25 +515,52 @@ function NeutronStar({ scale, color, pulsar, detailed, quality }: { scale: numbe
       {/* Precessing Polar Jets (Pulsar Only) */}
       {pulsar && (
         <group ref={beam}>
-          {/* Top Jet */}
-          <mesh position={[0, jetLen / 2 + scale * 0.4, 0]}>
-            <cylinderGeometry args={[jetRad * 0.15, jetRad * 0.15, jetLen, quality === "low" ? 8 : 16, 4, true]} />
-            <meshBasicMaterial color={color} transparent opacity={0.7} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} />
-          </mesh>
-          {/* Bottom Jet */}
-          <mesh position={[0, -jetLen / 2 - scale * 0.4, 0]} rotation={[Math.PI, 0, 0]}>
-            <cylinderGeometry args={[jetRad * 0.15, jetRad * 0.15, jetLen, quality === "low" ? 8 : 16, 4, true]} />
-            <meshBasicMaterial color={color} transparent opacity={0.7} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} />
-          </mesh>
+          {/* Intense core beam */}
+          <group>
+            <mesh position={[0, jetLen / 2 + scale * 0.4, 0]}>
+              <cylinderGeometry args={[jetRad * 0.2, jetRad * 0.1, jetLen, 12, 1, true]} />
+              <meshBasicMaterial color="#ffffff" transparent opacity={0.95} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
+            </mesh>
+            <mesh position={[0, -jetLen / 2 - scale * 0.4, 0]} rotation={[Math.PI, 0, 0]}>
+              <cylinderGeometry args={[jetRad * 0.2, jetRad * 0.1, jetLen, 12, 1, true]} />
+              <meshBasicMaterial color="#ffffff" transparent opacity={0.95} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
+            </mesh>
+          </group>
+
+          {/* Volumetric outer glow jets */}
+          <group>
+            {[0, 1].map(i => (
+              <mesh key={i} position={[0, (i === 0 ? 1 : -1) * (jetLen / 2 + scale * 0.4), 0]} rotation={[i === 0 ? 0 : Math.PI, 0, 0]}>
+                <cylinderGeometry args={[jetRad * 2.5, jetRad * 0.8, jetLen * 1.5, 16, 1, true]} />
+                <meshBasicMaterial color={color} transparent opacity={0.15} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} />
+              </mesh>
+            ))}
+          </group>
           
+          {/* Spiraling Energy Ribbons (detailed view only) */}
+          {detailed && (
+            <group>
+              {[0, 90, 180, 270].map(angle => (
+                <mesh key={angle} rotation={[0, (angle * Math.PI) / 180, 0]}>
+                  <torusGeometry args={[jetLen * 0.4, scale * 0.08, 12, 48, Math.PI * 0.6]} />
+                  <meshBasicMaterial color={color} transparent opacity={0.4} blending={THREE.AdditiveBlending} />
+                </mesh>
+              ))}
+              <mesh rotation={[0, 0, Math.PI * 0.5]}>
+                 <torusGeometry args={[scale * 1.5, scale * 0.1, 16, 64]} />
+                 <meshBasicMaterial color={color} transparent opacity={0.15} blending={THREE.AdditiveBlending} />
+              </mesh>
+            </group>
+          )}
+
           {/* Jet base flares */}
           <mesh position={[0, scale * 0.5, 0]}>
-            <sphereGeometry args={[scale * 0.8, 16, 16]} />
-            <meshBasicMaterial color={color} transparent opacity={0.4} blending={THREE.AdditiveBlending} />
+            <sphereGeometry args={[scale * 1.2, 16, 16]} />
+            <meshBasicMaterial color={color} transparent opacity={0.6} blending={THREE.AdditiveBlending} />
           </mesh>
           <mesh position={[0, -scale * 0.5, 0]}>
-            <sphereGeometry args={[scale * 0.8, 16, 16]} />
-            <meshBasicMaterial color={color} transparent opacity={0.4} blending={THREE.AdditiveBlending} />
+            <sphereGeometry args={[scale * 1.2, 16, 16]} />
+            <meshBasicMaterial color={color} transparent opacity={0.6} blending={THREE.AdditiveBlending} />
           </mesh>
         </group>
       )}
@@ -760,7 +822,7 @@ function WhiteHole({ scale, detailed, quality }: { scale: number; detailed: bool
       
       {/* Soft Camera-Facing Flare - Skip for far stars on low */}
       {(detailed || quality !== "low") && (
-        <StarFlare scale={scale * (detailed ? 6.0 : 3.5)} color={new THREE.Color("#ffffff")} opacity={detailed ? 0.5 : 0.3} />
+        <StarFlare scale={scale * (detailed ? 20.0 : 3.5)} color={new THREE.Color("#ffffff")} opacity={detailed ? 0.8 : 0.3} />
       )}
       {detailed && <pointLight color="#ffffff" intensity={6} distance={50} decay={2} />}
     </group>
@@ -837,21 +899,24 @@ function BlackHole({ scale, detailed, quality }: { scale: number; detailed: bool
         doppler = clamp(doppler, 0.3, 2.5);
 
         // Swirling turbulent bands
-        float swirl = angle * 3.0 - uTime * 3.0 / max(r * 0.4, 0.1);
+        float swirl = angle * 3.0 - uTime * 4.0 / max(r * 0.4, 0.1);
         float n1 = noise(vec2(r * 0.6, swirl));
         float n2 = noise(vec2(r * 2.5, swirl * 2.0 + uTime * 0.4));
         float turbulence = mix(0.6, 1.4, n1 * 0.7 + n2 * 0.3);
 
         // Bright filament streaks
-        float streak = pow(max(0.0, sin(swirl * 8.0 + r * 2.0)), 6.0) * 0.5;
+        float streak = pow(max(0.0, sin(swirl * 8.0 + r * 2.0)), 6.0) * 0.8;
+        
+        // Gravitational darkening (disk is darker as it enters "lensing shadow")
+        float shadows = smoothstep(-0.2, 0.5, cos(angle + uTime * 0.2));
 
-        vec3 col = baseColor * turbulence * doppler + vec3(1.0, 0.6, 0.3) * streak;
+        vec3 col = (baseColor * turbulence * doppler + vec3(1.0, 0.6, 0.3) * streak) * mix(0.8, 1.2, shadows);
 
         // Inner rim glow (white-hot photon sphere edge)
-        float innerGlow = smoothstep(uInnerR * 1.5, uInnerR * 1.0, r) * 3.0;
+        float innerGlow = smoothstep(uInnerR * 1.8, uInnerR * 1.0, r) * 5.0;
         col += uInnerColor * innerGlow;
 
-        gl_FragColor = vec4(col, edgeFade * 0.92);
+        gl_FragColor = vec4(col, edgeFade * 0.95);
       }
     `
   }), []);
@@ -863,28 +928,56 @@ function BlackHole({ scale, detailed, quality }: { scale: number; detailed: bool
         <sphereGeometry args={[scale * 0.8, quality === "low" ? 24 : 48, quality === "low" ? 24 : 48]} />
         <meshBasicMaterial color="#000000" />
       </mesh>
+      
+      {/* Event Horizon Shimmer (Inner lensing distortion) */}
+      <mesh>
+        <sphereGeometry args={[scale * 0.82, 32, 32]} />
+        <meshBasicMaterial color="#000205" transparent opacity={0.6} blending={THREE.AdditiveBlending} />
+      </mesh>
 
       {/* Photon Sphere (blueish gravitational lensing ring) */}
       <mesh ref={photonRef} rotation={[Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[scale * 0.82, scale * 1.08, quality === "low" ? 64 : 128]} />
+        <ringGeometry args={[scale * 0.82, scale * 1.15, quality === "low" ? 64 : 128]} />
         <shaderMaterial
           transparent depthWrite={false} blending={THREE.AdditiveBlending}
           side={THREE.DoubleSide}
           uniforms={{
-            uColor: { value: new THREE.Color("#a0e8ff") },
+            uColor: { value: new THREE.Color("#70ccff") },
             uTime: { value: 0 }
           }}
           vertexShader={`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`}
           fragmentShader={`
             varying vec2 vUv; uniform vec3 uColor;
             void main() {
-              float d = abs(distance(vUv, vec2(0.5)) - 0.485) / 0.03;
-              float a = pow(1.0 - clamp(d, 0.0, 1.0), 3.0);
-              gl_FragColor = vec4(uColor, a * 0.9);
+              float d = abs(distance(vUv, vec2(0.5)) - 0.485) / 0.05;
+              float a = pow(1.0 - clamp(d, 0.0, 1.0), 4.0);
+              gl_FragColor = vec4(uColor, a * 0.95);
             }
           `}
         />
       </mesh>
+
+      {/* Secondary Gravitational Lensing Halo (Cinematic distortion effect) */}
+      <Billboard>
+        <mesh scale={scale * 2.5}>
+          <planeGeometry args={[1, 1]} />
+          <shaderMaterial
+            transparent depthWrite={false} blending={THREE.AdditiveBlending}
+            uniforms={{ uColor: { value: new THREE.Color("#1a44ff") } }}
+            vertexShader={`varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`}
+            fragmentShader={`
+              varying vec2 vUv;
+              uniform vec3 uColor;
+              void main() {
+                float dist = length(vUv - 0.5);
+                float glow = pow(max(0.0, 1.0 - dist * 2.0), 4.0);
+                float ring = smoothstep(0.4, 0.42, dist) * smoothstep(0.5, 0.42, dist) * 0.5;
+                gl_FragColor = vec4(uColor, (glow * 0.15 + ring * 0.1));
+              }
+            `}
+          />
+        </mesh>
+      </Billboard>
 
       {/* Main Accretion Disk (tilted for drama) */}
       <mesh ref={diskRef} rotation={[Math.PI / 2.3, 0.2, 0]} raycast={() => null}>
@@ -914,7 +1007,7 @@ function BlackHole({ scale, detailed, quality }: { scale: number; detailed: bool
       {(detailed || quality !== "low") && <StarAura scale={scale * (detailed ? 1.1 : 0.5)} color={new THREE.Color("#4488ff")} />}
       
       {/* Faint Distant Flare - Skip for far stars on low */}
-      {(detailed || quality !== "low") && <StarFlare scale={scale * (detailed ? 8.0 : 4.5)} color={new THREE.Color("#3366ff")} opacity={detailed ? 0.15 : 0.1} />}
+      {(detailed || quality !== "low") && <StarFlare scale={scale * (detailed ? 25.0 : 4.5)} color={new THREE.Color("#3366ff")} opacity={detailed ? 0.4 : 0.1} />}
 
       {detailed && <pointLight color={accretionColor} intensity={14} distance={180} decay={1.5} />}
       {detailed && <pointLight color="#ffffff" intensity={4} distance={40} decay={2} />}
@@ -955,9 +1048,9 @@ function Magnetar({ scale, color, detailed, quality }: { scale: number; color: T
       
       {/* Extreme Magnetic Field Shimmer (Toroidal bands with flux animation) */}
       <group ref={fieldRef}>
-        {[0, 1, 2].map((i) => (
+        {[0, 1, 2, 3].map((i) => (
           <mesh key={i} rotation={[Math.PI / 2, (i * Math.PI) / 3, 0]}>
-            <torusGeometry args={[scale * (1.5 + i * 0.5), scale * 0.02, 16, 64]} />
+            <torusGeometry args={[scale * (1.2 + i * 0.8), scale * 0.05, 16, 128]} />
             <shaderMaterial 
               transparent
               blending={THREE.AdditiveBlending}
@@ -969,40 +1062,57 @@ function Magnetar({ scale, color, detailed, quality }: { scale: number; color: T
               }}
               vertexShader={`
                 varying vec2 vUv;
+                varying float vWave;
+                uniform float uTime;
+                uniform float uIndex;
                 void main() {
                   vUv = uv;
-                  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                  vec3 pos = position;
+                  // Add a rippling distortion to the field lines
+                  float wave = sin(uv.x * 20.0 + uTime * 5.0 + uIndex) * 0.1 * (1.0 + uIndex * 0.5);
+                  pos += normal * wave;
+                  vWave = wave;
+                  gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
                 }
               `}
               fragmentShader={`
                 varying vec2 vUv;
+                varying float vWave;
                 uniform vec3 uColor;
                 uniform float uTime;
                 uniform float uIndex;
                 void main() {
                   // Magnetic flux animation along the torus
-                  float flux = sin(vUv.x * 30.0 - uTime * (5.0 + uIndex)) * 0.5 + 0.5;
-                  float glow = pow(flux, 2.0);
-                  float opacity = (0.18 - uIndex * 0.05) * glow;
-                  gl_FragColor = vec4(uColor, opacity);
+                  float flux = sin(vUv.x * 40.0 - uTime * (8.0 + uIndex * 2.0)) * 0.5 + 0.5;
+                  float glow = pow(flux, 3.0) * (0.8 + abs(vWave) * 2.0);
+                  float opacity = (0.35 - uIndex * 0.08) * glow;
+                  gl_FragColor = vec4(mix(uColor, vec3(1.0), 0.3 * glow), opacity);
                 }
               `}
-              onBeforeCompile={(shader) => {
-                // Ensure uTime is updated if needed (though we handle it in useFrame)
-              }}
             />
           </mesh>
         ))}
       </group>
 
-      {/* Surface magnetic distortion aura */}
+      {/* Surface magnetic distortion aura (Pulsing energy shell) */}
       <mesh ref={pulseRef}>
-        <sphereGeometry args={[scale * 1.2, 32, 32]} />
+        <sphereGeometry args={[scale * 1.15, 32, 32]} />
+        <meshBasicMaterial 
+          color={new THREE.Color("#ffffff")} 
+          transparent 
+          opacity={0.08} 
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
+      <mesh scale={1.4}>
+        <sphereGeometry args={[scale * 1.0, 32, 32]} />
         <meshBasicMaterial 
           color={color} 
           transparent 
-          opacity={0.1} 
+          opacity={0.05} 
           blending={THREE.AdditiveBlending}
+          depthWrite={false}
         />
       </mesh>
     </group>

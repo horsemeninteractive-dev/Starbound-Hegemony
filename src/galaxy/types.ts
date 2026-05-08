@@ -1,3 +1,37 @@
+export type VesselClass = "commander" | "freighter" | "corvette" | "destroyer" | "science";
+
+export interface Vessel {
+  id: string;
+  userId: string;
+  name: string;
+  class: VesselClass;
+  systemId: string;
+  bodyId: string | null; // null if in orbiting space
+  cargoCapacity: number;
+  status: 'idle' | 'traveling' | 'docked' | 'surveying';
+  health: number;
+  maxHealth: number;
+  /** Hull/Wings/Engines/Bridge IDs for visual customization */
+  config: {
+    hullId: string;
+    wingsId: string;
+    enginesId: string;
+    bridgeId: string;
+    primaryColor: string;
+    accentColor: string;
+  };
+}
+
+export interface Fleet {
+  id: string;
+  userId: string;
+  name: string;
+  vesselIds: string[];
+  systemId: string;
+  bodyId: string | null;
+  selected?: boolean;
+}
+
 // Domain types for the galaxy simulation.
 
 export type StarType =
@@ -216,6 +250,8 @@ export interface StarSystem {
   gates: JumpGate[];
   /** Sector hue, mirrored for quick rendering. */
   sectorHue: number;
+  /** Optional region ID (nebula, dust cloud) this system belongs to. */
+  regionId?: string | null;
 }
 
 export interface Sector {
@@ -235,10 +271,25 @@ export interface Hyperlane {
   b: string; // systemId
 }
 
+export type RegionType = "nebula" | "dust_cloud" | "ion_storm" | "gravity_rift";
+
+export interface GalacticRegion {
+  id: string;
+  type: RegionType;
+  name: string;
+  /** Galaxy-space position. */
+  pos: [number, number, number];
+  radius: number;
+  hue: number;
+  /** Visual/functional strength (0-1). */
+  intensity: number;
+}
+
 export interface Galaxy {
   seed: number;
   sectors: Sector[];
   systems: StarSystem[];
+  regions: GalacticRegion[];
   hyperlanes: Hyperlane[];
   empires: Empire[];
   /** Quick lookup. */
@@ -368,4 +419,46 @@ export interface PlayerEmpire {
   leaderId?: string | null;
   viceLeaderId?: string | null;
   createdAt: string;
+}
+
+// ─── Fleet system types ───────────────────────────────────────────────────────
+
+export interface FleetEntity {
+  id:        string;
+  ownerId:   string;
+  name:      string;
+  systemId:  string;
+  bodyId:    string | null;
+  status:    'idle' | 'traveling' | 'patrolling' | 'disbanded';
+  vesselIds: string[];
+  // Client-side travel state (mirrors commander travel pattern)
+  travel?: {
+    targetId:  string;
+    startTime: number;
+    endTime:   number;
+    type:      'inter';
+    path?:     string[];
+  } | null;
+}
+
+export interface ConstructionQueueEntry {
+  id:          string;
+  shipyardId:  string;
+  bodyId:      string;
+  systemId:    string;
+  vesselClass: 'freighter' | 'science';
+  vesselName:  string;
+  shipConfig:  {
+    hullId: string; wingsId: string; enginesId: string; bridgeId: string;
+    primaryColor: string; accentColor: string;
+  };
+  startedAt:   string;
+  completesAt: string;
+  status:      'building' | 'hangared' | 'transferred' | 'cancelled';
+}
+
+export interface SiloInventoryEntry {
+  siloId:       string;
+  resourceType: string;
+  amount:       number;
 }
