@@ -1,6 +1,6 @@
-import type { Galaxy, StarSystem, Body, Installation, BodyResource, UserResource, FactoryWorker, Residency, ResidencyApplication } from "@/galaxy/types";
+import type { Galaxy, StarSystem, Body, Installation, BodyResource, UserResource, FactoryWorker, Residency, ResidencyApplication, SiloInventoryEntry } from "@/galaxy/types";
 import { STAR_META, CONTEST_META, ECON_META, BODY_META, RESOURCE_META, INFRA_META, RICHNESS_VALUES, T1_RESOURCES, T2_RESOURCES, T3_RESOURCES } from "@/galaxy/meta";
-import { Zap, Scale, Crown, Shield, Building2, Pickaxe, UserPlus, LogOut, Briefcase as JobIcon, Coins as SC_Icon, Package, Settings, ArrowUp, ChevronRight, Thermometer, Wind, Mountain, Users, Globe, Activity, CircleDot, Anchor, Hammer } from "lucide-react";
+import { Zap, Scale, Crown, Shield, Building2, Pickaxe, UserPlus, LogOut, Briefcase as JobIcon, Coins as SC_Icon, Package, Settings, ArrowUp, ArrowUpDown, ChevronRight, Thermometer, Wind, Mountain, Users, Globe, Activity, CircleDot, Anchor, Hammer } from "lucide-react";
 import { GalaxyIcon } from "./ResourceIcon";
 import { useMemo, useState } from "react";
 import { PlanetSurface } from "./PlanetSurface";
@@ -79,6 +79,21 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, o
   const canJump = path && path.length >= 2;
   const isAdjacent = canJump && path.length === 2;
 
+  const eta = useMemo(() => {
+    if (!path || path.length < 2) return 0;
+    let totalDuration = 0;
+    for (let i = 0; i < path.length - 1; i++) {
+      const s1 = galaxy.systemById[path[i]];
+      const s2 = galaxy.systemById[path[i + 1]];
+      if (!s1 || !s2) continue;
+      const region = s1.regionId ? galaxy.regions?.find(r => r.id === s1.regionId) : null;
+      const slowdown = region?.type === "nebula" ? 2.5 : 1.0;
+      const dist = Math.hypot(s1.pos[0] - s2.pos[0], s1.pos[1] - s2.pos[1], s1.pos[2] - s2.pos[2]);
+      totalDuration += (15 + dist * 1.2 * slowdown);
+    }
+    return Math.ceil(totalDuration);
+  }, [path, galaxy]);
+
   return (
     <Panel title={system.name} subtitle={sector?.name ?? "Unknown Sector"} hideHeader={hideHeader}>
       {/* High-Level System Actions */}
@@ -126,19 +141,24 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, o
         )}
 
         {!hideActions && !isOriginCurrent && !travel && canJump && (
-          <button 
-            onClick={() => {
-              onPlayClick?.();
-              initiateJump(system.id);
-            }}
-            className="w-full bg-primary hover:bg-primary/80 text-background font-bold py-2 px-4 rounded text-xs tracking-widest transition-colors flex items-center justify-between gap-2"
-          >
-            <span className="flex items-center gap-2 text-[10px]">
-              <Zap size={12} />
-              <span>{isAdjacent ? "FTL JUMP" : `JOURNEY [${path.length - 1} JUMPS]`}</span>
-            </span>
-            <span className="text-[9px] font-mono-hud text-background/80 border-l border-background/20 pl-2">{pathCost} AP</span>
-          </button>
+          <div className="flex flex-col gap-1 w-full">
+            <button 
+              onClick={() => {
+                onPlayClick?.();
+                initiateJump(system.id);
+              }}
+              className="w-full bg-primary hover:bg-primary/80 text-background font-bold py-2 px-4 rounded text-xs tracking-widest transition-colors flex items-center justify-between gap-2"
+            >
+              <span className="flex items-center gap-2 text-[10px]">
+                <Zap size={12} />
+                <span>{isAdjacent ? "FTL JUMP" : `JOURNEY [${path.length - 1} JUMPS]`}</span>
+              </span>
+              <span className="text-[9px] font-mono-hud text-background/80 border-l border-background/20 pl-2">{pathCost} AP</span>
+            </button>
+            <div className="text-[9px] text-muted-foreground font-mono-hud text-center uppercase tracking-widest opacity-60">
+              Est. Arrival: {eta}s
+            </div>
+          </div>
         )}
       </div>
 
@@ -391,7 +411,9 @@ function formatLabel(raw: string): string {
   onBuildInfrastructure,
   initiateJump,
   calculatePath,
-  getPathCost
+  getPathCost,
+  siloInventory,
+  onTransferSiloResource
 }: { 
   body: Body; 
   galaxy: Galaxy; 
@@ -431,6 +453,8 @@ function formatLabel(raw: string): string {
   factoryInputStorage: Record<string, Record<string, number>>;
   onDepositInput: (factoryId: string, resource: string, amount: number) => void;
   onBuildInfrastructure?: (key: any) => void;
+  siloInventory: SiloInventoryEntry[];
+  onTransferSiloResource: (siloId: string, res: string, amount: number) => void;
 }) {
   const [activeTab, setActiveTab] = useState<"info" | "economy" | "governance">("info");
   const owner = body.ownerId ? galaxy.empires.find((e) => e.id === body.ownerId) : null;
@@ -464,6 +488,21 @@ function formatLabel(raw: string): string {
   }, [getPathCost, path]);
 
   const canJourney = path && path.length >= 2;
+
+  const eta = useMemo(() => {
+    if (!path || path.length < 2) return 0;
+    let totalDuration = 0;
+    for (let i = 0; i < path.length - 1; i++) {
+      const s1 = galaxy.systemById[path[i]];
+      const s2 = galaxy.systemById[path[i + 1]];
+      if (!s1 || !s2) continue;
+      const region = s1.regionId ? galaxy.regions?.find(r => r.id === s1.regionId) : null;
+      const slowdown = region?.type === "nebula" ? 2.5 : 1.0;
+      const dist = Math.hypot(s1.pos[0] - s2.pos[0], s1.pos[1] - s2.pos[1], s1.pos[2] - s2.pos[2]);
+      totalDuration += (15 + dist * 1.2 * slowdown);
+    }
+    return Math.ceil(totalDuration);
+  }, [path, galaxy]);
 
   const isSanctum = body.systemId.startsWith('sys-inner-') || body.systemId === 'sys-center';
   const residencyProhibited = isSanctum || body.type === 'asteroid' || body.type === 'gas_giant' || body.type === 'star';
@@ -569,19 +608,24 @@ function formatLabel(raw: string): string {
           )}
 
           {!isInSameSystem && canJourney && !travel && !isShip && initiateJump && (
-            <button 
-              onClick={() => {
-                onPlayClick?.();
-                initiateJump(body.systemId, body.id);
-              }}
-              className="w-full bg-primary hover:bg-primary/80 text-background font-bold py-2.5 px-4 rounded text-[10px] tracking-[0.2em] transition-all flex items-center justify-between group"
-            >
-              <span className="flex items-center gap-2">
-                <Zap size={12} fill="currentColor" className="group-hover:scale-110 transition-transform" />
-                <span>JOURNEY TO BODY</span>
-              </span>
-              <span className="text-[9px] font-mono-hud text-background/80 border-l border-background/20 pl-2">{pathCost + 5} AP</span>
-            </button>
+            <div className="flex flex-col gap-1 w-full">
+              <button 
+                onClick={() => {
+                  onPlayClick?.();
+                  initiateJump(body.systemId, body.id);
+                }}
+                className="w-full bg-primary hover:bg-primary/80 text-background font-bold py-2.5 px-4 rounded text-[10px] tracking-[0.2em] transition-all flex items-center justify-between group"
+              >
+                <span className="flex items-center gap-2">
+                  <Zap size={12} fill="currentColor" className="group-hover:scale-110 transition-transform" />
+                  <span>JOURNEY TO BODY</span>
+                </span>
+                <span className="text-[9px] font-mono-hud text-background/80 border-l border-background/20 pl-2">{pathCost + 5} AP</span>
+              </button>
+              <div className="text-[9px] text-muted-foreground font-mono-hud text-center uppercase tracking-widest opacity-60">
+                Est. Arrival: {eta}s
+              </div>
+            </div>
           )}
 
           {isAtThisBody && isInSameSystem && !travel && !isShip && (
@@ -775,8 +819,8 @@ function formatLabel(raw: string): string {
       ) : (
         <EconomyTab 
           body={body}
-          factories={factories}
-          bodyResources={bodyResources}
+          factories={factories.filter(f => f.bodyId === body.id)}
+          bodyResources={bodyResources.filter(r => r.bodyId === body.id)}
           userResources={userResources}
           currentJob={currentJob}
           onBuildFactory={onBuildFactory}
@@ -793,6 +837,8 @@ function formatLabel(raw: string): string {
           onSaveSettings={onSaveSettings}
           factoryInputStorage={factoryInputStorage}
           onDepositInput={onDepositInput}
+          siloInventory={siloInventory}
+          onTransferSiloResource={onTransferSiloResource}
           isVisited={effectiveIsVisited}
         />
       )}
@@ -810,7 +856,7 @@ const REPLENISH_COST = [3000, 8000, 20000];
 function FactoryCard({
   f, currentJob, isAtThisBody, userId, onPlayClick,
   onWorkJob, onApplyForJob, onLeaveJob, onCollect, onUpgrade, onUpgradeInfrastructure, onSaveSettings,
-  factoryInputStorage, onDepositInput, userResources, bodyName
+  factoryInputStorage, onDepositInput, userResources, siloInventory, onTransferSiloResource, bodyName
 }: {
   f: Installation; currentJob: any; isAtThisBody: boolean; userId: string | null;
   onPlayClick?: () => void;
@@ -822,6 +868,8 @@ function FactoryCard({
   factoryInputStorage: Record<string, Record<string, number>>;
   onDepositInput: (factoryId: string, resource: string, amount: number) => void;
   userResources: UserResource[];
+  siloInventory: SiloInventoryEntry[];
+  onTransferSiloResource: (siloId: string, res: string, amount: number) => void;
   bodyName: string;
 }) {
   const rMeta = (RESOURCE_META as any)[f.resourceType] || Object.values(INFRA_META).find(m => m.type === f.type);
@@ -830,48 +878,55 @@ function FactoryCard({
   const isOwner = f.ownerId === userId && !f.isNpcOwned;
   const [showSettings, setShowSettings] = useState(false);
   const [showUpgrades, setShowUpgrades] = useState(false);
+  const [showSiloTransfer, setShowSiloTransfer] = useState(false);
+  const [transferAmount, setTransferAmount] = useState(10);
+  const [transferRes, setTransferRes] = useState<string>("");
   const [wageInput, setWageInput] = useState(String(f.wage));
   const [jobsInput, setJobsInput] = useState(String(f.jobsAvailable));
 
   const storageCapacity = f.storageCapacity ?? STORAGE_CAPACITY[Math.min(f.storageTier ?? 0, 4)];
   const storagePct = storageCapacity > 0 ? Math.min(100, (f.storage / storageCapacity) * 100) : 0;
   const storageFull = f.storage >= storageCapacity;
+  
+  const siloItems = siloInventory.filter(i => i.siloId === f.id);
+  const usedCap = siloItems.reduce((acc, i) => acc + i.amount, 0);
+  const totalCap = [5000, 15000, 50000, 150000, 500000][Math.min(f.storageTier ?? 0, 4)];
 
   return (
     <div className={`border rounded transition-all flex flex-col overflow-hidden ${isWorkingHere ? 'border-primary bg-primary/10' : 'border-primary/20 bg-primary/5'}`}>
       {/* Condensed Header */}
-      <div className="px-3 py-2 border-b border-primary/10 flex items-center justify-between gap-2 overflow-hidden">
+      <div className="px-2 py-1.5 border-b border-primary/10 flex items-center justify-between gap-2 overflow-hidden bg-primary/5">
         <div className="flex items-center gap-2 min-w-0">
           <div className="p-1 bg-primary/10 rounded">
-            {isInfrastructure ? <GalaxyIcon name={rMeta?.icon} className="w-3 h-3 text-primary" /> : <Building2 size={12} className="text-primary/70 shrink-0" />}
+            {isInfrastructure ? <GalaxyIcon name={rMeta?.icon} className="w-3.5 h-3.5 text-primary" /> : <Building2 size={14} className="text-primary/70 shrink-0" />}
           </div>
           <div className="truncate">
-            <div className="text-[10px] font-bold text-primary uppercase leading-tight truncate">{rMeta?.label || f.type}</div>
-            <div className="text-[7px] text-muted-foreground uppercase leading-none">{isInfrastructure ? `Level ${f.tier} Station` : (f.isNpcOwned ? "NPC" : "Owned")}</div>
+            <div className="text-[9px] font-bold text-primary uppercase leading-tight truncate">{rMeta?.label || f.type}</div>
+            <div className="text-[6px] text-muted-foreground uppercase leading-none">{isInfrastructure ? `Tier ${f.tier}` : (f.isNpcOwned ? "NPC Facility" : "Private Asset")}</div>
           </div>
         </div>
         
-        <div className="flex items-center gap-3 shrink-0">
-          {!f.isNpcOwned && (
-            <div className="text-right">
-              <div className="text-[10px] font-bold text-success flex items-center gap-1 leading-none">
-                <SC_Icon size={9} /> {f.wage}
-              </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {!f.isNpcOwned && !isInfrastructure && (
+            <div className="text-[9px] font-bold text-success flex items-center gap-0.5 leading-none bg-success/10 px-1 py-0.5 rounded border border-success/20">
+              <SC_Icon size={8} /> {f.wage}
             </div>
           )}
           {isOwner && (
-            <div className="flex gap-1">
-              <button 
-                onClick={() => { setShowSettings(s => !s); setShowUpgrades(false); }}
-                className={`p-1 rounded transition-all ${showSettings ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-primary'}`}
-              >
-                <Settings size={11} />
-              </button>
+            <div className="flex gap-0.5">
+              {!isInfrastructure && (
+                <button 
+                  onClick={() => { setShowSettings(s => !s); setShowUpgrades(false); }}
+                  className={`p-1 rounded transition-all ${showSettings ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-primary'}`}
+                >
+                  <Settings size={10} />
+                </button>
+              )}
               <button 
                 onClick={() => { setShowUpgrades(u => !u); setShowSettings(false); }}
                 className={`p-1 rounded transition-all ${showUpgrades ? 'bg-info/20 text-info' : 'text-muted-foreground hover:text-info'}`}
               >
-                <ArrowUp size={11} />
+                <ArrowUp size={10} />
               </button>
             </div>
           )}
@@ -952,15 +1007,143 @@ function FactoryCard({
               </button>
             )
           )}
-          {isInfrastructure && isOwner && isAtThisBody && (
-            <button
-               onClick={() => setShowUpgrades(!showUpgrades)}
-               className="flex-1 py-1.5 bg-info/20 border border-info/40 text-info font-bold text-[9px] uppercase tracking-wider rounded flex items-center justify-center gap-1.5"
-            >
-              <ArrowUp size={11} />
-              Upgrade Facility
-            </button>
+          {showSiloTransfer && f.type === 'Resource Silo' && (
+            <div className="mt-4 p-4 rounded-lg bg-success/5 border border-success/20 space-y-4 animate-in slide-in-from-bottom-2 duration-300 relative">
+              {/* Dedicated Close Row */}
+              <div className="flex justify-end -mt-2 -mr-2">
+                <button 
+                  onClick={() => setShowSiloTransfer(false)}
+                  className="p-1.5 hover:bg-success/20 rounded-full text-success/60 transition-colors bg-success/5 border border-success/10"
+                  title="Close Manager"
+                >
+                  <LogOut size={12} className="rotate-180" />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between border-b border-success/10 pb-2">
+                <h4 className="font-display text-[9px] uppercase tracking-widest text-success">Storage Management</h4>
+                <span className="font-mono-hud text-[8px] text-success/60">{usedCap} / {totalCap} Units</span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="font-mono-hud text-[8px] uppercase tracking-widest text-muted-foreground block">Resource</label>
+                  <select 
+                    value={transferRes} 
+                    onChange={e => setTransferRes(e.target.value)}
+                    className="w-full bg-background/60 border border-success/20 text-[10px] font-mono-hud py-1 px-2 rounded outline-none"
+                  >
+                    <option value="" disabled>Select...</option>
+                    {/* Unique resources from both silo and user cargo */}
+                    {Array.from(new Set([
+                      ...siloItems.map(i => i.resourceType),
+                      ...userResources.map(r => r.resourceType)
+                    ])).sort().map(res => (
+                      <option key={res} value={res}>{res}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="font-mono-hud text-[8px] uppercase tracking-widest text-muted-foreground block">Amount</label>
+                  <input 
+                    type="number" 
+                    value={transferAmount} 
+                    onChange={e => setTransferAmount(parseInt(e.target.value) || 0)}
+                    className="w-full bg-background/60 border border-success/20 text-[10px] font-mono-hud py-1 px-2 rounded outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => { onTransferSiloResource(f.id, transferRes, transferAmount); onPlayClick?.(); }}
+                  disabled={!transferRes || transferAmount <= 0}
+                  className="flex-1 py-2 bg-success/20 border border-success/40 text-success font-display text-[9px] uppercase tracking-widest rounded hover:bg-success/30 disabled:opacity-30 transition-all"
+                >
+                  Deposit to Silo
+                </button>
+                <button
+                  onClick={() => { onTransferSiloResource(f.id, transferRes, -transferAmount); onPlayClick?.(); }}
+                  disabled={!transferRes || transferAmount <= 0}
+                  className="flex-1 py-2 bg-success/10 border border-success/20 text-success/70 font-display text-[9px] uppercase tracking-widest rounded hover:bg-success/20 disabled:opacity-30 transition-all"
+                >
+                  Withdraw to Cargo
+                </button>
+              </div>
+            </div>
           )}
+
+          {isInfrastructure && isOwner && isAtThisBody && (
+            <div className="flex gap-2 flex-1 mt-4">
+
+              {f.type === 'Resource Silo' && !showSiloTransfer && (
+                <button
+                  onClick={() => { setShowSiloTransfer(true); if (!transferRes && siloItems.length > 0) setTransferRes(siloItems[0].resourceType); }}
+                  className="flex-1 py-1.5 font-bold text-[9px] uppercase tracking-wider rounded flex items-center justify-center gap-1.5 transition-all bg-success/20 border border-success/40 text-success hover:bg-success/30"
+                >
+                  <ArrowUpDown size={11} />
+                  Silo Manager
+                </button>
+              )}
+            </div>
+          )}
+
+          {showUpgrades && (
+            <div className="mt-4 p-4 rounded-lg bg-info/5 border border-info/20 space-y-4 animate-in slide-in-from-top-2 duration-300">
+               <div className="flex items-center justify-between border-b border-info/10 pb-2">
+                <h4 className="font-display text-[9px] uppercase tracking-widest text-info">Facility Upgrade Matrix</h4>
+              </div>
+              
+              <div className="space-y-2">
+                {/* Storage Upgrade */}
+                <div className="flex items-center justify-between p-2.5 rounded bg-background/40 border border-info/10">
+                  <div className="space-y-0.5">
+                    <div className="text-[9px] font-bold text-foreground uppercase tracking-tight">Expand Storage Capacity</div>
+                    <div className="text-[8px] text-muted-foreground uppercase font-mono-hud">Grade T{f.storageTier} → T{f.storageTier + 1}</div>
+                  </div>
+                  <button 
+                    onClick={() => { onUpgrade(f.id, 'storage'); onPlayClick?.(); }}
+                    className="px-3 py-1.5 bg-info/15 hover:bg-info/25 text-info text-[8px] font-bold uppercase rounded border border-info/30 transition-all active:scale-95"
+                  >
+                    Initiate
+                  </button>
+                </div>
+
+                {/* Only for industrial factories */}
+                {!isInfrastructure && (
+                  <>
+                    <div className="flex items-center justify-between p-2.5 rounded bg-background/40 border border-info/10">
+                      <div className="space-y-0.5">
+                        <div className="text-[9px] font-bold text-foreground uppercase tracking-tight">Workforce Hub Expansion</div>
+                        <div className="text-[8px] text-muted-foreground uppercase font-mono-hud">Grade T{f.slotTier} → T{f.slotTier + 1}</div>
+                      </div>
+                      <button 
+                        onClick={() => { onUpgrade(f.id, 'slots'); onPlayClick?.(); }}
+                        className="px-3 py-1.5 bg-info/15 hover:bg-info/25 text-info text-[8px] font-bold uppercase rounded border border-info/30 transition-all active:scale-95"
+                      >
+                        Initiate
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between p-2.5 rounded bg-background/40 border border-info/10">
+                      <div className="space-y-0.5">
+                        <div className="text-[9px] font-bold text-foreground uppercase tracking-tight">Operational Throughput</div>
+                        <div className="text-[8px] text-muted-foreground uppercase font-mono-hud">Grade T{f.replenishTier} → T{f.replenishTier + 1}</div>
+                      </div>
+                      <button 
+                        onClick={() => { onUpgrade(f.id, 'replenish'); onPlayClick?.(); }}
+                        className="px-3 py-1.5 bg-info/15 hover:bg-info/25 text-info text-[8px] font-bold uppercase rounded border border-info/30 transition-all active:scale-95"
+                      >
+                        Initiate
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+
           {isOwner && isAtThisBody && f.storage > 0 && (
             <button onClick={() => { onPlayClick?.(); onCollect(f.id); }}
               className="px-2 py-1.5 border border-success/40 text-success hover:bg-success/10 transition-all rounded flex items-center gap-1 text-[8px] font-bold uppercase truncate">
@@ -1112,7 +1295,7 @@ function EconomyTab({
   body, factories, bodyResources, userResources, currentJob, 
   onBuildFactory, onBuildInfrastructure, onApplyForJob, onWorkJob, onLeaveJob, onPlayClick,
   isAtThisBody, userId, onCollect, onUpgrade, onUpgradeInfrastructure, onSaveSettings,
-  factoryInputStorage, onDepositInput, isVisited
+  factoryInputStorage, onDepositInput, siloInventory, onTransferSiloResource, isVisited
 }: {
   body: Body;
   factories: Installation[];
@@ -1133,9 +1316,12 @@ function EconomyTab({
   onSaveSettings: (id: string, wage: number, jobs: number) => void;
   factoryInputStorage: Record<string, Record<string, number>>;
   onDepositInput: (factoryId: string, resource: string, amount: number) => void;
+  siloInventory: SiloInventoryEntry[];
+  onTransferSiloResource: (siloId: string, res: string, amount: number) => void;
   isVisited: boolean;
 }) {
   const isSanctum = body.systemId.startsWith('sys-inner-') || body.systemId === 'sys-center';
+  const [activeSubTab, setActiveSubTab] = useState<"logistics" | "production" | "assets">("production");
   const [buildConfirm, setBuildConfirm] = useState<{ res: string; cost: number; isInfra?: boolean; infraKey?: any } | null>(null);
 
   const richnessSymbols = {
@@ -1148,15 +1334,34 @@ function EconomyTab({
 
   return (
     <div className="animate-in fade-in slide-in-from-right-2 duration-300 space-y-4">
-      {/* Planetary Resources Section */}
-      <section>
-        <div className="flex items-center justify-between mb-2">
-          <SubTitle>Surface Deposits</SubTitle>
-          {!isSanctum && (
-            <div className="text-[7px] text-muted-foreground uppercase tracking-widest bg-primary/5 px-1.5 py-0.5 rounded border border-primary/10">Extraction Possible</div>
-          )}
-        </div>
-        <div className="grid grid-cols-2 gap-2">
+      {/* Economy Sub-Tabs */}
+      <div className="flex bg-primary/5 p-1 rounded-md gap-1">
+        <button
+          onClick={() => setActiveSubTab("production")}
+          className={`flex-1 py-1 text-[8px] font-bold uppercase tracking-wider rounded transition-all ${activeSubTab === "production" ? "bg-primary text-background shadow-lg" : "text-primary/60 hover:text-primary"}`}
+        >
+          Production
+        </button>
+        <button
+          onClick={() => setActiveSubTab("logistics")}
+          className={`flex-1 py-1 text-[8px] font-bold uppercase tracking-wider rounded transition-all ${activeSubTab === "logistics" ? "bg-primary text-background shadow-lg" : "text-primary/60 hover:text-primary"}`}
+        >
+          Logistics
+        </button>
+        <button
+          onClick={() => setActiveSubTab("assets")}
+          className={`flex-1 py-1 text-[8px] font-bold uppercase tracking-wider rounded transition-all ${activeSubTab === "assets" ? "bg-primary text-background shadow-lg" : "text-primary/60 hover:text-primary"}`}
+        >
+          Assets ({factories.length})
+        </button>
+      </div>
+
+      {activeSubTab === "production" && (
+        <div className="space-y-4 animate-in slide-in-from-left-2 duration-300">
+          {/* Planetary Resources Section */}
+          <section>
+            <SubTitle>Surface Deposits</SubTitle>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {body.deposits.map((d) => {
             const bRes = bodyResources.find(r => r.resourceType === d.resource);
             const rMeta = (RESOURCE_META as any)[d.resource];
@@ -1174,52 +1379,127 @@ function EconomyTab({
             const hasOwnFactory = factories.some((f: any) => f.resourceType === d.resource && f.ownerId === userId);
 
             return (
-              <div key={d.resource} className={`p-2 border rounded bg-primary/5 transition-all ${hasOwnFactory ? "border-primary/40 bg-primary/10" : "border-primary/15"}`}>
-                <div className="flex justify-between items-start mb-1">
-                  <div className="flex items-center gap-1.5 overflow-hidden">
-                    <GalaxyIcon name={rMeta?.icon} className="w-4 h-4 shrink-0" color={rMeta?.color} />
-                    <div className="text-[9px] font-bold text-primary uppercase leading-tight truncate shrink">{d.resource}</div>
+              <div key={d.resource} className="space-y-1">
+                <div className={`p-2 border rounded bg-primary/5 transition-all ${hasOwnFactory ? "border-primary/40 bg-primary/10" : "border-primary/15"}`}>
+                  <div className="flex justify-between items-start mb-1">
+                    <div className="flex items-center gap-1.5 overflow-hidden">
+                      <GalaxyIcon name={rMeta?.icon} className="w-4 h-4 shrink-0" color={rMeta?.color} />
+                      <div className="text-[9px] font-bold text-primary uppercase leading-tight truncate shrink">{d.resource}</div>
+                    </div>
+                    {!isSanctum && !hasOwnFactory && (
+                      <button 
+                        disabled={!isAtThisBody}
+                        onClick={() => { 
+                          onPlayClick?.(); 
+                          setBuildConfirm(prev => prev?.res === d.resource ? null : { res: d.resource, cost: 0 }); // Free for T1
+                        }}
+                        className={`px-1.5 py-0.5 border border-primary/40 text-primary text-[7px] font-bold uppercase rounded hover:bg-primary/20 transition-all ${!isAtThisBody ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        {buildConfirm?.res === d.resource ? "Cancel" : "Build"}
+                      </button>
+                    )}
+                    {hasOwnFactory && <div className="text-[7px] text-success font-bold uppercase tracking-tighter shrink-0">Owned</div>}
                   </div>
-                  {!isSanctum && !hasOwnFactory && (
-                    <button 
-                      disabled={!isAtThisBody}
-                      onClick={() => { 
-                        onPlayClick?.(); 
-                        setBuildConfirm({ res: d.resource, cost: 0 }); // Free for T1
-                      }}
-                      className={`px-1.5 py-0.5 border border-primary/40 text-primary text-[7px] font-bold uppercase rounded hover:bg-primary/20 transition-all ${!isAtThisBody ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                      Build
-                    </button>
-                  )}
-                  {hasOwnFactory && <div className="text-[7px] text-success font-bold uppercase tracking-tighter shrink-0">Owned</div>}
+                  
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[7px] font-mono-hud uppercase leading-none">
+                      <span className={isDepleted ? "text-error" : "text-muted-foreground"}>
+                        {isDepleted ? "Empty" : isVisited ? richnessSymbols[d.richness as keyof typeof richnessSymbols] : "???"}
+                      </span>
+                      <span className="text-primary/70">{isVisited && bRes ? liveAmount : "???"}</span>
+                    </div>
+                    <div className="h-0.5 bg-primary/10 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full transition-all duration-1000 ${isDepleted ? 'bg-error' : 'bg-primary'}`} 
+                        style={{ width: `${isVisited ? pct : 100}%` }} 
+                      />
+                    </div>
+                  </div>
                 </div>
-                
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[7px] font-mono-hud uppercase leading-none">
-                    <span className={isDepleted ? "text-error" : "text-muted-foreground"}>
-                      {isDepleted ? "Empty" : isVisited ? richnessSymbols[d.richness as keyof typeof richnessSymbols] : "???"}
-                    </span>
-                    <span className="text-primary/70">{isVisited && bRes ? liveAmount : "???"}</span>
-                  </div>
-                  <div className="h-0.5 bg-primary/10 rounded-full overflow-hidden">
-                    <div 
-                      className={`h-full transition-all duration-1000 ${isDepleted ? 'bg-error' : 'bg-primary'}`} 
-                      style={{ width: `${isVisited ? pct : 100}%` }} 
-                    />
-                  </div>
-                </div>
+                {buildConfirm?.res === d.resource && (
+                  <BuildConfirmation 
+                    buildConfirm={buildConfirm} 
+                    onCancel={() => setBuildConfirm(null)} 
+                    onConfirm={() => {
+                      onBuildFactory(buildConfirm.res);
+                      setBuildConfirm(null);
+                    }}
+                  />
+                )}
               </div>
             );
           })}
         </div>
       </section>
 
-      <Divider />
-      
-      {/* Infrastructure Section */}
-      {!isSanctum && (
-        <section className="space-y-3">
+          <Divider />
+          
+          {/* Advanced Industry Section */}
+          {!isSanctum && (
+            <section className="space-y-3">
+              <SubTitle>Specialized Industry (T2/T3)</SubTitle>
+              
+              <div className="grid grid-cols-1 gap-2">
+                {[...T2_RESOURCES, ...T3_RESOURCES].map(res => {
+                  const meta = (RESOURCE_META as any)[res];
+                  const alreadyHas = factories.some(f => f.resourceType === res && f.ownerId === userId);
+                  const cost = meta.tier === 3 ? 75000 : 20000;
+                  
+                  return (
+                    <div key={res} className="space-y-1">
+                      <div className={`p-2 border rounded flex items-center justify-between transition-all ${alreadyHas ? 'border-success/40 bg-success/5 opacity-60' : meta.tier === 3 ? 'border-accent/20 bg-accent/5' : 'border-primary/20 bg-primary/5'} ${!isAtThisBody && !alreadyHas ? 'opacity-30' : ''}`}>
+                        <div className="flex items-center gap-3 overflow-hidden">
+                          <div className="p-2 bg-primary/10 rounded border border-primary/20">
+                            <GalaxyIcon name={meta.icon} className="w-4 h-4" color={meta.color} />
+                          </div>
+                          <div className="overflow-hidden">
+                            <div className="text-[10px] font-bold text-foreground uppercase leading-tight truncate">{meta.label}</div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[7px] text-muted-foreground uppercase tracking-widest shrink-0">
+                                Tier {meta.tier} · {alreadyHas ? "Active" : `${cost.toLocaleString()} SC`}
+                              </span>
+                              {!alreadyHas && meta.inputs && (
+                                <div className="flex items-center gap-1 overflow-hidden">
+                                  <span className="text-[6px] text-primary/40 uppercase">Needs:</span>
+                                  {meta.inputs.map((inp: any) => (
+                                    <GalaxyIcon key={inp.resource} name={(RESOURCE_META as any)[inp.resource]?.icon} className="w-2 h-2 text-primary/60 shrink-0" />
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        {!alreadyHas && (
+                          <button
+                            disabled={!isAtThisBody}
+                            onClick={() => setBuildConfirm(prev => prev?.res === res ? null : { res, cost })}
+                            className={`px-2 py-1 text-background text-[8px] font-bold uppercase rounded transition-all shrink-0 ${meta.tier === 3 ? 'bg-accent hover:bg-accent/90 shadow-[0_0_10px_rgba(var(--accent-rgb),0.2)]' : 'bg-primary hover:bg-primary/90 shadow-[0_0_10px_rgba(var(--primary-rgb),0.2)]'}`}
+                          >
+                            {buildConfirm?.res === res ? "Cancel" : "Build"}
+                          </button>
+                        )}
+                      </div>
+                      {buildConfirm?.res === res && (
+                        <BuildConfirmation 
+                          buildConfirm={buildConfirm} 
+                          onCancel={() => setBuildConfirm(null)} 
+                          onConfirm={() => {
+                            onBuildFactory(buildConfirm.res);
+                            setBuildConfirm(null);
+                          }}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+        </div>
+      )}
+
+      {activeSubTab === "logistics" && !isSanctum && (
+        <section className="space-y-3 animate-in slide-in-from-right-2 duration-300">
           <SubTitle>Orbital Infrastructure</SubTitle>
           <div className="grid grid-cols-1 gap-2">
             {Object.entries(INFRA_META).map(([key, meta]) => {
@@ -1228,24 +1508,38 @@ function EconomyTab({
               const canBuild = !alreadyHas && isAtThisBody;
 
               return (
-                <div key={key} className={`p-2 border rounded flex items-center justify-between transition-all ${alreadyHas ? 'border-primary/40 bg-primary/10 opacity-60' : 'border-primary/20 bg-primary/5 hover:border-primary/40'} ${!isAtThisBody && !alreadyHas ? 'opacity-30 cursor-not-allowed' : ''}`}>
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-primary/10 rounded border border-primary/20">
-                      <GalaxyIcon name={meta.icon} className="w-4 h-4 text-primary" />
+                <div key={key} className="space-y-1">
+                  <div className={`p-2 border rounded flex items-center justify-between transition-all ${alreadyHas ? 'border-primary/40 bg-primary/10 opacity-60' : 'border-primary/20 bg-primary/5 hover:border-primary/40'} ${!isAtThisBody && !alreadyHas ? 'opacity-30' : ''}`}>
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-primary/10 rounded border border-primary/20">
+                        <GalaxyIcon name={meta.icon} className="w-4 h-4 text-primary" />
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-bold text-foreground uppercase leading-tight">{meta.label}</div>
+                        <div className="text-[7px] text-muted-foreground uppercase tracking-widest">{alreadyHas ? "Active Facility" : `${firstTier.costSC.toLocaleString()} SC`}</div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-[10px] font-bold text-foreground uppercase leading-tight">{meta.label}</div>
-                      <div className="text-[7px] text-muted-foreground uppercase tracking-widest">{alreadyHas ? "Active Facility" : `${firstTier.costSC.toLocaleString()} SC + Materials`}</div>
-                    </div>
+                    {!alreadyHas && (
+                      <button
+                        disabled={!isAtThisBody}
+                        onClick={() => setBuildConfirm(prev => prev?.res === meta.label ? null : { res: meta.label, cost: firstTier.costSC, isInfra: true, infraKey: key as any })}
+                        className="px-2 py-1 bg-primary text-background text-[8px] font-bold uppercase rounded hover:bg-primary/90 transition-all shadow-[0_0_10px_rgba(var(--primary-rgb),0.2)]"
+                      >
+                        {buildConfirm?.res === meta.label ? "Cancel" : "Commission"}
+                      </button>
+                    )}
                   </div>
-                  {!alreadyHas && (
-                    <button
-                      disabled={!isAtThisBody}
-                      onClick={() => setBuildConfirm({ res: meta.label, cost: firstTier.costSC, isInfra: true, infraKey: key as any })}
-                      className="px-2 py-1 bg-primary text-background text-[8px] font-bold uppercase rounded hover:bg-primary/90 transition-all shadow-[0_0_10px_rgba(var(--primary-rgb),0.2)]"
-                    >
-                      Commission
-                    </button>
+                  {buildConfirm?.res === meta.label && (
+                    <BuildConfirmation 
+                      buildConfirm={buildConfirm} 
+                      onCancel={() => setBuildConfirm(null)} 
+                      materials={(meta as any).tiers[0].mats}
+                      userResources={userResources}
+                      onConfirm={() => {
+                        onBuildInfrastructure?.(buildConfirm.infraKey);
+                        setBuildConfirm(null);
+                      }}
+                    />
                   )}
                 </div>
               );
@@ -1254,144 +1548,169 @@ function EconomyTab({
         </section>
       )}
 
-      {/* Advanced Industry Section */}
-      {!isSanctum && (
-        <section className="space-y-3">
-          <SubTitle>Specialized Industry (T2/T3)</SubTitle>
-          
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 custom-scrollbar">
-              {T2_RESOURCES.map(res => {
-                const meta = (RESOURCE_META as any)[res];
-                const alreadyHas = factories.some(f => f.resourceType === res && f.ownerId === userId);
-                return (
-                  <button
-                    key={res}
-                    disabled={alreadyHas || !isAtThisBody}
-                    onClick={() => setBuildConfirm({ res, cost: 20000 })}
-                    className={`flex-none w-28 p-1.5 border rounded flex flex-col gap-1 items-center transition-all ${alreadyHas ? 'border-success/40 bg-success/5 opacity-60' : 'border-primary/20 bg-primary/5 hover:border-primary/60 hover:bg-primary/10'} ${!isAtThisBody && !alreadyHas ? 'opacity-30 cursor-not-allowed' : ''}`}
-                  >
-                    <GalaxyIcon name={meta.icon} className="w-5 h-5" color={alreadyHas ? meta.color : meta.color + '80'} />
-                    <div className="text-[8px] font-bold text-foreground uppercase truncate w-full text-center">{meta.label}</div>
-                    <div className="text-[7px] text-muted-foreground tracking-widest">{alreadyHas ? "CONSTRUCTED" : "20K SC"}</div>
-                  </button>
-                );
-              })}
-              {T3_RESOURCES.map(res => {
-                const meta = (RESOURCE_META as any)[res];
-                const alreadyHas = factories.some(f => f.resourceType === res && f.ownerId === userId);
-                return (
-                  <button
-                    key={res}
-                    disabled={alreadyHas || !isAtThisBody}
-                    onClick={() => setBuildConfirm({ res, cost: 75000 })}
-                    className={`flex-none w-28 p-1.5 border rounded flex flex-col gap-1 items-center transition-all ${alreadyHas ? 'border-success/40 bg-success/5 opacity-60' : 'border-accent/20 bg-accent/5 hover:border-accent/60 hover:bg-accent/10'} ${!isAtThisBody && !alreadyHas ? 'opacity-30 cursor-not-allowed' : ''}`}
-                  >
-                    <GalaxyIcon name={meta.icon} className="w-5 h-5" color={alreadyHas ? meta.color : meta.color + '80'} />
-                    <div className="text-[8px] font-bold text-foreground uppercase truncate w-full text-center">{meta.label}</div>
-                    <div className="text-[7px] text-muted-foreground tracking-widest">{alreadyHas ? "CONSTRUCTED" : "75K SC"}</div>
-                  </button>
-                );
-              })}
-            </div>
+      {activeSubTab === "assets" && (
+        <section className="space-y-3 animate-in fade-in duration-300">
+          <SubTitle>Active Facilities</SubTitle>
+          <div className="space-y-4 pb-10">
+            {factories.length === 0 ? (
+              <div className="p-10 border border-dashed border-primary/20 rounded text-center">
+                <Building2 size={24} className="mx-auto text-primary/20 mb-2" />
+                <span className="text-[9px] text-muted-foreground uppercase tracking-widest italic">No active industrial operations on this body</span>
+              </div>
+            ) : (
+              <>
+                {/* Factory Subgroups */}
+                {[1, 2, 3].map(tier => {
+                  const tierFactories = factories.filter(f => f.resourceType !== 'Structure' && f.tier === tier);
+                  if (tierFactories.length === 0) return null;
+                  return (
+                    <div key={`tier-${tier}`} className="space-y-2">
+                      <div className="flex items-center gap-2 px-1">
+                        <div className="h-px flex-1 bg-primary/10" />
+                        <span className="text-[7px] font-bold text-primary/50 uppercase tracking-[0.3em]">Tier {tier} Factories</span>
+                        <div className="h-px flex-1 bg-primary/10" />
+                      </div>
+                      {tierFactories.map(f => (
+                        <FactoryCard
+                          key={f.id}
+                          f={f}
+                          currentJob={currentJob}
+                          isAtThisBody={isAtThisBody}
+                          userId={userId}
+                          onPlayClick={onPlayClick}
+                          onWorkJob={onWorkJob}
+                          onApplyForJob={onApplyForJob}
+                          onLeaveJob={onLeaveJob}
+                          onCollect={onCollect}
+                          onUpgrade={onUpgrade}
+                          onUpgradeInfrastructure={onUpgradeInfrastructure}
+                          onSaveSettings={onSaveSettings}
+                          factoryInputStorage={factoryInputStorage}
+                          onDepositInput={onDepositInput}
+                          userResources={userResources}
+                          siloInventory={siloInventory}
+                          onTransferSiloResource={onTransferSiloResource}
+                          bodyName={body.name}
+                        />
+                      ))}
+                    </div>
+                  );
+                })}
+
+                {/* Infrastructure Subgroup */}
+                {(() => {
+                  const infra = factories.filter(f => f.resourceType === 'Structure');
+                  if (infra.length === 0) return null;
+                  return (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 px-1">
+                        <div className="h-px flex-1 bg-info/10" />
+                        <span className="text-[7px] font-bold text-info/50 uppercase tracking-[0.3em]">Orbital Infrastructure</span>
+                        <div className="h-px flex-1 bg-info/10" />
+                      </div>
+                      {infra.map(f => (
+                        <FactoryCard
+                          key={f.id}
+                          f={f}
+                          currentJob={currentJob}
+                          isAtThisBody={isAtThisBody}
+                          userId={userId}
+                          onPlayClick={onPlayClick}
+                          onWorkJob={onWorkJob}
+                          onApplyForJob={onApplyForJob}
+                          onLeaveJob={onLeaveJob}
+                          onCollect={onCollect}
+                          onUpgrade={onUpgrade}
+                          onUpgradeInfrastructure={onUpgradeInfrastructure}
+                          onSaveSettings={onSaveSettings}
+                          factoryInputStorage={factoryInputStorage}
+                          onDepositInput={onDepositInput}
+                          userResources={userResources}
+                          siloInventory={siloInventory}
+                          onTransferSiloResource={onTransferSiloResource}
+                          bodyName={body.name}
+                        />
+                      ))}
+                    </div>
+                  );
+                })()}
+              </>
+            )}
           </div>
         </section>
       )}
 
-      {/* Build Confirmation Overlay */}
-      {buildConfirm && (
-        <div className="p-3 bg-primary/10 border border-primary/30 rounded backdrop-blur-md animate-in zoom-in-95 duration-200">
-          <div className="flex justify-between items-start mb-3">
-            <div>
-              <div className="text-[7px] text-muted-foreground uppercase tracking-widest mb-1">Confirm Installation</div>
-              <div className="text-[10px] font-bold text-primary uppercase">Construction: {buildConfirm.res}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-[7px] text-muted-foreground uppercase tracking-widest mb-1">Fee</div>
-              <div className="text-[10px] font-mono-hud text-success">{buildConfirm.cost.toLocaleString()} SC</div>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button 
-              onClick={() => setBuildConfirm(null)}
-              className="flex-1 py-1.5 border border-primary/20 text-muted-foreground text-[8px] font-bold uppercase rounded hover:bg-primary/10"
-            >
-              Cancel
-            </button>
-            <button 
-              onClick={() => {
-                onPlayClick?.();
-                if (buildConfirm.isInfra) {
-                  onBuildInfrastructure?.(buildConfirm.infraKey);
-                } else {
-                  onBuildFactory(buildConfirm.res);
-                }
-                setBuildConfirm(null);
-              }}
-              className="flex-1 py-1.5 bg-primary text-background text-[8px] font-bold uppercase rounded hover:bg-primary/90 shadow-lg"
-            >
-              Confirm Build
-            </button>
-          </div>
-        </div>
-      )}
-      
-      <Divider />
-
-      <Divider />
-
-      {/* Industrial Facilities Section */}
-      <section>
-        <SubTitle>Active Facilities</SubTitle>
-        <div className="space-y-2">
-          {factories.length === 0 && (
-            <div className="p-4 border border-dashed border-primary/20 rounded text-center">
-              <span className="text-[9px] text-muted-foreground uppercase tracking-widest italic">No active industrial operations</span>
-            </div>
-          )}
-          {factories.map((f) => (
-            <FactoryCard
-              key={f.id}
-              f={f}
-              currentJob={currentJob}
-              isAtThisBody={isAtThisBody}
-              userId={userId}
-              onPlayClick={onPlayClick}
-              onWorkJob={onWorkJob}
-              onApplyForJob={onApplyForJob}
-              onLeaveJob={onLeaveJob}
-              onCollect={onCollect}
-              onUpgrade={onUpgrade}
-              onUpgradeInfrastructure={onUpgradeInfrastructure}
-              onSaveSettings={onSaveSettings}
-              factoryInputStorage={factoryInputStorage}
-              onDepositInput={onDepositInput}
-              userResources={userResources}
-              bodyName={body.name}
-            />
-          ))}
-        </div>
-      </section>
-
-      {currentJob && !factories.some((f) => f.id === currentJob.factoryId) && (
-        <div className="p-3 bg-warning/10 border border-warning/20 rounded">
+      {currentJob && activeSubTab !== "assets" && !factories.some((f) => f.id === currentJob.factoryId) && (
+        <div className="p-3 bg-warning/10 border border-warning/20 rounded animate-in slide-in-from-bottom-2 duration-300">
            <div className="flex justify-between items-start gap-4">
              <div>
                <div className="text-[9px] font-bold text-warning uppercase flex items-center gap-2">
                  <JobIcon size={12} /> Remote Employment Active
                </div>
-               <p className="text-[8px] text-warning/70 mt-1 italic">You are currently employed at a factory elsewhere. Leave that job to apply here.</p>
+               <p className="text-[8px] text-warning/70 mt-1 italic">Currently employed at a factory elsewhere.</p>
              </div>
              <button 
                onClick={() => { onPlayClick?.(); onLeaveJob(); }}
-               className="shrink-0 px-2 py-1.5 bg-warning/20 border border-warning/40 text-warning text-[8px] font-bold uppercase rounded hover:bg-warning/30 transition-all flex items-center gap-1.5"
+               className="shrink-0 px-2 py-1.5 bg-warning/20 border border-warning/40 text-warning text-[8px] font-bold uppercase rounded hover:bg-warning/30 transition-all"
              >
-               <LogOut size={10} />
                Leave Job
              </button>
            </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function BuildConfirmation({ buildConfirm, onCancel, onConfirm, materials, userResources }: { buildConfirm: any; onCancel: () => void; onConfirm: () => void; materials?: any[]; userResources?: UserResource[] }) {
+  return (
+    <div className="p-3 bg-primary/10 border border-primary/30 rounded backdrop-blur-md animate-in slide-in-from-top-1 duration-200 shadow-xl overflow-hidden relative">
+      <div className="absolute top-0 left-0 w-1 h-full bg-primary" />
+      <div className="flex justify-between items-start mb-3">
+        <div>
+          <div className="text-[7px] text-muted-foreground uppercase tracking-widest mb-1">Confirm Installation</div>
+          <div className="text-[10px] font-bold text-primary uppercase">{buildConfirm.res}</div>
+        </div>
+        <div className="text-right">
+          <div className="text-[7px] text-muted-foreground uppercase tracking-widest mb-1">Build Fee</div>
+          <div className="text-[10px] font-mono-hud text-success">{buildConfirm.cost.toLocaleString()} SC</div>
+        </div>
+      </div>
+
+      {materials && materials.length > 0 && (
+        <div className="mb-3 p-2 bg-black/30 rounded border border-primary/10">
+          <div className="text-[7px] text-muted-foreground uppercase tracking-widest mb-1">Required Materials:</div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            {materials.map((m: any) => {
+              const has = userResources?.find(ur => ur.resourceType === m.resource)?.amount || 0;
+              const enough = has >= m.qty;
+              return (
+                <div key={m.resource} className="flex items-center gap-1.5">
+                  <GalaxyIcon name={(RESOURCE_META as any)[m.resource]?.icon} className={`w-2.5 h-2.5 ${enough ? 'text-success' : 'text-error'}`} />
+                  <span className={`text-[8px] font-mono-hud ${enough ? 'text-success/80' : 'text-error/80'}`}>
+                    {m.resource}: {has}/{m.qty}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        <button 
+          onClick={onCancel}
+          className="flex-1 py-1.5 border border-primary/20 text-muted-foreground text-[8px] font-bold uppercase rounded hover:bg-primary/10"
+        >
+          Cancel
+        </button>
+        <button 
+          onClick={onConfirm}
+          className="flex-1 py-1.5 bg-primary text-background text-[8px] font-bold uppercase rounded hover:bg-primary/90 shadow-lg"
+        >
+          Confirm Build
+        </button>
+      </div>
     </div>
   );
 }

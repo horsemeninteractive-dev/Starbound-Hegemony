@@ -233,12 +233,12 @@ export const SKILL_TREE: SkillNode[] = [
     id: "dip_press_pass",
     branch: "diplomacy",
     name: "Press Pass",
-    description: "Recognised as a media correspondent — publishing earns more XP.",
-    effect: "+20 XP per article published",
+    description: "Recognition as a media correspondent increases the XP you earn when your articles receive upvotes.",
+    effect: "+10 XP per upvote received on your articles",
     tier: 1,
     prereqs: [],
     icon: "Newspaper",
-    bonus: { key: "article_xp_bonus", value: 20 }
+    bonus: { key: "article_xp_bonus", value: 10 }
   },
   {
     id: "dip_party_organiser",
@@ -318,8 +318,7 @@ export const XP_REWARDS = {
   body_visited:      10,
   factory_worked:    20,
   factory_built:    100,
-  article_published:  30,
-  article_upvoted:    5,   // received
+  article_upvoted:    5,   // received on your articles
   market_trade:       25,
   residency_claimed: 75,
   party_founded:    150,

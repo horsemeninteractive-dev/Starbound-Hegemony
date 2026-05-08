@@ -109,7 +109,7 @@ export function SkillsView({ playerLevel, playerXP, playerSkills, onUnlock, onBa
                 ["🌐 Discover System", "50 XP"],
                 ["🏗️ Build Factory", "100 XP"],
                 ["⚙️ Work Shift", "20 XP"],
-                ["📰 Publish Article", "30 XP"],
+                ["👍 Article Upvoted", "5 XP"],
                 ["🏠 Claim Residency", "75 XP"],
                 ["📈 Market Trade", "25 XP"],
               ] as [string, string][]).map(([action, xp]) => (

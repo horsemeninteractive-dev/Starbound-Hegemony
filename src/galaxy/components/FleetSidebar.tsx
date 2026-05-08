@@ -11,6 +11,9 @@ export interface FleetInfo {
   bodyName?: string;
   status: string;
   isSelected?: boolean;
+  travel?: { targetId?: string; endTime: number; startTime: number; type?: "inter" | "intra" } | null;
+  arrival?: { fromId: string; startTime: number; duration: number } | null;
+  destinationName?: string | null;
 }
 
 interface FleetSidebarProps {
@@ -19,9 +22,10 @@ interface FleetSidebarProps {
   onSelectFleet: (id: string) => void;
   isOpen: boolean;
   onToggle: () => void;
+  currentTime: number;
 }
 
-export function FleetSidebar({ fleets, selectedFleetId, onSelectFleet, isOpen, onToggle }: FleetSidebarProps) {
+export function FleetSidebar({ fleets, selectedFleetId, onSelectFleet, isOpen, onToggle, currentTime }: FleetSidebarProps) {
   return (
     <div className="absolute right-0 top-1/2 -translate-y-1/2 z-30 pointer-events-none">
       <motion.div 
@@ -106,19 +110,44 @@ export function FleetSidebar({ fleets, selectedFleetId, onSelectFleet, isOpen, o
                     )}
                   </div>
 
-                  <div className="mt-3 pt-3 border-t border-primary/10 space-y-1.5 relative z-10">
+                  <div className="mt-3 pt-3 border-t border-primary/10 space-y-2 relative z-10">
                     <div className="flex items-center gap-2 opacity-80">
                       <Target className="w-3 h-3 text-primary/60" />
                       <span className="font-mono-hud text-[8px] text-muted-foreground uppercase tracking-tighter truncate">
-                        {fleet.systemName} {fleet.bodyName ? `• ${fleet.bodyName}` : ""}
+                        {fleet.travel ? `${fleet.travel.type === "intra" ? "SLT" : "FTL"} → ${fleet.destinationName}` : fleet.arrival ? `TRANSIT → STAR` : `${fleet.systemName}${fleet.bodyName ? ` • ${fleet.bodyName}` : ""}`}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2">
+
+                    {(fleet.travel || fleet.arrival) ? (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[7px] font-mono-hud text-cyan-400 uppercase tracking-widest animate-pulse">
+                            {fleet.travel ? "Warping..." : "Landing..."}
+                          </span>
+                          <span className="text-[7px] font-mono-hud text-cyan-400 font-bold uppercase tracking-widest">
+                            {fleet.travel ? `ETA ${Math.max(0, Math.ceil((fleet.travel.endTime - currentTime) / 1000))}S` : "EST. CONTACT"}
+                          </span>
+                        </div>
+                        <div className="h-1 bg-cyan-950/50 rounded-full overflow-hidden w-full border border-cyan-500/10">
+                          <div 
+                            className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_8px_cyan]"
+                            style={{ 
+                              width: fleet.travel 
+                                ? `${Math.min(100, ((currentTime - fleet.travel.startTime) / (fleet.travel.endTime - fleet.travel.startTime)) * 100)}%`
+                                : `${Math.min(100, ((currentTime - fleet.arrival!.startTime) / fleet.arrival!.duration) * 100)}%`,
+                              transition: "width 0.1s linear"
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
                         <Zap className="w-3 h-3 text-warning/60" />
                         <span className="font-mono-hud text-[8px] text-muted-foreground uppercase tracking-tighter">
                             Status: <span className="text-foreground">{fleet.status}</span>
                         </span>
-                    </div>
+                      </div>
+                    )}
                   </div>
                 </button>
               ))}

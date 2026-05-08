@@ -116,7 +116,7 @@ const WIKI_DATA: WikiSection[] = [
           <tr><td>Build factory</td><td>100</td></tr>
           <tr><td>Claim citizenship</td><td>75</td></tr>
           <tr><td>Market trade completed</td><td>25</td></tr>
-          <tr><td>Publish article</td><td>30</td></tr>
+          <tr><td>Article upvoted (received)</td><td>5</td></tr>
         </tbody>
       </table>
     `
@@ -562,7 +562,7 @@ const WIKI_DATA: WikiSection[] = [
         </div>
         <div class="card">
           <h4>Diplomacy</h4>
-          <p>Increases political XP from articles, residency, and party founding.</p>
+          <p>Increases XP from article upvotes, residency, and party founding.</p>
         </div>
         <div class="card">
           <h4>Command</h4>

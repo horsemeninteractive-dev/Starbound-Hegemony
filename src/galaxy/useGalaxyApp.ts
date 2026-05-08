@@ -222,11 +222,16 @@ export function useGalaxyApp(initialSeed = 20260423) {
 
   const lastUserIdRef = useRef<string | null>(null);
   const lastLoadedPositionRef = useRef<{systemId: string, bodyId: string} | null>(null);
+  // positionReadyRef: blocks the fleet_positions sync effect from writing to DB
+  // until we have explicitly loaded a position from the DB. Prevents the default
+  // "sys-center" initial state from overwriting the real saved position on refresh.
+  const positionReadyRef = useRef<boolean>(false);
 
   // 2. Load User Data from Supabase
   useEffect(() => {
     if (!user) {
       lastUserIdRef.current = null;
+      positionReadyRef.current = false;
       setInitialDataLoaded(false);
       return;
     }
@@ -252,13 +257,14 @@ export function useGalaxyApp(initialSeed = 20260423) {
           setCargoCapacity(profile.cargo_capacity ?? 5000);
           setIsAdmin(profile.is_admin ?? false);
 
-          // Load AP from DB and compute regen since last tick
+          // Load AP from DB and compute regen since last tick.
+          // Rate: +1 AP per 5 minutes (AP_REGEN_INTERVAL = 300000 ms) — matches the live timer.
           const dbAp = profile.action_points ?? 240;
           const lastRegenAt = profile.last_ap_regen_at ? new Date(profile.last_ap_regen_at).getTime() : Date.now();
-          const hoursSinceRegen = Math.floor((Date.now() - lastRegenAt) / 3600000);
-          const regenAmount = hoursSinceRegen * 20;
+          const ticksSinceRegen = Math.floor((Date.now() - lastRegenAt) / 300000);
+          const regenAmount = ticksSinceRegen; // +1 AP per tick
           setAp(Math.min(240, dbAp + regenAmount));
-          const nextTick = lastRegenAt + Math.ceil((Date.now() - lastRegenAt) / 3600000) * 3600000;
+          const nextTick = lastRegenAt + (ticksSinceRegen + 1) * 300000;
           setLastApTick(lastRegenAt);
           setNextApTick(Math.max(Date.now() + 1000, nextTick));
 
@@ -403,13 +409,19 @@ export function useGalaxyApp(initialSeed = 20260423) {
 
         const { data: vss } = await supabase
           .from('vessels')
-          .select('*, fleet_positions(*), fleets(system_id, body_id)')
+          .select('*, fleets(system_id, body_id)')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false });
 
+        // Fetch positions separately for maximum robustness
+        const { data: allPositions } = await supabase
+          .from('fleet_positions')
+          .select('*')
+          .eq('user_id', user.id);
+
         if (vss) {
           const mappedVessels: Vessel[] = vss.map(v => {
-            const pos = v.fleet_positions?.[0];
+            const pos = allPositions?.find(p => p.vessel_id === v.id);
             return {
               id: v.id,
               userId: v.user_id,
@@ -442,10 +454,11 @@ export function useGalaxyApp(initialSeed = 20260423) {
             setPlayerSystemId(currentV.systemId);
             setPlayerBodyId(currentV.bodyId || "star");
             lastLoadedPositionRef.current = { systemId: currentV.systemId, bodyId: currentV.bodyId || "star" };
+            // Mark that we now have a real DB-confirmed position — unlock the sync effect
+            positionReadyRef.current = true;
 
             // Restore travel/arrival state from the fetched position
-            const dbV = vss.find(dbV => dbV.id === currentV.id) as any;
-            const pos = dbV?.fleet_positions?.[0];
+            const pos = allPositions?.find(p => p.vessel_id === currentV.id);
             if (pos) {
               // RESOLVE OFFLINE JOURNEY PROGRESS
               let currentSystem = pos.system_id;
@@ -481,6 +494,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
                   console.log(`[Navigation] Fast-forwarded journey to ${currentSystem}. Steps remaining: ${currentPath.length - 1}`);
                   setPlayerSystemId(currentSystem);
                   setJumpPath(currentPath);
+                  // Update baseline ref so we don't immediately sync back the fast-forwarded position (it will sync anyway, but this is cleaner)
+                  lastLoadedPositionRef.current = { systemId: currentSystem, bodyId: pos.body_id || "star" };
                 }
               }
 
@@ -581,6 +596,77 @@ export function useGalaxyApp(initialSeed = 20260423) {
     };
   }, [user, initialDataLoaded]);
 
+  // Governance Realtime Sync
+  useEffect(() => {
+    if (!user || !initialDataLoaded) return;
+
+    const channel = supabase
+      .channel('governance_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'state_formation_votes' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          const r = payload.new;
+          setFormationReferendums(prev => {
+             if (prev.some(x => x.id === r.id)) return prev;
+             return [...prev, {
+              id: r.id, bodyId: r.body_id, empireName: r.empire_name, empireTag: r.empire_tag,
+              hue: r.hue, proposedBy: r.proposed_by, endsAt: r.ends_at,
+              status: r.status, yesVotes: r.yes_votes, noVotes: r.no_votes, createdAt: r.created_at
+            } as StateFormationVote];
+          });
+        } else if (payload.eventType === 'UPDATE') {
+          const r = payload.new;
+          if (r.status !== 'pending') {
+            setFormationReferendums(prev => prev.filter(ref => ref.id !== r.id));
+          } else {
+            setFormationReferendums(prev => prev.map(ref => ref.id === r.id ? {
+              ...ref,
+              yesVotes: r.yes_votes,
+              noVotes: r.no_votes,
+              status: r.status
+            } : ref));
+          }
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'body_governance' }, (payload) => {
+        if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+          const g = payload.new;
+          setBodyGovernance(prev => ({
+            ...prev,
+            [g.body_id]: { status: g.status, electionEndTime: g.election_end_time, formationReferendumId: g.formation_referendum_id, empireId: g.empire_id }
+          }));
+        }
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'state_elections' }, (payload) => {
+        const e = payload.new;
+        if (e.status === 'active') {
+          setActiveElections(prev => {
+            if (prev.some(x => x.id === e.id)) return prev;
+            return [...prev, { id: e.id, stateId: e.state_id, electionType: e.election_type, startTime: e.start_time, endTime: e.end_time, status: e.status }];
+          });
+          // Also load any candidates for this election
+          supabase.from('election_candidates').select('*').eq('election_id', e.id).then(({ data: cands }) => {
+            if (cands && cands.length > 0) {
+              setElectionCandidates(prev => {
+                const newOnes = cands.filter(c => !prev.some(x => x.id === c.id));
+                return [...prev, ...newOnes.map(c => ({ id: c.id, electionId: c.election_id, partyId: c.party_id, userId: c.user_id, voteCount: c.vote_count, registeredAt: c.registered_at }))];
+              });
+            }
+          });
+        }
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'state_elections' }, (payload) => {
+        const e = payload.new;
+        if (e.status !== 'active') {
+          setActiveElections(prev => prev.filter(x => x.id !== e.id));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, initialDataLoaded]);
+
   useEffect(() => {
     if (!user || !vesselId || !initialDataLoaded) return;
     const updateVessel = async () => {
@@ -603,15 +689,29 @@ export function useGalaxyApp(initialSeed = 20260423) {
   useEffect(() => {
     if (!user || !vesselId || !initialDataLoaded) return;
 
-    // CRITICAL: Prevent overwriting DB state with default "sys-center" during early initialization
+    // CRITICAL: Block the sync entirely until we have loaded a real position from the
+    // database. Without this, the default "sys-center" initial state would race with
+    // the async loadData and overwrite the player's actual saved position on page refresh.
+    if (!positionReadyRef.current) return;
+
     const isDefaultPosition = playerSystemId === "sys-center" && playerBodyId === "star" && !travel && !arrival;
-    
-    // If we are at the same position we just loaded from the DB, and not currently moving, 
-    // no need to sync back immediately (prevents overwriting if loadData is still propagating)
-    if (lastLoadedPositionRef.current && 
-        playerSystemId === lastLoadedPositionRef.current.systemId && 
+
+    // If we are at the same position we just loaded from the DB, and not currently moving,
+    // no need to sync back immediately (prevents re-writing unchanged data)
+    if (lastLoadedPositionRef.current &&
+        playerSystemId === lastLoadedPositionRef.current.systemId &&
         playerBodyId === lastLoadedPositionRef.current.bodyId &&
         !travel && !arrival) {
+      return;
+    }
+
+    // HYDRATION GUARD: If we have a lastLoadedPosition that is NOT sys-center, 
+    // but our current state IS sys-center, it means the React state hasn't 
+    // finished hydrating from the loadData call yet. 
+    // Do NOT sync until playerSystemId catches up to the DB truth.
+    if (lastLoadedPositionRef.current && 
+        lastLoadedPositionRef.current.systemId !== "sys-center" &&
+        playerSystemId === "sys-center" && !travel && !arrival) {
       return;
     }
     
@@ -1367,11 +1467,12 @@ export function useGalaxyApp(initialSeed = 20260423) {
 
   useEffect(() => {
     if (user && initialDataLoaded) {
+      fetchEconomyData();
       fetchConstructionQueue();
       fetchFleets();
       fetchSiloInventory();
     }
-  }, [user, initialDataLoaded, fetchConstructionQueue, fetchFleets, fetchSiloInventory]);
+  }, [user, initialDataLoaded, systemId, fetchEconomyData, fetchConstructionQueue, fetchFleets, fetchSiloInventory]);
 
   const queueShipBuild = useCallback(async (
     shipyardId:  string,
@@ -1384,7 +1485,6 @@ export function useGalaxyApp(initialSeed = 20260423) {
     const blueprint = SHIP_BLUEPRINTS[vesselClass];
  
     const { data, error } = await supabase.rpc('queue_ship_build', {
-      p_user_id:      user.id,
       p_shipyard_id:  shipyardId,
       p_vessel_class: vesselClass,
       p_vessel_name:  vesselName,
@@ -1400,17 +1500,19 @@ export function useGalaxyApp(initialSeed = 20260423) {
       return;
     }
  
+    // Consume credits from player profile in DB
+    await supabase.from('profiles').update({ credits: sc - blueprint.costSC }).eq('id', user.id);
     setSc(prev => prev - blueprint.costSC);
     toast.success(`${blueprint.label} commissioned`, {
       description: `Build underway — completes in ${blueprint.buildTimeSecs / 3600}h. Track progress in Fleet Registry.`,
     });
     fetchConstructionQueue();
-  }, [user, fetchConstructionQueue]);
+    fetchSiloInventory();
+  }, [user, fetchConstructionQueue, fetchSiloInventory]);
  
   const transferShipToDrydock = useCallback(async (queueId: string) => {
     if (!user) return;
     const { data, error } = await supabase.rpc('transfer_ship_to_drydock', {
-      p_user_id:  user.id,
       p_queue_id: queueId,
     });
     if (error || (data as any)?.error) {
@@ -1813,11 +1915,9 @@ export function useGalaxyApp(initialSeed = 20260423) {
     } else {
       toast.success("Article broadcasted!", { description: "Your message is propagating through the subspace relay." });
       logAction('article_post', `Broadcasting: ${title}`, `Neural broadcast transmitted to the ${type} relay network.`);
-      const bonus = computeSkillBonus('article_xp_bonus', playerSkills);
-      grantXP('article_published', bonus);
       fetchEconomyData();
     }
-  }, [user, playerSystemId, galaxy, fetchEconomyData, logAction, grantXP, playerSkills]);
+  }, [user, playerSystemId, galaxy, fetchEconomyData, logAction]);
 
   const voteArticle = useCallback(async (articleId: string, voteType: 1 | -1) => {
     if (!user) return;
@@ -2132,6 +2232,14 @@ export function useGalaxyApp(initialSeed = 20260423) {
     }
 
     const meta = INFRA_META[infraKey];
+
+    // Check if user already has this infrastructure type on this planet
+    const alreadyHas = factories.some(f => f.bodyId === body.id && f.type === meta.type && f.ownerId === user.id);
+    if (alreadyHas) {
+      toast.error("Limit reached", { description: `You already own a ${meta.label} on this planet.` });
+      return;
+    }
+
     const firstTier = meta.tiers[0];
     const cost = firstTier.costSC;
 
@@ -2310,10 +2418,15 @@ export function useGalaxyApp(initialSeed = 20260423) {
       return;
     }
 
+    const wageBonus = computeSkillBonus("factory_wage_bonus", playerSkills);
+    const xpBonus   = computeSkillBonus("factory_xp_bonus", playerSkills);
+
     const { data, error } = await supabase.rpc('work_at_factory', {
       p_user_id: user.id,
       p_factory_id: currentJob.factoryId,
-      p_ap_cost: cost
+      p_ap_cost: cost,
+      p_wage_bonus: wageBonus,
+      p_xp_bonus: xpBonus
     });
 
     if (error || (data as any)?.error) {
@@ -2332,8 +2445,9 @@ export function useGalaxyApp(initialSeed = 20260423) {
       if (inv) setUserResources(inv.map(r => ({ userId: r.user_id, resourceType: r.resource_type, amount: r.amount })));
       
       if (data) {
-        const result = data as { wage: number; resource_yield: number; resource_type: string };
-        toast.success(`Shift complete — +${result.wage} SC, +${result.resource_yield}× ${result.resource_type}`);
+        const result = data as { wage: number; resource_yield: number; resource_type: string; redirected_to_silo: boolean };
+        const location = result.redirected_to_silo ? "deposited in local Silo" : "stored at factory";
+        toast.success(`Shift complete — +${result.wage} SC, +${result.resource_yield}× ${result.resource_type} (${location})`);
       } else {
         toast.success("Work shift completed", { description: "Wages deposited to your account." });
       }
@@ -2377,6 +2491,25 @@ export function useGalaxyApp(initialSeed = 20260423) {
       if (profile) setSc(profile.credits);
       logAction('factory_upgrade', `Upgrade Installed: ${upgradeType}`, `Enhanced the facility's ${upgradeType} protocols to Tier ${[1,2,3,4][Math.floor(Math.random()*4)]}.`);
       fetchEconomyData();
+    }
+  }, [user, fetchEconomyData]);
+
+  const transferSiloResource = useCallback(async (siloId: string, resourceType: string, amount: number) => {
+    if (!user) return;
+    const { error } = await supabase.rpc('transfer_silo_resource', {
+      p_silo_id: siloId,
+      p_resource_type: resourceType,
+      p_amount: amount
+    });
+    if (error) {
+      toast.error("Transfer failed", { description: error.message });
+    } else {
+      toast.success(amount > 0 ? `Deposited ${amount}× ${resourceType}` : `Withdrew ${Math.abs(amount)}× ${resourceType}`);
+      fetchEconomyData();
+      fetchSiloInventory();
+      // Refresh inventory
+      const { data: inv } = await supabase.from('user_resources').select('*').eq('user_id', user.id);
+      if (inv) setUserResources(inv.map(r => ({ userId: r.user_id, resourceType: r.resource_type, amount: r.amount })));
     }
   }, [user, fetchEconomyData]);
 
@@ -2999,6 +3132,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
     fetchFleets,
     siloInventory,
     fetchSiloInventory,
+    transferSiloResource,
     queueShipBuild,
     updateVesselConfig,
     transferShipToDrydock,
@@ -3238,8 +3372,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
           // Mark referendum passed
           await supabase.from('state_formation_votes').update({ status: 'passed' }).eq('id', referendumId);
           setFormationReferendums(prev => prev.filter(r => r.id !== referendumId));
-          // Start primary election (48hrs)
-          const primaryEnd = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+          // Start primary election (24hrs)
+          const primaryEnd = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
           await supabase.from('state_elections').insert({
             state_id: empire.id, election_type: 'parliamentary', start_time: new Date().toISOString(), end_time: primaryEnd, status: 'active'
           });
@@ -3259,31 +3393,34 @@ export function useGalaxyApp(initialSeed = 20260423) {
     userFormationBallots,
     resolveFormationReferendum: async (referendumId: string) => {
       if (!user) return;
-      const ref = formationReferendums.find(r => r.id === referendumId);
-      if (!ref) return;
-      if (new Date(ref.endsAt) > new Date()) { toast.error("Referendum has not ended yet."); return; }
+      // Fetch latest data to avoid stale state issues and ensure trigger counts are processed
+      const { data: ref, error: fetchErr } = await supabase.from('state_formation_votes').select('*').eq('id', referendumId).single();
+      if (fetchErr || !ref) { toast.error("Referendum data not found."); return; }
+      
+      if (ref.status !== 'pending') { toast.error("Referendum already resolved."); return; }
+      if (new Date(ref.ends_at) > new Date()) { toast.error("Referendum has not ended yet."); return; }
 
-      if (ref.yesVotes > ref.noVotes) {
+      if (ref.yes_votes > ref.no_votes) {
         // Passed — create empire and start primary election
         const { data: empire, error: empireErr } = await supabase.from('player_empires').insert({
-          name: ref.empireName, tag: ref.empireTag, hue: ref.hue,
-          founder_id: user.id, capital_body_id: ref.bodyId, phase: 'primary'
+          name: ref.empire_name, tag: ref.empire_tag, hue: ref.hue,
+          founder_id: user.id, capital_body_id: ref.body_id, phase: 'primary'
         }).select().single();
         if (empireErr) { toast.error("Failed to form empire: " + empireErr.message); return; }
         // Update body governance
         await supabase.from('body_governance').update({
           status: 'imperial', empire_id: empire.id, formation_referendum_id: null
-        }).eq('body_id', ref.bodyId);
-        setBodyGovernance(prev => ({ ...prev, [ref.bodyId]: { status: 'imperial', electionEndTime: null, formationReferendumId: null, empireId: empire.id } }));
+        }).eq('body_id', ref.body_id);
+        setBodyGovernance(prev => ({ ...prev, [ref.body_id]: { status: 'imperial', electionEndTime: null, formationReferendumId: null, empireId: empire.id } }));
         // Mark referendum passed
         await supabase.from('state_formation_votes').update({ status: 'passed' }).eq('id', referendumId);
         setFormationReferendums(prev => prev.filter(r => r.id !== referendumId));
-        // Start primary election (48hrs)
-        const primaryEnd = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+        // Start primary election (24hrs)
+        const primaryEnd = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
         await supabase.from('state_elections').insert({
           state_id: empire.id, election_type: 'parliamentary', start_time: new Date().toISOString(), end_time: primaryEnd, status: 'active'
         });
-        toast.success(`${ref.empireName} has been formally established!`, { description: "Primary elections are now open. Parties may register candidates." });
+        toast.success(`${ref.empire_name} has been formally established!`, { description: "Primary elections are now open. Parties may register candidates." });
       } else {
         // Failed
         await supabase.from('state_formation_votes').update({ status: 'failed' }).eq('id', referendumId);

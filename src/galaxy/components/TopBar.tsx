@@ -50,17 +50,13 @@ interface Props {
   setFogOfWar: (v: boolean) => void;
   instantJump: boolean;
   setInstantJump: (v: boolean) => void;
-  playerSystemName?: string;
   playerSystemId?: string;
-  travel?: { targetId?: string; endTime: number; startTime: number; type?: "inter" | "intra" } | null;
-  arrival?: { fromId: string; startTime: number; duration: number } | null;
   currentTime: number;
   galaxy: Galaxy;
   onReset: () => void;
   onSetAp: (val: number) => void;
   onPlayClick?: () => void;
   isGameReady?: boolean;
-  shipName?: string;
   nextApTick?: number;
   isAdmin?: boolean;
   searchResults?: { users: any[], parties: any[], states: any[] };
@@ -92,7 +88,7 @@ export function TopBar({
   ap, sc, vt = 0, cargoCapacity = 500, cargoUsed = 0, playerName, playerLevel, playerXP, xpToNextLevel, playerSkills = [], playerAvatar,
   playerPartyIcon, playerPartyHue,
   fogOfWar, setFogOfWar, instantJump, setInstantJump,
-  playerSystemName, playerSystemId, travel, arrival, currentTime, galaxy, onReset, onSetAp, onPlayClick, isGameReady = true, shipName,
+  playerSystemId, currentTime, galaxy, onReset, onSetAp, onPlayClick, isGameReady = true,
   nextApTick, isAdmin = false,
   searchResults = { users: [], parties: [], states: [] },
   isSearching = false,
@@ -104,19 +100,6 @@ export function TopBar({
   // Game menu state - Radix Sheet handles escape/outside-click automatically
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const destinationName = useMemo(() => {
-    if (!travel?.targetId || !galaxy) return null;
-    
-    if (travel.type === "intra") {
-      const currentSys = playerSystemId ? galaxy.systemById[playerSystemId] : null;
-      if (!currentSys) return "Target Vector";
-      if (travel.targetId === "star") return currentSys.name;
-      const body = currentSys.bodies.find(b => b.id === travel.targetId);
-      return body?.name || "Target Vector";
-    }
-    
-    return galaxy.systemById[travel.targetId]?.name || "Deep Space";
-  }, [travel, galaxy, playerSystemId]);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearchResults, setShowSearchResults] = useState(false);
@@ -298,7 +281,7 @@ export function TopBar({
 
         {/* Player Profile HUD */}
         <div 
-          className="flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-1 bg-primary/5 border border-primary/20 rounded-lg group transition-colors" 
+          className="flex flex-1 sm:flex-none items-center gap-2 sm:gap-3 px-2 sm:px-3 py-1 bg-primary/5 border border-primary/20 rounded-lg group transition-colors min-w-0" 
         >
           {/* Avatar with level badge and party icon */}
           <div 
@@ -318,8 +301,8 @@ export function TopBar({
             />
           </div>
 
-          {/* Name and XP details - hidden on mobile to save space */}
-          <div className="hidden lg:flex flex-col gap-0.5 min-w-[140px]">
+          {/* Name and XP details - now visible on mobile to fill space */}
+          <div className="flex flex-col gap-0.5 min-w-0 flex-1 sm:min-w-[140px] sm:flex-none">
             <div 
               className="flex items-center justify-between gap-2 cursor-pointer hover:text-primary transition-colors"
               onClick={(e) => {
@@ -328,7 +311,7 @@ export function TopBar({
                 onOpenProfile();
               }}
             >
-              <span className="font-display text-[10px] sm:text-[11px] uppercase tracking-wider text-primary text-glow truncate max-w-[120px] lg:max-w-[none]">
+              <span className="font-display text-[9px] sm:text-[11px] uppercase tracking-wider text-primary text-glow truncate max-w-[100px] xs:max-w-[140px] lg:max-w-[none]">
                 {playerName}
               </span>
               <div className="flex items-center gap-2">
@@ -357,48 +340,6 @@ export function TopBar({
                 XP: {playerXP} / {xpToNextLevel} — Click to open Neural Uplink
               </TooltipContent>
             </Tooltip>
-          </div>
-        </div>
-
-        {/* Real-time Location Indicator */}
-        <div className="flex items-center gap-1.5 sm:gap-3 px-1.5 sm:px-3 py-1 sm:py-1.5 bg-primary/5 border border-primary/15 rounded-lg border-l-4 border-l-cyan-500 min-w-0 w-fit max-w-[140px] sm:max-w-[240px]">
-          <div className="flex flex-col flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <Compass size={10} className={`${(travel || arrival) ? "text-cyan-400 animate-spin-slow" : "text-cyan-400/60"} shrink-0`} />
-              <span className="text-[8px] sm:text-[9px] font-display text-cyan-400 uppercase tracking-widest truncate">
-                {travel ? `${travel.type === "intra" ? "SLT" : "FTL"} → ${destinationName}` : arrival ? `TRANSIT → STAR` : `${shipName || "Vessel"} @ ${playerSystemName || "Unknown Space"}`}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 sm:gap-2 mt-0.5 h-2.5">
-              {travel || arrival ? (
-                <div className="flex-1 flex flex-col justify-center">
-                  <div className="flex items-center justify-between mb-0.5">
-                    <span className="text-[6px] sm:text-[7px] font-mono-hud text-cyan-400/80 uppercase tracking-widest">
-                      {travel ? "Warping..." : "Landing..."}
-                    </span>
-                    <span className="text-[6px] sm:text-[7px] font-mono-hud text-cyan-400 font-bold uppercase tracking-widest">
-                      {travel ? `ETA ${Math.max(0, Math.ceil((travel.endTime - currentTime) / 1000))}S` : "EST. CONTACT"}
-                    </span>
-                  </div>
-                  <div className="h-1 bg-cyan-950 rounded-full overflow-hidden w-full border border-cyan-500/20">
-                    <div 
-                      className="h-full bg-gradient-to-r from-cyan-600 to-cyan-400 shadow-[0_0_8px_cyan]"
-                      style={{ 
-                        width: travel 
-                          ? `${Math.min(100, ((currentTime - travel.startTime) / (travel.endTime - travel.startTime)) * 100)}%`
-                          : `${Math.min(100, ((currentTime - arrival!.startTime) / arrival!.duration) * 100)}%`,
-                        transition: "width 0.1s linear"
-                      }}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-cyan-900 shrink-0" />
-                  <span className="text-[6px] sm:text-[7px] font-mono-hud text-primary/40 tracking-[0.2em] truncate">SECTOR STATION</span>
-                </>
-              )}
-            </div>
           </div>
         </div>
 
@@ -474,8 +415,8 @@ export function TopBar({
           </Sheet>
         </div>
 
-        {/* Spacer to push content right */}
-        <div className="flex-1" />
+        {/* Spacer to push content right - hidden on mobile when profile fills space */}
+        <div className="hidden sm:flex flex-1" />
 
         {/* Action Points and Credits */}
         <div className="grid grid-cols-2 grid-rows-2 gap-x-2 gap-y-1 sm:flex sm:flex-row sm:items-center sm:gap-4 pr-1 sm:pr-4 ml-auto">

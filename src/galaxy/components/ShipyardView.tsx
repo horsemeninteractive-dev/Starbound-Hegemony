@@ -260,11 +260,10 @@ export function ShipyardView({ app, onPlayClick }: { app: any; onPlayClick?: () 
         icon={<Hammer className="w-5 h-5 text-primary" />} onBack={() => setView('list')} backLabel="Back to Shipyards" />
 
       <main className="flex-1 p-4 sm:p-8 overflow-y-auto custom-scrollbar">
-        <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8 pb-24">
+        <div className="max-w-3xl mx-auto space-y-8 pb-24">
 
-          {/* LEFT */}
+          {/* TOP SECTION: Blueprint & Status */}
           <div className="space-y-6">
-
             {/* Silo status */}
             <div className={cn("p-4 rounded-xl border",
               silo ? "bg-success/5 border-success/20" : "bg-warning/5 border-warning/20"
@@ -338,17 +337,19 @@ export function ShipyardView({ app, onPlayClick }: { app: any; onPlayClick?: () 
             </div>
           </div>
 
-          {/* RIGHT */}
-          <div className="flex flex-col gap-6">
+          {/* BOTTOM SECTION: Customizer */}
+          <div className="space-y-6 pt-8 border-t border-primary/10">
             <div>
+              <h3 className="font-display text-[11px] uppercase tracking-[0.2em] text-primary mb-4 flex items-center gap-2">
+                <Rocket size={14} /> Hull Synthesis & Design
+              </h3>
               <label className="font-mono-hud text-[9px] uppercase tracking-widest text-primary/60 block mb-2">Vessel Designation</label>
               <input type="text" value={vesselName} onChange={e => setVesselName(e.target.value)}
                 placeholder="Enter vessel name..." maxLength={32}
                 className="w-full bg-background/60 border border-primary/20 focus:border-primary/50 px-4 py-2.5 font-display text-sm uppercase tracking-widest text-primary outline-none transition-all placeholder:text-primary/20 rounded-lg" />
             </div>
 
-            <div className="flex-1 min-h-0">
-              <label className="font-mono-hud text-[9px] uppercase tracking-widest text-primary/60 block mb-2">Visual Configuration</label>
+            <div className="bg-background/40 border border-primary/10 rounded-xl overflow-hidden min-h-[400px]">
               <ShipCustomizer 
                 config={shipConfig} 
                 onChange={setShipConfig} 
@@ -358,19 +359,19 @@ export function ShipyardView({ app, onPlayClick }: { app: any; onPlayClick?: () 
               />
             </div>
 
-            <div>
+            <div className="pt-4">
               {disabledReason && (
-                <div className="flex items-center gap-2 text-[9px] font-mono-hud text-warning/70 mb-3">
+                <div className="flex items-center gap-2 text-[9px] font-mono-hud text-warning/70 mb-3 bg-warning/5 p-2 rounded border border-warning/10">
                   <AlertTriangle size={11} /><span>{disabledReason}</span>
                 </div>
               )}
               <Button onClick={handleCommission} disabled={!canCommission || isCommissioning}
-                className={cn("w-full h-12 font-display text-[11px] uppercase tracking-[0.2em]",
+                className={cn("w-full h-14 font-display text-[11px] uppercase tracking-[0.2em] transition-all",
                   canCommission
-                    ? "bg-primary text-black hover:bg-primary/80 shadow-[0_0_20px_rgba(var(--primary-rgb),0.3)]"
+                    ? "bg-primary text-black hover:bg-primary/80 shadow-[0_0_30px_rgba(var(--primary-rgb),0.3)]"
                     : "bg-primary/5 border border-primary/10 text-primary/30 cursor-not-allowed"
                 )}>
-                {isCommissioning ? "Initiating build..." : <><Hammer size={14} className="mr-2" />Commission {bp.label}</>}
+                {isCommissioning ? "Initiating hull synthesis..." : <><Hammer size={16} className="mr-3" />Commission {bp.label}</>}
               </Button>
             </div>
           </div>

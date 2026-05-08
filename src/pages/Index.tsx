@@ -231,17 +231,13 @@ const Index = () => {
           setFogOfWar={app.setFogOfWar}
           instantJump={app.instantJump}
           setInstantJump={app.setInstantJump}
-          playerSystemName={app.galaxy.systemById[app.playerSystemId]?.name}
           playerSystemId={app.playerSystemId}
-          travel={app.travel}
-          arrival={app.arrival}
           currentTime={app.currentTime}
           galaxy={app.galaxy}
           onReset={app.resetGalaxy}
           onSetAp={app.setAp}
           onPlayClick={playClick}
           isGameReady={isGameReady}
-          shipName={app.shipConfig.name}
           nextApTick={app.nextApTick}
           onOpenWiki={() => navigateTo("wiki")}
           isAdmin={app.isAdmin}
@@ -266,6 +262,11 @@ const Index = () => {
               {/* Fleet Sidebar (Galaxy View) */}
               {app.view === "galaxy" && app.page === "map" && (
                 <FleetSidebar
+                  currentTime={app.currentTime}
+                  onSelectFleet={(id: string) => {
+                    if (id === app.vesselId) { app.setSelectedEntityId(null); }
+                    else { app.setSelectedEntityId(id); }
+                  }}
                   isOpen={app.isFleetSidebarOpen}
                   onToggle={app.toggleFleetSidebar}
                   fleets={[
@@ -274,24 +275,29 @@ const Index = () => {
                       name:       app.playerName ?? 'Commander',
                       vesselClass: 'commander' as const,
                       systemName: app.galaxy?.systemById[app.playerSystemId]?.name ?? '',
+                      bodyName:   app.playerBodyId === "star" ? undefined : app.galaxy?.systemById[app.playerSystemId]?.bodies.find(b => b.id === app.playerBodyId)?.name,
                       status:     app.travel ? 'TRAVELING' : 'IDLE',
                       isSelected: app.selectedEntityId == null,
+                      travel:     app.travel,
+                      arrival:    app.arrival,
+                      destinationName: app.travel ? (
+                        app.travel.type === "intra" 
+                          ? (app.travel.targetId === "star" ? app.galaxy.systemById[app.playerSystemId]?.name : app.galaxy.systemById[app.playerSystemId]?.bodies.find(b => b.id === app.travel.targetId)?.name)
+                          : app.galaxy.systemById[app.travel.targetId]?.name
+                      ) : null
                     },
                     ...(app.userFleets ?? []).map(f => ({
                       id:         f.id,
                       name:       f.name,
                       vesselClass: 'freighter' as const,
-                      vesselCount: f.vesselIds.length,
                       systemName: app.galaxy?.systemById[f.systemId]?.name ?? f.systemId,
                       status:     f.travel ? 'TRAVELING' : f.status.toUpperCase(),
                       isSelected: app.selectedEntityId === f.id,
+                      travel:     f.travel,
+                      destinationName: f.travel ? app.galaxy.systemById[f.travel.targetId]?.name : null
                     })),
                   ]}
                   selectedFleetId={app.selectedEntityId ?? app.vesselId}
-                  onSelectFleet={(id: string) => {
-                    if (id === app.vesselId) { app.setSelectedEntityId(null); }
-                    else { app.setSelectedEntityId(id); }
-                  }}
                 />
               )}
               {/* Subtle nebula vignette */}
@@ -491,6 +497,8 @@ const Index = () => {
                       bodyResources={app.bodyResources}
                       userResources={app.userResources}
                       currentJob={app.currentJob}
+                      siloInventory={app.siloInventory}
+                      onTransferSiloResource={app.transferSiloResource}
                       onBuildFactory={app.buildFactory}
                       onBuildInfrastructure={app.buildInfrastructure}
                       onApplyForJob={app.applyForJob}
@@ -1187,11 +1195,33 @@ function MobileHUD({
     subtitle = `${app.system.bodies.length} bodies · ${app.system.starType.toUpperCase()}-class`;
   }
 
-  const isAdjacent = app.galaxy.hyperlanes.some(h => (h.a === app.playerSystemId && h.b === app.system?.id) || (h.a === app.system?.id && h.b === app.playerSystemId));
+  const path = useMemo(() => {
+    if (!app.system || app.playerSystemId === app.system.id) return null;
+    return app.calculatePath(app.playerSystemId, app.system.id);
+  }, [app.calculatePath, app.playerSystemId, app.system?.id]);
 
-  const canJump = app.system && !app.travel && 
-                 app.playerSystemId !== app.system.id && 
-                 isAdjacent;
+  const pathCost = useMemo(() => {
+    if (!path || path.length < 2) return 0;
+    return app.getPathCost(path);
+  }, [app.getPathCost, path]);
+
+  const eta = useMemo(() => {
+    if (!path || path.length < 2) return 0;
+    let totalDuration = 0;
+    for (let i = 0; i < path.length - 1; i++) {
+      const s1 = app.galaxy.systemById[path[i]];
+      const s2 = app.galaxy.systemById[path[i + 1]];
+      if (!s1 || !s2) continue;
+      const region = s1.regionId ? app.galaxy.regions?.find(r => r.id === s1.regionId) : null;
+      const slowdown = region?.type === "nebula" ? 2.5 : 1.0;
+      const dist = Math.hypot(s1.pos[0] - s2.pos[0], s1.pos[1] - s2.pos[1], s1.pos[2] - s2.pos[2]);
+      totalDuration += (15 + dist * 1.2 * slowdown);
+    }
+    return Math.ceil(totalDuration);
+  }, [path, app.galaxy]);
+
+  const canJump = app.system && !app.travel && path && path.length >= 2;
+  const isAdjacent = canJump && path.length === 2;
 
   const canEnterSystem = app.view === "galaxy" && app.system !== null;
   const canTravel = (app.view === "system" || app.view === "body") && app.body && 
@@ -1302,10 +1332,15 @@ function MobileHUD({
                 onInitiateJump(app.system!.id);
                 onPlayClick();
               }}
-              className="shrink-0 flex items-center gap-1.5 bg-primary text-background border border-primary px-3 py-1.5 rounded font-mono-hud font-bold text-[9px] tracking-widest hover:bg-primary/80 active:scale-95 transition-all"
+              className="shrink-0 flex flex-col items-center justify-center bg-primary text-background border border-primary px-3 py-1.5 rounded font-mono-hud font-bold text-[9px] tracking-widest hover:bg-primary/80 active:scale-95 transition-all min-w-[80px]"
             >
-              <Rocket size={14} fill="currentColor" />
-              JUMP
+              <div className="flex items-center gap-1.5">
+                <Rocket size={14} fill="currentColor" />
+                <span>{isAdjacent ? "JUMP" : `JOURNEY`}</span>
+              </div>
+              <div className="text-[7px] opacity-80 mt-0.5 leading-none">
+                {pathCost} AP · {eta}s
+              </div>
             </button>
           )}
 
@@ -1391,6 +1426,8 @@ function MobileHUD({
                 bodyResources={app.bodyResources}
                 userResources={app.userResources}
                 currentJob={app.currentJob}
+                siloInventory={app.siloInventory}
+                onTransferSiloResource={app.transferSiloResource}
                 onBuildFactory={app.buildFactory}
                 onBuildInfrastructure={app.buildInfrastructure}
                 onApplyForJob={app.applyForJob}
@@ -2082,9 +2119,9 @@ function EmpireView({ app, onPlayClick, isPublic = false, onBack }: { app: Galax
                                 Certify Results & Form Council
                               </button>
                             )}
-                            {app.parties.some(p => p.headId === app.user?.id && p.regionId === empire.id) && !activeElectionCandidates.some(c => app.parties.find(p => p.id === c.partyId)?.headId === app.user?.id) && (
+                            {app.parties.some(p => p.headId === app.user?.id && p.regionId === empireData?.capitalBodyId) && !activeElectionCandidates.some(c => app.parties.find(p => p.id === c.partyId)?.headId === app.user?.id) && (
                               <button onClick={() => {
-                                const myParty = app.parties.find(p => p.headId === app.user?.id && p.regionId === empire.id);
+                                const myParty = app.parties.find(p => p.headId === app.user?.id && p.regionId === empireData?.capitalBodyId);
                                 if (myParty) app.registerPartyForElection(activeElection.id, myParty.id);
                               }} className="px-4 py-2 bg-primary/10 hover:bg-primary/20 border border-primary/30 text-primary font-display text-[9px] uppercase tracking-widest transition-all rounded">
                                 Register My Party
