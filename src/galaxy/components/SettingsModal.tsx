@@ -227,7 +227,7 @@ export function SettingsModal({
 
           <div className="pt-4 border-t border-primary/10">
             <div className="font-mono-hud text-[8px] text-center text-muted-foreground/50 uppercase tracking-widest">
-              Starbound Hegemony · Build v0.3.0-sb
+              Starbound Hegemony · Build v0.3.1-sb
             </div>
           </div>
         </div>

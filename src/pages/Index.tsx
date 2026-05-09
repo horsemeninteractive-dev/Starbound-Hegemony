@@ -32,11 +32,15 @@ import { PartyView } from "@/galaxy/components/PartyView";
 import { SkillsView } from "@/galaxy/components/SkillsView";
 import { WikiView } from "@/galaxy/components/WikiView";
 import { FleetSidebar } from "@/galaxy/components/FleetSidebar";
+import { PlayerStatusSidebar } from "@/galaxy/components/PlayerStatusSidebar";
 import type { VesselClass } from "@/galaxy/types";
 import { PageHeader } from "@/galaxy/components/PageHeader";
 import { useAudio } from "@/galaxy/useAudio";
 import { ChangelogModal } from "@/galaxy/components/ChangelogModal";
 import { CreditsScreen } from "@/galaxy/components/CreditsScreen";
+import { TutorialOverlay } from "@/galaxy/components/TutorialOverlay";
+import { TUTORIAL_STEPS } from "@/galaxy/tutorials";
+import { Step } from "react-joyride";
 import { RESOURCE_META } from "@/galaxy/meta";
 import logo from "@/assets/logo.png";
 
@@ -66,6 +70,54 @@ const Index = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isChangelogOpen, setIsChangelogOpen] = useState(false);
   const [isCreditsOpen, setIsCreditsOpen] = useState(false);
+  const [runTutorial, setRunTutorial] = useState(false);
+  const [activeTutorialSteps, setActiveTutorialSteps] = useState<Step[]>([]);
+  const [tutorialResetKey, setTutorialResetKey] = useState(0);
+
+  const isGameReady = !!app.user && !!app.vesselId;
+
+  useEffect(() => {
+    if (!isGameReady || !app.initialDataLoaded || !hasInteracted) return;
+
+    const checkTutorial = (tutorialKey: string, steps: Step[], delay = 1000) => {
+      if (!localStorage.getItem(`has_seen_tutorial_${tutorialKey}`)) {
+        const timer = setTimeout(() => {
+          setActiveTutorialSteps(steps);
+          setRunTutorial(true);
+          localStorage.setItem(`has_seen_tutorial_${tutorialKey}`, "true");
+        }, delay);
+        return () => clearTimeout(timer);
+      }
+      return () => {};
+    };
+
+    if (app.page === "map") {
+      if (app.view === "galaxy") {
+        return checkTutorial("map_main", TUTORIAL_STEPS.map_main, 3000);
+      } else if (app.view === "system") {
+        return checkTutorial("map_system", TUTORIAL_STEPS.map_system, 1000);
+      } else if (app.view === "body") {
+        return checkTutorial("map_body", TUTORIAL_STEPS.map_body, 1000);
+      }
+    } else if (app.page === "profile") {
+      return checkTutorial("profile", TUTORIAL_STEPS.profile, 500);
+    } else if (app.page === "fleets") {
+      return checkTutorial("fleets", TUTORIAL_STEPS.fleets, 500);
+    } else if (app.page === "articles") {
+      return checkTutorial("articles", TUTORIAL_STEPS.articles, 500);
+    } else if (app.page === "market") {
+      return checkTutorial("market", TUTORIAL_STEPS.market, 500);
+    } else if (app.page === "factories") {
+      return checkTutorial("factories", TUTORIAL_STEPS.factories, 500);
+    } else if (app.page === "party") {
+      return checkTutorial("party", TUTORIAL_STEPS.party, 500);
+    } else if (app.page === "skills") {
+      return checkTutorial("skills", TUTORIAL_STEPS.skills, 500);
+    } else if (app.page === "wiki") {
+      return checkTutorial("wiki", TUTORIAL_STEPS.wiki, 500);
+    }
+  }, [isGameReady, app.initialDataLoaded, app.page, app.view, hasInteracted]);
+
   const [isMobilePanelExpanded, setIsMobilePanelExpanded] = useState(false);
   const [graphicsQuality, setGraphicsQuality] = useState<"low" | "medium" | "high">(() => {
     return (localStorage.getItem("gfx_quality") as "low" | "medium" | "high") || "high";
@@ -167,7 +219,6 @@ const Index = () => {
     }, 200);
   };
 
-  const isGameReady = !!app.user && !!app.vesselId;
   const isInitialLoading = app.sessionLoading || (!app.initialDataLoaded && !!app.user);
 
   // Apply theme class to document root for global inheritance
@@ -215,6 +266,34 @@ const Index = () => {
           onOpenSkills={() => navigateTo("skills")}
           onOpenChangelog={() => setIsChangelogOpen(true)}
           onOpenCredits={() => setIsCreditsOpen(true)}
+          onStartTutorial={() => {
+            // Determine context
+            if (app.page === "map") {
+              if (app.view === "system") setActiveTutorialSteps(TUTORIAL_STEPS.map_system);
+              else if (app.view === "body") setActiveTutorialSteps(TUTORIAL_STEPS.map_body);
+              else setActiveTutorialSteps(TUTORIAL_STEPS.map_main);
+            } else if (app.page === "profile") {
+              setActiveTutorialSteps(TUTORIAL_STEPS.profile);
+            } else if (app.page === "fleets") {
+              setActiveTutorialSteps(TUTORIAL_STEPS.fleets);
+            } else if (app.page === "articles") {
+              setActiveTutorialSteps(TUTORIAL_STEPS.articles);
+            } else if (app.page === "market") {
+              setActiveTutorialSteps(TUTORIAL_STEPS.market);
+            } else if (app.page === "factories") {
+              setActiveTutorialSteps(TUTORIAL_STEPS.factories);
+            } else if (app.page === "party") {
+              setActiveTutorialSteps(TUTORIAL_STEPS.party);
+            } else if (app.page === "skills") {
+              setActiveTutorialSteps(TUTORIAL_STEPS.skills);
+            } else if (app.page === "wiki") {
+              setActiveTutorialSteps(TUTORIAL_STEPS.wiki);
+            } else {
+              setActiveTutorialSteps(TUTORIAL_STEPS.map_main);
+            }
+            setTutorialResetKey(prev => prev + 1);
+            setRunTutorial(true);
+          }}
           ap={app.ap}
           sc={app.sc}
           cargoCapacity={app.cargoCapacity}
@@ -251,6 +330,12 @@ const Index = () => {
         />
       </div>
 
+      <TutorialOverlay 
+        key={tutorialResetKey}
+        run={runTutorial} 
+        steps={activeTutorialSteps} 
+        onFinish={() => setRunTutorial(false)} 
+      />
 
       {/* Main Content Area — keyed so it animates on page change */}
       <div className="flex-1 flex overflow-hidden relative">
@@ -259,8 +344,8 @@ const Index = () => {
             <>
             {/* Main Map Viewport Area */}
             <div className="relative flex-1 flex flex-col min-w-0">
-              {/* Fleet Sidebar (Galaxy View) */}
-              {app.view === "galaxy" && app.page === "map" && (
+              {/* Fleet Sidebar (All Map Views) */}
+              {app.page === "map" && (
                 <FleetSidebar
                   currentTime={app.currentTime}
                   onSelectFleet={(id: string) => {
@@ -298,6 +383,17 @@ const Index = () => {
                     })),
                   ]}
                   selectedFleetId={app.selectedEntityId ?? app.vesselId}
+                />
+              )}
+              {app.page === "map" && (
+                <PlayerStatusSidebar
+                  app={app}
+                  isOpen={app.isPlayerStatusSidebarOpen}
+                  onToggle={app.togglePlayerStatusSidebar}
+                  onNavigateMap={(systemId, bodyId) => {
+                    handleSelectSystem(systemId);
+                    if (bodyId) handleSystemBodyClick(bodyId);
+                  }}
                 />
               )}
               {/* Subtle nebula vignette */}
@@ -428,7 +524,7 @@ const Index = () => {
               </div>
             </div>
 
-            <aside className="hidden sm:flex w-[380px] h-full flex-col hud-panel border-l border-primary/20 z-40 animate-in slide-in-from-right duration-500">
+            <aside className="hidden sm:flex w-[380px] h-full flex-col hud-panel border-l border-primary/20 z-40 animate-in slide-in-from-right duration-500 tour-overview-target">
               <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
                 {app.view === "galaxy" && (
                   app.system ? (
@@ -670,7 +766,7 @@ const Index = () => {
 
       {/* ── Global Breadcrumb Footer ───────────────────────────────────────── */}
       <footer className="relative z-50 border-t border-primary/20 bg-background/80 backdrop-blur-md flex items-center justify-between px-3 h-8 shrink-0">
-        <nav className="flex items-center gap-0.5 font-mono-hud text-[9px] uppercase tracking-widest overflow-hidden">
+        <nav id="tour-breadcrumbs" className="flex items-center gap-0.5 font-mono-hud text-[9px] uppercase tracking-widest overflow-hidden">
           <button
             onClick={() => navigateTo("map", handleBackToGalaxy)}
             className={`px-2 py-1 transition-colors shrink-0 uppercase ${
@@ -864,7 +960,7 @@ function UplinkBootSequence({
   const [bootStep, setBootStep] = useState(0);
   const steps = [
     `INITIATING NEURAL HANDSHAKE...`,
-    `GALAXY TOPOLOGY SYNCED [${new Date().getFullYear()}.04.23]`,
+    `GALAXY TOPOLOGY SYNCED [${new Date().getFullYear()}.${String(new Date().getMonth() + 1).padStart(2, '0')}.${String(new Date().getDate()).padStart(2, '0')}]`,
     `COMMANDER DESIGNATION: ${playerName.toUpperCase()}`,
     `STATUS: READY FOR DEPLOYMENT`
   ];
@@ -1230,7 +1326,7 @@ function MobileHUD({
                     !app.travel && !app.body.id.startsWith("ship");
 
   return (
-    <div className="sm:hidden fixed inset-x-2 bottom-9 z-30 pointer-events-auto">
+    <div className="sm:hidden fixed inset-x-2 bottom-9 z-30 pointer-events-auto tour-overview-target">
       {/* Regional interference indicator (Mobile) */}
       <AnimatePresence>
         {(() => {

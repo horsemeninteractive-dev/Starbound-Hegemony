@@ -1811,7 +1811,7 @@ const HyperlaneLines = memo(function HyperlaneLines({ galaxy, filters, matches, 
 
   return (
     <lineSegments frustumCulled={true}>
-      <bufferGeometry attach="geometry">
+      <bufferGeometry attach="geometry" key={laneData.length}>
         <bufferAttribute
           attach="attributes-position"
           count={laneData.length / 3}

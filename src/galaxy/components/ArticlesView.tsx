@@ -22,7 +22,11 @@ import {
   Image as ImageIcon,
   ChevronDown,
   ChevronUp,
-  ChevronLeft
+  ChevronLeft,
+  Edit,
+  Trash2,
+  Save,
+  X
 } from "lucide-react";
 
 const CommentIcon = MessageSquare;
@@ -38,7 +42,11 @@ interface ArticlesViewProps {
 }
 
 export function ArticlesView({ app, onPlayClick }: ArticlesViewProps) {
-  const { articles, createArticle, voteArticle, postComment, playerSystemId, galaxy, user } = app;
+  const { 
+    articles, createArticle, voteArticle, postComment, 
+    deleteArticle, updateArticle, voteComment, deleteComment, updateComment,
+    playerSystemId, galaxy, user 
+  } = app;
   const [activeTab, setActiveTab] = useState<string>("all");
   const [isCreating, setIsCreating] = useState(false);
   
@@ -249,6 +257,11 @@ export function ArticlesView({ app, onPlayClick }: ArticlesViewProps) {
                   article={article} 
                   onVote={voteArticle}
                   onComment={postComment}
+                  onDelete={deleteArticle}
+                  onUpdate={updateArticle}
+                  onVoteComment={voteComment}
+                  onDeleteComment={deleteComment}
+                  onUpdateComment={updateComment}
                   user={user}
                 />
               ))
@@ -267,10 +280,25 @@ export function ArticlesView({ app, onPlayClick }: ArticlesViewProps) {
 );
 }
 
-function ArticleCard({ article, onVote, onComment, user }: { article: any, onVote: any, onComment: any, user: any }) {
+function ArticleCard({ 
+  article, onVote, onComment, onDelete, onUpdate, 
+  onVoteComment, onDeleteComment, onUpdateComment, user 
+}: { 
+  article: any, onVote: any, onComment: any, onDelete: any, onUpdate: any,
+  onVoteComment: any, onDeleteComment: any, onUpdateComment: any, user: any 
+}) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [commentInput, setCommentInput] = useState("");
   const [showComments, setShowComments] = useState(false);
+  
+  // Article Edit State
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(article.title);
+  const [editContent, setEditContent] = useState(article.content);
+
+  // Comment Edit State
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editCommentContent, setEditCommentContent] = useState("");
 
   const TypeIcon = {
     galaxy: Globe,
@@ -282,6 +310,13 @@ function ArticleCard({ article, onVote, onComment, user }: { article: any, onVot
   const upvotes = article.article_votes?.filter((v: any) => v.vote_type === 1).length || 0;
   const downvotes = article.article_votes?.filter((v: any) => v.vote_type === -1).length || 0;
   const userVote = article.article_votes?.find((v: any) => v.user_id === user?.id)?.vote_type;
+
+  const isOwner = user?.id === article.author_id;
+
+  const handleUpdate = async () => {
+    await onUpdate(article.id, editTitle, editContent);
+    setIsEditing(false);
+  };
 
   const renderContent = (text: string, truncate: boolean = false) => {
     let content = text;
@@ -332,8 +367,8 @@ function ArticleCard({ article, onVote, onComment, user }: { article: any, onVot
   return (
     <div className={`hud-panel border transition-all animate-in fade-in slide-in-from-top-2 duration-300 ${isExpanded ? 'border-primary/40 bg-primary/10 shadow-[0_0_30px_rgba(var(--primary-rgb),0.1)]' : 'border-primary/20 bg-primary/5 hover:border-primary/40 hover:bg-primary/8'}`}>
       <div className="p-6">
-        <div className="flex justify-between items-start gap-4 mb-4 cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
-          <div className="flex flex-col gap-2">
+        <div className="flex justify-between items-start gap-4 mb-4">
+          <div className="flex flex-col gap-2 flex-1">
             <div className="flex items-center gap-2">
               <div className="px-2 py-0.5 rounded-full bg-primary/10 border border-primary/30 flex items-center gap-1.5">
                 <TypeIcon size={10} className="text-primary" />
@@ -342,8 +377,58 @@ function ArticleCard({ article, onVote, onComment, user }: { article: any, onVot
               <span className="text-[10px] text-muted-foreground font-mono-hud uppercase tracking-widest flex items-center gap-1">
                 <Clock size={10} /> {formatDistanceToNow(new Date(article.created_at))} ago
               </span>
+              {isOwner && (
+                <div className="flex items-center gap-2 ml-4">
+                   <button 
+                    onClick={() => {
+                      if (isEditing) {
+                        handleUpdate();
+                      } else {
+                        setIsEditing(true);
+                        setIsExpanded(true);
+                      }
+                    }} 
+                    className="text-[9px] text-primary/60 hover:text-primary transition-colors font-bold uppercase flex items-center gap-1"
+                  >
+                     {isEditing ? <><Save size={10} /> Save</> : <><Edit size={10} /> Edit</>}
+                   </button>
+                   {isEditing && (
+                     <button 
+                      onClick={() => {
+                        setIsEditing(false);
+                        setEditTitle(article.title);
+                        setEditContent(article.content);
+                      }} 
+                      className="text-[9px] text-destructive/60 hover:text-destructive transition-colors font-bold uppercase flex items-center gap-1"
+                    >
+                       <X size={10} /> Cancel
+                     </button>
+                   )}
+                   {!isEditing && (
+                     <button 
+                      onClick={() => {
+                        if (confirm("Permanently retract this broadcast from the subspace relay?")) {
+                          onDelete(article.id);
+                        }
+                      }} 
+                      className="text-[9px] text-destructive/60 hover:text-destructive transition-colors font-bold uppercase flex items-center gap-1"
+                    >
+                       <Trash2 size={10} /> Retract
+                     </button>
+                   )}
+                </div>
+              )}
             </div>
-            <h3 className="text-lg font-display text-white tracking-wider uppercase group-hover:text-primary transition-colors">{article.title}</h3>
+            {isEditing ? (
+              <input 
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                className="w-full bg-black/40 border border-primary/30 rounded p-2 text-lg font-display text-white outline-none focus:border-primary"
+              />
+            ) : (
+              <h3 className="text-lg font-display text-white tracking-wider uppercase group-hover:text-primary transition-colors cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>{article.title}</h3>
+            )}
           </div>
           <div className="flex flex-col items-end shrink-0">
              <div className="flex items-center gap-2 mb-1">
@@ -360,9 +445,17 @@ function ArticleCard({ article, onVote, onComment, user }: { article: any, onVot
           </div>
         </div>
         
-        <div className={`text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap border-l-2 border-primary/10 pl-4 py-1 italic transition-all ${isExpanded ? '' : 'max-h-24 overflow-hidden mask-fade-bottom'}`}>
-          {renderContent(article.content, !isExpanded)}
-        </div>
+        {isEditing ? (
+          <textarea 
+            value={editContent}
+            onChange={(e) => setEditContent(e.target.value)}
+            className="w-full min-h-[200px] bg-black/40 border border-primary/30 rounded p-4 text-sm text-muted-foreground font-mono-hud outline-none focus:border-primary resize-none mt-4"
+          />
+        ) : (
+          <div className={`text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap border-l-2 border-primary/10 pl-4 py-1 italic transition-all ${isExpanded ? '' : 'max-h-24 overflow-hidden mask-fade-bottom'}`}>
+            {renderContent(article.content, !isExpanded)}
+          </div>
+        )}
 
         {!isExpanded && article.content.length > 300 && (
           <button onClick={() => setIsExpanded(true)} className="mt-2 text-[9px] text-primary font-bold uppercase tracking-widest hover:underline flex items-center gap-1">
@@ -402,7 +495,7 @@ function ArticleCard({ article, onVote, onComment, user }: { article: any, onVot
               <button className="flex items-center gap-1.5 text-[9px] text-muted-foreground hover:text-info transition-colors font-bold uppercase tracking-widest">
                 <Send size={12} /> Retransmit
               </button>
-              {isExpanded && (
+              {isExpanded && !isEditing && (
                 <button onClick={() => setIsExpanded(false)} className="flex items-center gap-1.5 text-[9px] text-primary hover:text-white transition-colors font-bold uppercase tracking-widest">
                    Collapse <ChevronUp size={12} />
                 </button>
@@ -414,24 +507,87 @@ function ArticleCard({ article, onVote, onComment, user }: { article: any, onVot
         {showComments && (
           <div className="mt-6 space-y-6 animate-in slide-in-from-top-4 duration-500">
             <div className="space-y-4 max-h-64 overflow-y-auto custom-scrollbar pr-2">
-              {article.article_comments?.map((comment: any) => (
-                <div key={comment.id} className="hud-panel p-3 bg-white/5 border border-primary/10 rounded">
-                  <div className="flex justify-between items-center mb-1">
-                    <div className="flex items-center gap-2">
-                      <UserAvatar 
-                        avatarUrl={comment.profiles?.avatar_url || ""} 
-                        level={comment.profiles?.level}
-                        partyIcon={comment.profiles?.party_members?.[0]?.parties?.logo_symbol}
-                        partyHue={comment.profiles?.party_members?.[0]?.parties?.hue}
-                        size="sm"
-                      />
-                      <span className="text-[10px] font-bold text-primary uppercase">{comment.profiles?.commander_name || "Unknown"}</span>
+              {article.article_comments?.map((comment: any) => {
+                const isCommentOwner = user?.id === comment.user_id;
+                const cUpvotes = comment.article_comment_votes?.filter((v: any) => v.vote_type === 1).length || 0;
+                const cDownvotes = comment.article_comment_votes?.filter((v: any) => v.vote_type === -1).length || 0;
+                const cUserVote = comment.article_comment_votes?.find((v: any) => v.user_id === user?.id)?.vote_type;
+
+                return (
+                  <div key={comment.id} className="hud-panel p-3 bg-white/5 border border-primary/10 rounded">
+                    <div className="flex justify-between items-center mb-1">
+                      <div className="flex items-center gap-2">
+                        <UserAvatar 
+                          avatarUrl={comment.profiles?.avatar_url || ""} 
+                          level={comment.profiles?.level}
+                          partyIcon={comment.profiles?.party_members?.[0]?.parties?.logo_symbol}
+                          partyHue={comment.profiles?.party_members?.[0]?.parties?.hue}
+                          size="sm"
+                        />
+                        <span className="text-[10px] font-bold text-primary uppercase">{comment.profiles?.commander_name || "Unknown"}</span>
+                        {isCommentOwner && (
+                          <div className="flex items-center gap-2 ml-2">
+                            <button 
+                              onClick={() => {
+                                if (editingCommentId === comment.id) {
+                                  onUpdateComment(comment.id, editCommentContent);
+                                  setEditingCommentId(null);
+                                } else {
+                                  setEditingCommentId(comment.id);
+                                  setEditCommentContent(comment.content);
+                                }
+                              }} 
+                              className="text-[8px] text-primary/40 hover:text-primary transition-colors font-bold uppercase"
+                            >
+                              {editingCommentId === comment.id ? 'Save' : 'Edit'}
+                            </button>
+                            <button 
+                              onClick={() => {
+                                if (editingCommentId === comment.id) {
+                                  setEditingCommentId(null);
+                                } else if (confirm("Delete this response?")) {
+                                  onDeleteComment(comment.id);
+                                }
+                              }} 
+                              className="text-[8px] text-destructive/40 hover:text-destructive transition-colors font-bold uppercase"
+                            >
+                              {editingCommentId === comment.id ? 'Cancel' : 'Delete'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 bg-black/20 rounded-full px-2 py-0.5 border border-white/5">
+                          <button 
+                            onClick={() => onVoteComment(comment.id, 1)}
+                            className={`flex items-center gap-1 text-[8px] font-bold transition-all ${cUserVote === 1 ? 'text-success' : 'text-muted-foreground hover:text-success'}`}
+                          >
+                            <ThumbsUp size={10} fill={cUserVote === 1 ? "currentColor" : "none"} /> {cUpvotes}
+                          </button>
+                          <button 
+                            onClick={() => onVoteComment(comment.id, -1)}
+                            className={`flex items-center gap-1 text-[8px] font-bold transition-all ${cUserVote === -1 ? 'text-destructive' : 'text-muted-foreground hover:text-destructive'}`}
+                          >
+                            <ThumbsDown size={10} fill={cUserVote === -1 ? "currentColor" : "none"} /> {cDownvotes}
+                          </button>
+                        </div>
+                        <span className="text-[8px] text-muted-foreground uppercase">{formatDistanceToNow(new Date(comment.created_at))} ago</span>
+                      </div>
                     </div>
-                    <span className="text-[8px] text-muted-foreground uppercase">{formatDistanceToNow(new Date(comment.created_at))} ago</span>
+                    {editingCommentId === comment.id ? (
+                      <input 
+                        type="text"
+                        value={editCommentContent}
+                        onChange={(e) => setEditCommentContent(e.target.value)}
+                        className="w-full bg-black/40 border border-primary/20 rounded p-1 text-xs text-white outline-none focus:border-primary mt-1"
+                        autoFocus
+                      />
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic leading-relaxed pl-8">{comment.content}</p>
+                    )}
                   </div>
-                  <p className="text-xs text-muted-foreground italic leading-relaxed pl-8">{comment.content}</p>
-                </div>
-              ))}
+                );
+              })}
               {(!article.article_comments || article.article_comments.length === 0) && (
                 <p className="text-center py-4 text-[9px] text-muted-foreground uppercase tracking-widest italic">No responses recorded in subspace</p>
               )}

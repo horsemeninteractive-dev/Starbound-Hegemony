@@ -39,6 +39,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [userVessels, setUserVessels] = useState<Vessel[]>([]);
   const [selectedVesselId, setSelectedVesselId] = useState<string | null>(null);
   const [isFleetSidebarOpen, setIsFleetSidebarOpen] = useState(false);
+  const [isPlayerStatusSidebarOpen, setIsPlayerStatusSidebarOpen] = useState(false);
   const [otherPlayers, setOtherPlayers] = useState<any[]>([]);
 
   // Bake in a universal galaxy seed so all players see the exact same universe
@@ -263,9 +264,20 @@ export function useGalaxyApp(initialSeed = 20260423) {
           const lastRegenAt = profile.last_ap_regen_at ? new Date(profile.last_ap_regen_at).getTime() : Date.now();
           const ticksSinceRegen = Math.floor((Date.now() - lastRegenAt) / 300000);
           const regenAmount = ticksSinceRegen; // +1 AP per tick
-          setAp(Math.min(240, dbAp + regenAmount));
-          const nextTick = lastRegenAt + (ticksSinceRegen + 1) * 300000;
-          setLastApTick(lastRegenAt);
+          const currentAp = Math.min(240, dbAp + regenAmount);
+          setAp(currentAp);
+          
+          const newLastRegenAt = lastRegenAt + ticksSinceRegen * 300000;
+          
+          if (regenAmount > 0 && currentAp > dbAp) {
+             supabase.from('profiles').update({
+                action_points: currentAp,
+                last_ap_regen_at: new Date(newLastRegenAt).toISOString()
+             }).eq('id', user.id).then();
+          }
+
+          const nextTick = newLastRegenAt + 300000;
+          setLastApTick(newLastRegenAt);
           setNextApTick(Math.max(Date.now() + 1000, nextTick));
 
           // Extract party info
@@ -905,7 +917,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
 
   // 12. Listen for App Updates (Deployment) via polling
   useEffect(() => {
-    const CURRENT_VERSION = "v0.3.0-sb"; // This should match what's in public/version.txt
+    const CURRENT_VERSION = "v0.3.1-sb"; // This should match what's in public/version.txt
     
     const checkVersion = async () => {
       try {
@@ -1226,6 +1238,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
   };
 
   const toggleFleetSidebar = () => setIsFleetSidebarOpen(prev => !prev);
+  const togglePlayerStatusSidebar = () => setIsPlayerStatusSidebarOpen(prev => !prev);
 
   const fetchEconomyData = useCallback(async () => {
     // 1. Fetch articles with votes and comments (Public access)
@@ -1247,7 +1260,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
             avatar_url, 
             level,
             party_members(parties(logo_symbol, hue))
-          )
+          ),
+          article_comment_votes(user_id, vote_type)
         )
       `)
       .order('created_at', { ascending: false });
@@ -1678,7 +1692,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
     }
   }, [user, fetchFleets]);
  
-  const initiateFleetJump = useCallback((fleetId: string, targetSystemId: string) => {
+  const initiateFleetJump = useCallback((fleetId: string, targetSystemId: string, isContinuation = false) => {
     const fleet = userFleets.find(f => f.id === fleetId);
     if (!fleet) return;
  
@@ -1692,11 +1706,10 @@ export function useGalaxyApp(initialSeed = 20260423) {
     }
  
     const nextTarget = path[1];
-    // Fleets (cargo/science) cost same AP as commander jump
-    const jumpCost = getJumpCostBetween(fleet.systemId, nextTarget);
+    const totalCost = getPathCost(path);
  
-    if (ap < jumpCost) {
-      toast.error(`Insufficient AP`, { description: `Fleet jump requires ${jumpCost} AP.` });
+    if (!isContinuation && ap < totalCost) {
+      toast.error(`Insufficient AP`, { description: `Fleet journey requires ${totalCost} AP.` });
       return;
     }
  
@@ -1709,7 +1722,9 @@ export function useGalaxyApp(initialSeed = 20260423) {
     const durationMs = Math.max(8000, (15 + dist * 1.2) * 1000);
     const now = Date.now();
  
-    setAp(prev => prev - jumpCost);
+    if (!isContinuation) {
+      setAp(prev => prev - totalCost);
+    }
  
     // Update fleet travel state locally
     setUserFleets(prev => prev.map(f =>
@@ -1762,11 +1777,11 @@ export function useGalaxyApp(initialSeed = 20260423) {
       });
       // If more hops needed, continue immediately
       if (path.length > 2) {
-        setTimeout(() => initiateFleetJump(fleetId, targetSystemId), 800);
+        setTimeout(() => initiateFleetJump(fleetId, targetSystemId, true), 800);
       }
     }, durationMs);
  
-  }, [userFleets, ap, galaxy, calculatePath, getJumpCostBetween, user]);
+  }, [userFleets, ap, galaxy, calculatePath, getPathCost, user]);
 
   /** Award XP via the server-side grant_xp RPC and update local state. */
   const grantXP = useCallback(async (reason: XPReason, bonusFlat = 0) => {
@@ -1798,7 +1813,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
   }, [user, playerSkills]);
 
 
-  const initiateJump = useCallback((targetId: string, targetBodyId: string | null = null) => {
+  const initiateJump = useCallback((targetId: string, targetBodyId: string | null = null, isContinuation = false) => {
     if (travel) return; // Already moving
     
     // Check if we need to calculate a multi-jump path
@@ -1815,7 +1830,7 @@ export function useGalaxyApp(initialSeed = 20260423) {
     }
 
     const totalCost = getPathCost(path);
-    if (ap < totalCost) {
+    if (!isContinuation && ap < totalCost) {
       toast.error(`Insufficient AP! Journey requires ${totalCost} AP`, {
         description: `Your batteries don't have enough charge to reach ${galaxy.systemById[targetId]?.name || targetId}.`
       });
@@ -1826,8 +1841,6 @@ export function useGalaxyApp(initialSeed = 20260423) {
     const nextTargetId = path[1];
     setJumpPath(path); // Store the FULL path
     setJourneyTargetBodyId(targetBodyId);
-
-    const nextCost = getJumpCostBetween(playerSystemId, nextTargetId);
     
     const currentSystem = galaxy.systemById[playerSystemId];
     const sourceRegion = currentSystem.regionId ? galaxy.regions?.find(r => r.id === currentSystem.regionId) : null;
@@ -1841,7 +1854,9 @@ export function useGalaxyApp(initialSeed = 20260423) {
     const now = Date.now();
     const currentLocalPos = getVesselLocalPos(now);
     
-    setAp(prev => prev - totalCost);
+    if (!isContinuation) {
+      setAp(prev => prev - totalCost);
+    }
     setTravel({ 
       targetId: nextTargetId, 
       startTime: now, 
@@ -1850,8 +1865,10 @@ export function useGalaxyApp(initialSeed = 20260423) {
       startPos: currentLocalPos 
     });
     setArrival(null);
-    logAction('navigation', `Multi-Jump Journey Initiated`, `Vessel targeting ${galaxy.systemById[targetId]?.name || targetId} (${path.length - 1} jumps). Total AP dedicated: ${totalCost}.`);
-  }, [playerSystemId, galaxy, travel, instantJump, ap, calculatePath, getPathCost, getJumpCostBetween, getVesselLocalPos, logAction, setAp]);
+    if (!isContinuation) {
+      logAction('navigation', `Multi-Jump Journey Initiated`, `Vessel targeting ${galaxy.systemById[targetId]?.name || targetId} (${path.length - 1} jumps). Total AP dedicated: ${totalCost}.`);
+    }
+  }, [playerSystemId, galaxy, travel, instantJump, ap, calculatePath, getPathCost, getVesselLocalPos, logAction, setAp]);
 
   const initiateTravelToBody = useCallback((targetBodyId: string) => {
     // 1. Calculate current position for starting (supports mid-flight redirection)
@@ -1942,6 +1959,63 @@ export function useGalaxyApp(initialSeed = 20260423) {
       toast.error("Failed to post comment", { description: error.message });
     } else {
       toast.success("Comment posted!");
+      fetchEconomyData();
+    }
+  }, [user, fetchEconomyData]);
+
+  const deleteArticle = useCallback(async (articleId: string) => {
+    if (!user) return;
+    const { error } = await supabase.from('articles').delete().eq('id', articleId).eq('author_id', user.id);
+    if (error) {
+      toast.error("Deletion failed", { description: error.message });
+    } else {
+      toast.success("Article retracted.");
+      fetchEconomyData();
+    }
+  }, [user, fetchEconomyData]);
+
+  const updateArticle = useCallback(async (articleId: string, title: string, content: string) => {
+    if (!user) return;
+    const { error } = await supabase.from('articles').update({ title, content }).eq('id', articleId).eq('author_id', user.id);
+    if (error) {
+      toast.error("Update failed", { description: error.message });
+    } else {
+      toast.success("Article updated.");
+      fetchEconomyData();
+    }
+  }, [user, fetchEconomyData]);
+
+  const voteComment = useCallback(async (commentId: string, voteType: 1 | -1) => {
+    if (!user) return;
+    const { error } = await supabase
+      .from('article_comment_votes')
+      .upsert({ comment_id: commentId, user_id: user.id, vote_type: voteType }, { onConflict: 'comment_id,user_id' });
+
+    if (error) {
+      toast.error("Failed to register vote", { description: error.message });
+    } else {
+      fetchEconomyData();
+    }
+  }, [user, fetchEconomyData]);
+
+  const deleteComment = useCallback(async (commentId: string) => {
+    if (!user) return;
+    const { error } = await supabase.from('article_comments').delete().eq('id', commentId).eq('user_id', user.id);
+    if (error) {
+      toast.error("Deletion failed", { description: error.message });
+    } else {
+      toast.success("Comment removed.");
+      fetchEconomyData();
+    }
+  }, [user, fetchEconomyData]);
+
+  const updateComment = useCallback(async (commentId: string, content: string) => {
+    if (!user) return;
+    const { error } = await supabase.from('article_comments').update({ content }).eq('id', commentId).eq('user_id', user.id);
+    if (error) {
+      toast.error("Update failed", { description: error.message });
+    } else {
+      toast.success("Comment updated.");
       fetchEconomyData();
     }
   }, [user, fetchEconomyData]);
@@ -2871,8 +2945,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
       const finalDestId = jumpPath[jumpPath.length - 1];
       
       const timer = setTimeout(() => {
-        // Journey is already paid for upfront
-        initiateJump(finalDestId, journeyTargetBodyId);
+        // Journey is already paid for upfront, pass true for isContinuation
+        initiateJump(finalDestId, journeyTargetBodyId, true);
       }, 800);
 
       return () => clearTimeout(timer);
@@ -3123,7 +3197,12 @@ export function useGalaxyApp(initialSeed = 20260423) {
     socialStats,
     createArticle,
     voteArticle,
+    deleteArticle,
+    updateArticle,
     postComment,
+    voteComment,
+    deleteComment,
+    updateComment,
     userLogs,
     userFleets,
     setUserFleets,
@@ -3175,6 +3254,8 @@ export function useGalaxyApp(initialSeed = 20260423) {
     commissionVessel,
     isFleetSidebarOpen,
     toggleFleetSidebar,
+    isPlayerStatusSidebarOpen,
+    togglePlayerStatusSidebar,
 
     performSearch: useCallback(async (query: string) => {
       if (!query || query.length < 2) {

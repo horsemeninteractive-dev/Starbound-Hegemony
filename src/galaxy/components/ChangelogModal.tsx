@@ -11,6 +11,21 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.3.1",
+    title: "Galactic UI Expansion & Network Stabilization",
+    date: "2026-05-09",
+    type: "feature",
+    changes: [
+      "Implemented comprehensive UI restructuring to standardize navigation across Wiki, Factories, and Party screens",
+      "Added Player Status Sidebar with deep-linking to residency, party, and state affiliations",
+      "Resolved cross-system industrial asset synchronization and stabilized Silo/Shipyard logic",
+      "Fixed background AP regeneration bugs ensuring accurate offline time compensation",
+      "Enabled granular article and comment management with new upvote/downvote capabilities",
+      "Restored hyperlane arrival mechanics and sub-light system interpolation",
+      "Unified 'Fleet Registry' access across all zoom levels and view modes"
+    ]
+  },
+  {
     version: "0.3.0",
     title: "Persistent Navigation & Fleet Logistics",
     date: "2026-05-08",
@@ -391,7 +406,7 @@ export function ChangelogModal({ open, onOpenChange, onPlayClick }: { open: bool
             Acknowledge
           </button>
           <div className="font-mono-hud text-[8px] text-muted-foreground/30 uppercase tracking-[0.2em]">
-            Starbound Hegemony · Build v0.3.0-sb
+            Starbound Hegemony · Build v0.3.1-sb
           </div>
         </div>
       </div>

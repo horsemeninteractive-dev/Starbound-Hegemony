@@ -2,7 +2,7 @@ import logo from "@/assets/logo.png";
 import { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Sheet, SheetContent, SheetOverlay, SheetClose, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Newspaper, Factory, Rocket, Users, User, Sparkles, Settings, X, Coins, Zap as ZapIcon, Bug, Hexagon, BookOpen, Shield, Search, Compass, Package, Eye, EyeOff, Globe, Radio, RefreshCcw, BatteryFull, ShoppingCart, LogOut } from "lucide-react";
+import { Newspaper, Factory, Rocket, Users, User, Sparkles, Settings, X, Coins, Zap as ZapIcon, Bug, Hexagon, BookOpen, Shield, Search, Compass, Package, Eye, EyeOff, Globe, Radio, RefreshCcw, BatteryFull, ShoppingCart, LogOut, HelpCircle } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,6 +32,7 @@ interface Props {
   onOpenWiki?: () => void;
   onOpenChangelog?: () => void;
   onOpenCredits?: () => void;
+  onStartTutorial?: () => void;
   onLogout?: () => void;
   ap: number;
   sc: number;
@@ -84,7 +85,7 @@ const GAME_MENU = [
 
 export function TopBar({ 
   onOpenSettings, onOpenProfile, onOpenMap, onOpenArticles, onOpenMarket,
-  onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills, onOpenWiki, onOpenChangelog, onOpenCredits, onLogout,
+  onOpenFactories, onOpenFleets, onOpenParty, onOpenSkills, onOpenWiki, onOpenChangelog, onOpenCredits, onStartTutorial, onLogout,
   ap, sc, vt = 0, cargoCapacity = 500, cargoUsed = 0, playerName, playerLevel, playerXP, xpToNextLevel, playerSkills = [], playerAvatar,
   playerPartyIcon, playerPartyHue,
   fogOfWar, setFogOfWar, instantJump, setInstantJump,
@@ -423,7 +424,7 @@ export function TopBar({
           {/* Action Points */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="flex items-center gap-1 sm:gap-2 px-1.5 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-primary bg-primary/5 sm:min-w-0 cursor-help w-full">
+              <div id="tour-ap" className="flex items-center gap-1 sm:gap-2 px-1.5 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-primary bg-primary/5 sm:min-w-0 cursor-help w-full">
                 <ZapIcon size={12} className="text-primary animate-pulse sm:w-3.5 sm:h-3.5 shrink-0" fill="currentColor" />
                 <div className="flex flex-col leading-none truncate">
                   <div className="flex items-baseline gap-1">
@@ -459,7 +460,7 @@ export function TopBar({
             </TooltipContent>
           </Tooltip>
 
-          <div className="flex items-center gap-1 sm:gap-2 px-1.5 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-warning bg-warning/5 sm:min-w-0 w-full">
+          <div id="tour-sc" className="flex items-center gap-1 sm:gap-2 px-1.5 sm:px-3 py-0.5 sm:py-1.5 border-l-2 border-warning bg-warning/5 sm:min-w-0 w-full">
             <Coins size={12} className="text-warning sm:w-3.5 sm:h-3.5 shrink-0" />
             <div className="flex flex-col leading-none truncate">
               <span className="text-[9px] sm:text-[11px] text-warning font-bold tracking-wider">
@@ -481,7 +482,7 @@ export function TopBar({
           </div>
 
           {/* Cargo Hold */}
-          <div className={`flex items-center gap-1 sm:gap-2 px-1.5 sm:px-3 py-0.5 sm:py-1.5 border-l-2 sm:min-w-0 w-full ${cargoUsed >= cargoCapacity ? 'bg-destructive/10 border-destructive' : 'bg-blue-500/10 border-blue-500'}`}>
+          <div id="tour-cargo" className={`flex items-center gap-1 sm:gap-2 px-1.5 sm:px-3 py-0.5 sm:py-1.5 border-l-2 sm:min-w-0 w-full ${cargoUsed >= cargoCapacity ? 'bg-destructive/10 border-destructive' : 'bg-blue-500/10 border-blue-500'}`}>
             <Package size={12} className={`${cargoUsed >= cargoCapacity ? 'text-destructive' : 'text-blue-400'} sm:w-3.5 sm:h-3.5 shrink-0`} />
             <div className="flex flex-col leading-none truncate">
               <span className={`text-[9px] sm:text-[11px] font-bold tracking-wider ${cargoUsed >= cargoCapacity ? 'text-destructive' : 'text-blue-400'}`}>
@@ -490,6 +491,17 @@ export function TopBar({
               <span className={`hidden sm:block text-[7px] uppercase tracking-widest font-mono-hud ${cargoUsed >= cargoCapacity ? 'text-destructive/60' : 'text-blue-400/60'}`}>Cargo</span>
             </div>
           </div>
+        </div>
+
+        {/* Tutorial Button */}
+        <div className="flex items-center gap-0.5 sm:gap-1 border-l border-primary/20 pl-1 sm:pl-2">
+          <button
+            onClick={() => { onStartTutorial?.(); onPlayClick?.(); }}
+            className="p-1 sm:p-1.5 rounded bg-primary/5 border border-primary/20 text-primary/40 hover:text-primary hover:bg-primary/10 transition-all group"
+            title="Interactive Guide"
+          >
+            <HelpCircle size={14} className="group-hover:rotate-12 transition-transform sm:w-4 sm:h-4" />
+          </button>
         </div>
 
         {/* Condensed Debug Controls */}
@@ -653,7 +665,7 @@ export function TopBar({
               </button>
             </div>
             <span className="font-mono-hud text-[7px] uppercase tracking-[0.25em] text-primary/30">
-              Starbound Hegemony OS v0.3.0
+              Starbound Hegemony OS v0.3.1
             </span>
           </div>
         </SheetContent>
