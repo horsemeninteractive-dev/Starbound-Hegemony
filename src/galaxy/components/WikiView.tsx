@@ -32,7 +32,7 @@ import { PageHeader } from "./PageHeader";
    GALAXY ARCHIVES (WIKI) COMPONENT
    ======================================================================== */
 
-interface WikiSection {
+export interface WikiSection {
   id: string;
   title: string;
   icon: React.ReactNode;
@@ -53,7 +53,7 @@ const WIKI_CATEGORIES = [
   "Reference"
 ];
 
-const WIKI_DATA: WikiSection[] = [
+export const WIKI_DATA: WikiSection[] = [
   {
     id: "vision",
     title: "The Vision",
@@ -765,14 +765,13 @@ laws            <span class="ck">id</span>, type, passed, takes_effect_at</div>
 
 
 export function WikiView({ app, onBack }: { app: any; onBack?: () => void }) {
-  const [activeSectionId, setActiveSectionId] = useState("vision");
   const [searchQuery, setSearchQuery] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   const activeSection = useMemo(() => 
-    WIKI_DATA.find(s => s.id === activeSectionId) || WIKI_DATA[0]
-  , [activeSectionId]);
+    WIKI_DATA.find(s => s.id === app.wikiSectionId) || WIKI_DATA[0]
+  , [app.wikiSectionId]);
 
   const filteredSections = useMemo(() => {
     if (!searchQuery) return WIKI_DATA;
@@ -798,7 +797,7 @@ export function WikiView({ app, onBack }: { app: any; onBack?: () => void }) {
     if (window.innerWidth < 1024) {
       setIsMobileSidebarOpen(false);
     }
-  }, [activeSectionId]);
+  }, [app.wikiSectionId]);
 
   // Handle internal wiki links
   useEffect(() => {
@@ -809,7 +808,7 @@ export function WikiView({ app, onBack }: { app: any; onBack?: () => void }) {
         const id = anchor.hash.substring(1);
         if (WIKI_DATA.some(s => s.id === id)) {
           e.preventDefault();
-          setActiveSectionId(id);
+          app.setWikiSectionId(id);
         }
       }
     };
@@ -845,14 +844,16 @@ export function WikiView({ app, onBack }: { app: any; onBack?: () => void }) {
                 {sections.map(s => (
                   <button
                     key={s.id}
-                    onClick={() => setActiveSectionId(s.id)}
+                    onClick={() => {
+                      app.setWikiSectionId(s.id);
+                    }}
                     className={`w-full flex items-center gap-3 px-3 py-2 rounded text-left group transition-all ${
-                      activeSectionId === s.id 
+                      app.wikiSectionId === s.id 
                         ? "bg-primary/20 text-primary border border-primary/30 shadow-[inset_0_0_10px_rgba(var(--primary-rgb),0.1)]" 
                         : "text-muted-foreground hover:text-foreground hover:bg-primary/5"
                     }`}
                   >
-                    <span className={`shrink-0 ${activeSectionId === s.id ? "text-primary" : "text-primary/40 group-hover:text-primary/60"}`}>
+                    <span className={`shrink-0 ${app.wikiSectionId === s.id ? "text-primary" : "text-primary/40 group-hover:text-primary/60"}`}>
                       {s.icon}
                     </span>
                     <span className="font-display text-[11px] uppercase tracking-wider truncate">{s.title}</span>

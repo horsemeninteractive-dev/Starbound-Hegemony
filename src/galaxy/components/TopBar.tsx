@@ -60,12 +60,22 @@ interface Props {
   isGameReady?: boolean;
   nextApTick?: number;
   isAdmin?: boolean;
-  searchResults?: { users: any[], parties: any[], states: any[] };
+  searchResults?: { 
+    users: any[], 
+    parties: any[], 
+    states: any[],
+    systems?: any[],
+    bodies?: any[],
+    wiki?: any[]
+  };
   isSearching?: boolean;
   onSearch?: (query: string) => void;
   onNavigateToUser?: (id: string) => void;
   onNavigateToParty?: (id: string) => void;
   onNavigateToState?: (id: string) => void;
+  onNavigateToSystem?: (id: string) => void;
+  onNavigateToBody?: (systemId: string, bodyId: string) => void;
+  onNavigateToWiki?: (sectionId: string) => void;
 }
 
 
@@ -96,7 +106,10 @@ export function TopBar({
   onSearch,
   onNavigateToUser,
   onNavigateToParty,
-  onNavigateToState
+  onNavigateToState,
+  onNavigateToSystem,
+  onNavigateToBody,
+  onNavigateToWiki
 }: Props) {
   // Game menu state - Radix Sheet handles escape/outside-click automatically
   const [menuOpen, setMenuOpen] = useState(false);
@@ -136,7 +149,10 @@ export function TopBar({
     if (!searchResults) return null;
     const hasResults = (searchResults.users?.length || 0) > 0 || 
                       (searchResults.parties?.length || 0) > 0 || 
-                      (searchResults.states?.length || 0) > 0;
+                      (searchResults.states?.length || 0) > 0 ||
+                      (searchResults.systems?.length || 0) > 0 ||
+                      (searchResults.bodies?.length || 0) > 0 ||
+                      (searchResults.wiki?.length || 0) > 0;
     
     return (
       <>
@@ -184,14 +200,14 @@ export function TopBar({
                   className="w-full flex items-center gap-3 p-2 hover:bg-primary/10 rounded transition-colors group text-left"
                 >
                   <div className="w-6 h-6 rounded bg-primary/10 flex items-center justify-center border border-primary/20 group-hover:border-primary/40 transition-colors">
-                    <GalaxyIcon name={p.icon} className="w-3.5 h-3.5" color={`hsl(${p.hue} 70% 55%)`} />
+                    <GalaxyIcon name={p.logo_symbol} className="w-3.5 h-3.5" color={`hsl(${p.hue} 70% 55%)`} />
                   </div>
                   <div className="flex flex-col min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-display text-foreground group-hover:text-primary transition-colors truncate">{p.name}</span>
                       <span className="text-[7px] font-mono-hud text-primary/40">[{p.tag}]</span>
                     </div>
-                    <span className="text-[7px] font-mono-hud text-muted-foreground uppercase">System: {p.system_id}</span>
+                    <span className="text-[7px] font-mono-hud text-muted-foreground uppercase">System: {p.region_id}</span>
                   </div>
                 </button>
               ))}
@@ -223,6 +239,84 @@ export function TopBar({
                       <span className="text-[7px] font-mono-hud text-primary/40">[{s.tag}]</span>
                     </div>
                     <span className="text-[7px] font-mono-hud text-muted-foreground uppercase">Hegemony Member State</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Systems */}
+          {searchResults.systems && searchResults.systems.length > 0 && (
+            <div>
+              <div className="px-2 mb-1 flex items-center justify-between border-t border-primary/5 pt-3 mt-1">
+                <span className="text-[8px] font-display text-primary/40 uppercase tracking-widest">Star Systems</span>
+                <Globe className="w-2.5 h-2.5 text-primary/20" />
+              </div>
+              {searchResults.systems.map(s => (
+                <button
+                  key={s.id}
+                  onClick={() => {
+                    onNavigateToSystem?.(s.id);
+                    closeSearch();
+                  }}
+                  className="w-full flex items-center gap-3 p-2 hover:bg-primary/10 rounded transition-colors group text-left"
+                >
+                  <Globe className="w-4 h-4 text-primary/40 group-hover:text-primary transition-colors" />
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[10px] font-display text-foreground group-hover:text-primary transition-colors truncate">{s.name}</span>
+                    <span className="text-[7px] font-mono-hud text-muted-foreground uppercase">Sector {s.sector?.[0]},{s.sector?.[1]}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Bodies */}
+          {searchResults.bodies && searchResults.bodies.length > 0 && (
+            <div>
+              <div className="px-2 mb-1 flex items-center justify-between border-t border-primary/5 pt-3 mt-1">
+                <span className="text-[8px] font-display text-primary/40 uppercase tracking-widest">Celestial Bodies</span>
+                <Globe className="w-2.5 h-2.5 text-primary/20" />
+              </div>
+              {searchResults.bodies.map(b => (
+                <button
+                  key={`${b.systemId}-${b.id}`}
+                  onClick={() => {
+                    onNavigateToBody?.(b.systemId, b.id);
+                    closeSearch();
+                  }}
+                  className="w-full flex items-center gap-3 p-2 hover:bg-primary/10 rounded transition-colors group text-left"
+                >
+                  <Globe className="w-4 h-4 text-primary/40 group-hover:text-primary transition-colors" />
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[10px] font-display text-foreground group-hover:text-primary transition-colors truncate">{b.name}</span>
+                    <span className="text-[7px] font-mono-hud text-muted-foreground uppercase">{b.systemName} System</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Wiki */}
+          {searchResults.wiki && searchResults.wiki.length > 0 && (
+            <div>
+              <div className="px-2 mb-1 flex items-center justify-between border-t border-primary/5 pt-3 mt-1">
+                <span className="text-[8px] font-display text-primary/40 uppercase tracking-widest">Galactic Archives</span>
+                <BookOpen className="w-2.5 h-2.5 text-primary/20" />
+              </div>
+              {searchResults.wiki.map(w => (
+                <button
+                  key={w.id}
+                  onClick={() => {
+                    onNavigateToWiki?.(w.id);
+                    closeSearch();
+                  }}
+                  className="w-full flex items-center gap-3 p-2 hover:bg-primary/10 rounded transition-colors group text-left"
+                >
+                  <BookOpen className="w-4 h-4 text-primary/40 group-hover:text-primary transition-colors" />
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[10px] font-display text-foreground group-hover:text-primary transition-colors truncate">{w.title}</span>
+                    <span className="text-[7px] font-mono-hud text-muted-foreground uppercase">{w.category}</span>
                   </div>
                 </button>
               ))}

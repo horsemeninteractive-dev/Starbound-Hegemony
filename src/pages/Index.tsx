@@ -326,6 +326,20 @@ const Index = () => {
           onNavigateToUser={app.navigateToPublicProfile}
           onNavigateToParty={app.navigateToPublicParty}
           onNavigateToState={app.navigateToPublicState}
+          onNavigateToSystem={(id) => {
+            navigateTo("map");
+            app.selectSystem(id);
+            app.openSystem(id);
+          }}
+          onNavigateToBody={(systemId, bodyId) => {
+            navigateTo("map");
+            app.selectSystem(systemId);
+            app.openBody(bodyId);
+          }}
+          onNavigateToWiki={(sectionId) => {
+            app.setWikiSectionId(sectionId);
+            navigateTo("wiki");
+          }}
           onLogout={app.logout}
         />
       </div>

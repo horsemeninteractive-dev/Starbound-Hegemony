@@ -28,8 +28,8 @@ import avatar_alt2 from "@/assets/avatar_alt2.png";
 
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
-import { computeSkillBonus, SKILL_TREE, XP_REWARDS } from "./skills";
-import type { XPReason } from "./skills";
+import { computeSkillBonus, SKILL_TREE, XP_REWARDS, type XPReason } from "./skills";
+import { WIKI_DATA } from './components/WikiView';
 
 export function useGalaxyApp(initialSeed = 20260423) {
   const [user, setUser] = useState<User | null>(null);
@@ -128,7 +128,15 @@ export function useGalaxyApp(initialSeed = 20260423) {
   const [viewedPartyId, setViewedPartyId] = useState<string | null>(null);
   const [viewedStateId, setViewedStateId] = useState<string | null>(null);
   const [returnPage, setReturnPage] = useState<"map" | "profile" | "articles" | "market" | "factories" | "fleets" | "party" | "skills" | "shipyard" | "empire" | "wiki">("map");
-  const [searchResults, setSearchResults] = useState<{ users: any[], parties: any[], states: any[] }>({ users: [], parties: [], states: [] });
+  const [wikiSectionId, setWikiSectionId] = useState<string>("vision");
+  const [searchResults, setSearchResults] = useState<{ 
+    users: any[], 
+    parties: any[], 
+    states: any[],
+    systems?: any[],
+    bodies?: any[],
+    wiki?: any[]
+  }>({ users: [], parties: [], states: [], systems: [], bodies: [], wiki: [] });
   const [isSearching, setIsSearching] = useState(false);
 
   const [playerSkills, setPlayerSkills] = useState<string[]>([]); // unlocked skill IDs
@@ -3259,21 +3267,49 @@ export function useGalaxyApp(initialSeed = 20260423) {
 
     performSearch: useCallback(async (query: string) => {
       if (!query || query.length < 2) {
-        setSearchResults({ users: [], parties: [], states: [] });
+        setSearchResults({ users: [], parties: [], states: [], systems: [], bodies: [], wiki: [] });
         return;
       }
       setIsSearching(true);
       try {
         const [profiles, partiesRes, empires] = await Promise.all([
           supabase.from('profiles').select('id, commander_name, avatar_url, level').ilike('commander_name', `%${query}%`).limit(5),
-          supabase.from('parties').select('id, name, tag, icon, hue, system_id').ilike('name', `%${query}%`).limit(5),
-          supabase.from('player_empires').select('id, name, tag, hue').ilike('name', `%${query}%`).limit(5)
+          supabase.from('parties').select('id, name, tag, logo_symbol, hue, region_id').or(`name.ilike.%${query}%,tag.ilike.%${query}%`).limit(5),
+          supabase.from('player_empires').select('id, name, tag, hue').or(`name.ilike.%${query}%,tag.ilike.%${query}%`).limit(5)
         ]);
+
+        const q = query.toLowerCase();
+        
+        // Search Systems
+        const matchingSystems = galaxy.systems
+          .filter(s => s.name.toLowerCase().includes(q))
+          .slice(0, 5);
+
+        // Search Bodies
+        const matchingBodies: any[] = [];
+        for (const s of galaxy.systems) {
+          for (const b of s.bodies) {
+            if (b.name.toLowerCase().includes(q)) {
+              matchingBodies.push({ ...b, systemId: s.id, systemName: s.name });
+              if (matchingBodies.length >= 5) break;
+            }
+          }
+          if (matchingBodies.length >= 5) break;
+        }
+
+        // Search Wiki
+        const matchingWiki = WIKI_DATA
+          .filter(w => w.title.toLowerCase().includes(q) || w.content.toLowerCase().includes(q))
+          .slice(0, 5)
+          .map(w => ({ id: w.id, title: w.title, category: w.category }));
         
         setSearchResults({
           users: profiles.data || [],
           parties: partiesRes.data || [],
-          states: empires.data || []
+          states: empires.data || [],
+          systems: matchingSystems,
+          bodies: matchingBodies,
+          wiki: matchingWiki
         });
       } catch (e) {
         console.error("Search failed", e);
@@ -3285,6 +3321,10 @@ export function useGalaxyApp(initialSeed = 20260423) {
     viewedUserId,
     viewedPartyId,
     viewedStateId,
+    
+    // Wiki
+    wikiSectionId,
+    setWikiSectionId,
 
     navigateToPublicProfile: useCallback((id: string) => {
       setReturnPage(page);
