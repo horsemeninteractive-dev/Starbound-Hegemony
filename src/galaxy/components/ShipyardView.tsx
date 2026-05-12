@@ -80,9 +80,10 @@ function BlueprintCard({ bpKey, selected, siloInventory, siloId, sc, onClick }: 
 
 // ─── Shipyard list card ───────────────────────────────────────────────────────
 
-function ShipyardCard({ shipyard, activeQueue, isAtBody, onEnter }: {
+function ShipyardCard({ shipyard, activeQueue, isAtBody, onEnter, onTransfer }: {
   shipyard: Installation; activeQueue: any | null;
   isAtBody: boolean; onEnter: () => void;
+  onTransfer?: (id: string) => void;
 }) {
   const progress = activeQueue?.status === 'building'
     ? buildProgress(activeQueue.startedAt, activeQueue.completesAt) : 100;
@@ -127,6 +128,14 @@ function ShipyardCard({ shipyard, activeQueue, isAtBody, onEnter }: {
             <div className="w-full h-1.5 bg-primary/10 rounded-full overflow-hidden">
               <div className="h-full bg-info transition-all duration-1000" style={{ width: `${progress}%` }} />
             </div>
+          )}
+          {activeQueue.status === 'hangared' && (
+            <Button 
+              onClick={(e) => { e.stopPropagation(); onTransfer?.(activeQueue.id); }}
+              className="w-full h-7 mt-2 bg-success/20 hover:bg-success/30 border border-success/40 text-success text-[8px] font-display uppercase tracking-widest"
+            >
+              Transfer to Drydock
+            </Button>
           )}
         </div>
       ) : (
@@ -230,7 +239,8 @@ export function ShipyardView({ app, onPlayClick }: { app: any; onPlayClick?: () 
             </p>
             {shipyards.map((s: Installation) => (
               <ShipyardCard key={s.id} shipyard={s} activeQueue={activeQueueFor(s.id)}
-                isAtBody={playerBodyId === s.bodyId} onEnter={() => handleEnter(s)} />
+                isAtBody={playerBodyId === s.bodyId} onEnter={() => handleEnter(s)}
+                onTransfer={app.transferShipToDrydock} />
             ))}
           </div>
         </main>
@@ -240,6 +250,7 @@ export function ShipyardView({ app, onPlayClick }: { app: any; onPlayClick?: () 
 
   // ── Detail / build view ──────────────────────────────────────────────────────
   const silo      = selectedShipyard ? siloForBody(selectedShipyard.bodyId) : null;
+  const drydock   = selectedShipyard ? userFactories.find((f: Installation) => f.type === 'Drydock' && f.systemId === selectedShipyard.systemId) : null;
   const bp        = SHIP_BLUEPRINTS[selectedBp];
   const activeQ   = selectedShipyard ? activeQueueFor(selectedShipyard.id) : null;
   const hasCredits = sc >= bp.costSC;
@@ -294,6 +305,23 @@ export function ShipyardView({ app, onPlayClick }: { app: any; onPlayClick?: () 
                   Build a Resource Silo on this body first. Materials are drawn from the silo, not your cargo hold.
                 </p>
               )}
+            </div>
+
+            {/* Drydock status */}
+            <div className={cn("p-4 rounded-xl border",
+              drydock ? "bg-info/5 border-info/20" : "bg-warning/5 border-warning/20"
+            )}>
+              <div className="flex items-center gap-3 mb-3">
+                <Rocket size={14} className={drydock ? "text-info" : "text-warning"} />
+                <h3 className="font-display text-[10px] uppercase tracking-widest">
+                  {drydock ? "Drydock Network Online" : "No Drydock Detected"}
+                </h3>
+              </div>
+              <p className="text-[10px] font-mono-hud leading-relaxed">
+                {drydock 
+                  ? `Vessels will be transferred to the drydock on ${drydock.bodyId}.` 
+                  : "Caution: No drydock found in this system. Completed ships will remain in the hangar until a Drydock is constructed."}
+              </p>
             </div>
 
             {/* Blueprints */}
@@ -360,6 +388,25 @@ export function ShipyardView({ app, onPlayClick }: { app: any; onPlayClick?: () 
             </div>
 
             <div className="pt-4">
+              {activeQ?.status === 'hangared' && (
+                <div className="mb-6 p-4 bg-success/10 border border-success/30 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-success">
+                      <Rocket size={16} />
+                      <span className="text-[11px] font-display uppercase tracking-widest">Hull Synthesis Complete</span>
+                    </div>
+                    <span className="text-[10px] font-mono-hud text-success/70">{activeQ.vesselName}</span>
+                  </div>
+                  <Button 
+                    onClick={() => app.transferShipToDrydock(activeQ.id)}
+                    className="w-full h-10 bg-success text-black hover:bg-success/80 font-display text-[10px] uppercase tracking-widest shadow-[0_0_20px_rgba(var(--success-rgb),0.3)]"
+                  >
+                    Transfer to Drydock
+                  </Button>
+                  <p className="text-[8px] text-muted-foreground uppercase text-center tracking-tighter italic">Hangar bay must be cleared before next commission</p>
+                </div>
+              )}
+
               {disabledReason && (
                 <div className="flex items-center gap-2 text-[9px] font-mono-hud text-warning/70 mb-3 bg-warning/5 p-2 rounded border border-warning/10">
                   <AlertTriangle size={11} /><span>{disabledReason}</span>

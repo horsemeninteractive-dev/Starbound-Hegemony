@@ -1,9 +1,11 @@
-import type { Galaxy, StarSystem, Body, Installation, BodyResource, UserResource, FactoryWorker, Residency, ResidencyApplication, SiloInventoryEntry } from "@/galaxy/types";
+import type { Galaxy, StarSystem, Body, Installation, BodyResource, UserResource, FactoryWorker, Residency, ResidencyApplication, SiloInventoryEntry, SiteOfInterest, SurveyMission, Vessel, FleetEntity } from "@/galaxy/types";
 import { STAR_META, CONTEST_META, ECON_META, BODY_META, RESOURCE_META, INFRA_META, RICHNESS_VALUES, T1_RESOURCES, T2_RESOURCES, T3_RESOURCES } from "@/galaxy/meta";
-import { Zap, Scale, Crown, Shield, Building2, Pickaxe, UserPlus, LogOut, Briefcase as JobIcon, Coins as SC_Icon, Package, Settings, ArrowUp, ArrowUpDown, ChevronRight, Thermometer, Wind, Mountain, Users, Globe, Activity, CircleDot, Anchor, Hammer } from "lucide-react";
+import { Zap, Scale, Crown, Shield, Building2, Pickaxe, UserPlus, LogOut, Briefcase as JobIcon, Coins as SC_Icon, Package, Settings, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Thermometer, Wind, Mountain, Users, Globe, Activity, CircleDot, Anchor, Hammer, Rocket, Camera } from "lucide-react";
+
 import { GalaxyIcon } from "./ResourceIcon";
 import { useMemo, useState } from "react";
 import { PlanetSurface } from "./PlanetSurface";
+import { SitesOfInterestView } from "./SitesOfInterestView";
 
 /* ======================= GALAXY OVERVIEW ======================= */
 export function GalaxyOverview({ galaxy, hideHeader }: { galaxy: Galaxy; hideHeader?: boolean }) {
@@ -11,7 +13,7 @@ export function GalaxyOverview({ galaxy, hideHeader }: { galaxy: Galaxy; hideHea
   const contested = galaxy.systems.filter((s) => s.contest === "contested").length;
   const controlled = galaxy.systems.filter((s) => s.contest === "controlled").length;
   return (
-    <Panel title="The Viridian Expanse" subtitle={`Census · Seed ${galaxy.seed}`} hideHeader={hideHeader}>
+    <Panel title="The Pale Reach" subtitle={`Census · Seed ${galaxy.seed}`} hideHeader={hideHeader}>
       <Row k="Sectors" v={galaxy.sectors.length} />
       <Row k="Star Systems" v={galaxy.systems.length} />
       <Row k="Celestial Bodies" v={bodyCount} />
@@ -26,7 +28,7 @@ export function GalaxyOverview({ galaxy, hideHeader }: { galaxy: Galaxy; hideHea
 }
 
 /* ======================= SYSTEM OVERVIEW ======================= */
-export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, originSystemId, travel, arrival, initiateJump, calculatePath, getPathCost, getJumpCostBetween, currentTime, isExplored, hideHeader, hideActions, onPlayClick, onSelectEmpire, onEnterSystem, shipName }: {
+export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, originSystemId, travel, arrival, initiateJump, calculatePath, getPathCost, getJumpCostBetween, currentTime, isExplored, hideHeader, hideActions, onPlayClick, onSelectEmpire, onEnterSystem, shipName, onBack }: {
   system: StarSystem;
   galaxy: Galaxy;
   onSelectBody: (id: string) => void;
@@ -46,6 +48,7 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, o
   onSelectEmpire?: (id: string) => void;
   onEnterSystem?: () => void;
   shipName?: string;
+  onBack?: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<"info" | "bodies">("info");
   const explored = isExplored || system.id === "sys-center";
@@ -95,7 +98,7 @@ export function SystemOverview({ system, galaxy, onSelectBody, playerSystemId, o
   }, [path, galaxy]);
 
   return (
-    <Panel title={system.name} subtitle={sector?.name ?? "Unknown Sector"} hideHeader={hideHeader}>
+    <Panel title={system.name} subtitle={sector?.name ?? "Unknown Sector"} hideHeader={hideHeader} onBack={onBack}>
       {/* High-Level System Actions */}
       <div className="space-y-3 mb-4">
         {!hideActions && onEnterSystem && (
@@ -413,7 +416,15 @@ function formatLabel(raw: string): string {
   calculatePath,
   getPathCost,
   siloInventory,
-  onTransferSiloResource
+  onTransferSiloResource,
+  sitesOfInterest,
+  surveyMissions,
+  userVessels,
+  userFleets,
+  onAssignSurveyMission,
+  onCollectSurveyReward,
+  onAbandonSurveyMission,
+  onBack
 }: { 
   body: Body; 
   galaxy: Galaxy; 
@@ -455,6 +466,14 @@ function formatLabel(raw: string): string {
   onBuildInfrastructure?: (key: any) => void;
   siloInventory: SiloInventoryEntry[];
   onTransferSiloResource: (siloId: string, res: string, amount: number) => void;
+  sitesOfInterest: SiteOfInterest[];
+  surveyMissions: SurveyMission[];
+  userVessels: Vessel[];
+  userFleets: FleetEntity[];
+  onAssignSurveyMission: (siteId: string, vesselId: string) => Promise<void>;
+  onCollectSurveyReward: (missionId: string) => Promise<void>;
+  onAbandonSurveyMission: (missionId: string) => Promise<void>;
+  onBack?: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<"info" | "economy" | "governance">("info");
   const owner = body.ownerId ? galaxy.empires.find((e) => e.id === body.ownerId) : null;
@@ -508,7 +527,7 @@ function formatLabel(raw: string): string {
   const residencyProhibited = isSanctum || body.type === 'asteroid' || body.type === 'gas_giant' || body.type === 'star';
 
   return (
-    <Panel title={body.name} subtitle={BODY_META[body.type].label} hideHeader={hideHeader}>
+    <Panel title={body.name} subtitle={BODY_META[body.type].label} hideHeader={hideHeader} onBack={onBack}>
       {/* 1. High-Level Summary Header (Non-Scrolling) */}
       {isExplored && (
         <div className="grid grid-cols-4 gap-2 mb-4 animate-in fade-in slide-in-from-top-2 duration-500">
@@ -644,6 +663,18 @@ function formatLabel(raw: string): string {
               <p className="text-[9px] text-info/60 mt-1 italic leading-tight">Orbital sensors have identified resource signatures. Surface survey required for tactical quantification.</p>
             </div>
           )}
+
+          <SitesOfInterestView 
+            bodyId={body.id}
+            sites={sitesOfInterest}
+            missions={surveyMissions}
+            userVessels={userVessels}
+            userFleets={userFleets}
+            onAssignMission={onAssignSurveyMission}
+            onCollectReward={onCollectSurveyReward}
+            onAbandonMission={onAbandonSurveyMission}
+            currentTime={currentTime}
+          />
 
           {isExplored && (
             <div className="grid grid-cols-2 gap-2">
@@ -1074,7 +1105,34 @@ function FactoryCard({
           )}
 
           {isInfrastructure && isOwner && isAtThisBody && (
-            <div className="flex gap-2 flex-1 mt-4">
+            <div className="flex flex-col gap-2 flex-1 mt-4">
+              <button 
+                onClick={() => { onPlayClick?.(); onUpgradeInfrastructure?.(f.id); }}
+                className="flex-1 py-1.5 bg-info/20 border border-info/40 text-info font-bold text-[9px] uppercase tracking-wider rounded hover:bg-info/30 transition-all flex items-center justify-center gap-1.5"
+              >
+                <ArrowUp size={11} />
+                Upgrade {rMeta?.label}
+              </button>
+
+              {f.type === 'Shipyard' && (
+                <button 
+                  onClick={() => { onPlayClick?.(); (window as any).app.setPage("shipyard"); }}
+                  className="flex-1 py-1.5 bg-primary/20 border border-primary/40 text-primary font-bold text-[9px] uppercase tracking-wider rounded hover:bg-primary/30 transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Rocket size={11} />
+                  Enter Shipyard
+                </button>
+              )}
+
+              {f.type === 'Drydock' && (
+                <button 
+                  onClick={() => { onPlayClick?.(); (window as any).app.setPage("fleets"); }}
+                  className="flex-1 py-1.5 bg-success/20 border border-success/40 text-success font-bold text-[9px] uppercase tracking-wider rounded hover:bg-success/30 transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Anchor size={11} />
+                  Manage Fleets
+                </button>
+              )}
 
               {f.type === 'Resource Silo' && !showSiloTransfer && (
                 <button
@@ -1087,6 +1145,7 @@ function FactoryCard({
               )}
             </div>
           )}
+
 
           {showUpgrades && (
             <div className="mt-4 p-4 rounded-lg bg-info/5 border border-info/20 space-y-4 animate-in slide-in-from-top-2 duration-300">
@@ -1716,7 +1775,7 @@ function BuildConfirmation({ buildConfirm, onCancel, onConfirm, materials, userR
 }
 
 /* ======================= SHIP OVERVIEW ======================= */
-export function ShipOverview({ system, travel, arrival, currentTime, onDeselect, hideHeader, onPlayClick, shipName }: {
+export function ShipOverview({ system, travel, arrival, currentTime, onDeselect, hideHeader, onPlayClick, shipName, isTracking, onToggleTracking }: {
   system: StarSystem | null;
   travel: { targetId: string; startTime: number; endTime: number } | null;
   arrival: { fromId: string; startTime: number; duration: number } | null;
@@ -1725,6 +1784,8 @@ export function ShipOverview({ system, travel, arrival, currentTime, onDeselect,
   hideHeader?: boolean;
   onPlayClick?: () => void;
   shipName?: string;
+  isTracking?: boolean;
+  onToggleTracking?: () => void;
 }) {
   const isMoving = !!travel || !!arrival;
   const transitPct = travel
@@ -1735,7 +1796,28 @@ export function ShipOverview({ system, travel, arrival, currentTime, onDeselect,
   const etaSec = travel ? Math.max(0, Math.ceil((travel.endTime - currentTime) / 1000)) : 0;
 
   return (
-    <Panel title={shipName || "Commander Vessel"} subtitle="Fleet · Flagship" hideHeader={hideHeader}>
+    <Panel 
+      title={shipName || "Commander Vessel"} 
+      subtitle="Fleet · Flagship" 
+      hideHeader={hideHeader}
+      actions={onToggleTracking && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onPlayClick?.();
+            onToggleTracking();
+          }}
+          className={`p-1.5 rounded transition-all border ${
+            isTracking 
+              ? "bg-primary/20 border-primary text-primary shadow-[0_0_10px_rgba(var(--primary-rgb),0.3)]" 
+              : "bg-background/40 border-primary/20 text-muted-foreground hover:border-primary/50 hover:text-primary"
+          }`}
+          title={isTracking ? "Neural Sync Active" : "Initiate Neural Sync"}
+        >
+          <Camera size={14} />
+        </button>
+      )}
+    >
       <div className="mb-3 p-2 bg-primary/10 border border-primary/20 rounded flex items-center gap-2">
         <span className="text-xl">🚀</span>
         <div>
@@ -1779,15 +1861,129 @@ export function ShipOverview({ system, travel, arrival, currentTime, onDeselect,
   );
 }
 
+export function FleetOverview({ fleet, vessels, galaxy, currentTime, onDeselect, hideHeader, onPlayClick, isTracking, onToggleTracking }: {
+  fleet: FleetEntity;
+  vessels: Vessel[];
+  galaxy: Galaxy;
+  currentTime: number;
+  onDeselect?: () => void;
+  hideHeader?: boolean;
+  onPlayClick?: () => void;
+  isTracking?: boolean;
+  onToggleTracking?: () => void;
+}) {
+  const travel = fleet.travel;
+  const isMoving = !!travel;
+  const transitPct = travel
+    ? Math.min(100, ((currentTime - travel.startTime) / (travel.endTime - travel.startTime)) * 100)
+    : 0;
+  const etaSec = travel ? Math.max(0, Math.ceil((travel.endTime - currentTime) / 1000)) : 0;
+  
+  const system = galaxy.systemById[fleet.systemId];
+  const destination = travel ? galaxy.systemById[travel.targetId] : null;
+
+  return (
+    <Panel 
+      title={fleet.name} 
+      subtitle={`Fleet · ${vessels.length} Vessel${vessels.length === 1 ? '' : 's'}`} 
+      hideHeader={hideHeader}
+      actions={onToggleTracking && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onPlayClick?.();
+            onToggleTracking();
+          }}
+          className={`p-1.5 rounded transition-all border ${
+            isTracking 
+              ? "bg-primary/20 border-primary text-primary shadow-[0_0_10px_rgba(var(--primary-rgb),0.3)]" 
+              : "bg-background/40 border-primary/20 text-muted-foreground hover:border-primary/50 hover:text-primary"
+          }`}
+          title={isTracking ? "Neural Sync Active" : "Initiate Neural Sync"}
+        >
+          <Camera size={14} />
+        </button>
+      )}
+    >
+      <div className="mb-3 p-2 bg-primary/10 border border-primary/20 rounded flex items-center gap-2">
+        <div className="w-8 h-8 rounded bg-primary/20 border border-primary/30 flex items-center justify-center text-primary">
+          <Rocket size={16} />
+        </div>
+        <div>
+          <div className="text-[10px] font-bold text-primary uppercase tracking-widest">{fleet.name}</div>
+          <div className="text-[9px] text-muted-foreground uppercase">{vessels.length} Vessels · {fleet.status}</div>
+        </div>
+      </div>
+
+      <Row k="Status" v={isMoving ? "In Transit" : fleet.status.toUpperCase()} accent={isMoving ? "text-warning" : "text-success"} />
+      <Row k="Current Location" v={system?.name ?? "Deep Space"} />
+      {destination && <Row k="Destination" v={destination.name} accent="text-info" />}
+      
+      <Divider />
+      <SubTitle>Vessel Composition</SubTitle>
+      <div className="flex flex-wrap gap-1.5 mt-1.5">
+        {vessels.map(v => (
+          <div key={v.id} className="px-2 py-1 bg-primary/5 border border-primary/10 rounded flex items-center gap-1.5" title={`${v.name} (${v.class})`}>
+            <div className="w-1.5 h-1.5 rounded-full bg-success shadow-[0_0_5px_rgba(var(--success-rgb),0.5)]" />
+            <span className="text-[8px] font-mono-hud uppercase text-primary/80">{v.class}</span>
+          </div>
+        ))}
+      </div>
+
+      {isMoving && (
+        <>
+          <Divider />
+          <SubTitle>Transit Progress</SubTitle>
+          <Row k="ETA" v={`${etaSec}s`} accent="text-warning" />
+          <div className="h-1 w-full bg-warning/20 rounded-full overflow-hidden mt-1">
+            <div className="h-full bg-warning rounded-full" style={{ width: `${transitPct}%` }} />
+          </div>
+        </>
+      )}
+
+      {onDeselect && (
+        <>
+          <Divider />
+          <button
+            onClick={() => {
+              onPlayClick?.();
+              onDeselect();
+            }}
+            className="w-full mt-1 px-3 py-1.5 text-[9px] uppercase tracking-widest font-bold text-muted-foreground border border-border hover:border-primary/40 hover:text-primary transition"
+          >
+            Dismiss
+          </button>
+        </>
+      )}
+    </Panel>
+  );
+}
+
 /* ======================= UI bits ======================= */
-function Panel({ title, subtitle, children, hideHeader }: { title: string; subtitle?: string; children: React.ReactNode; hideHeader?: boolean }) {
+function Panel({ title, subtitle, children, hideHeader, onBack, actions }: { title: string; subtitle?: string; children: React.ReactNode; hideHeader?: boolean; onBack?: () => void; actions?: React.ReactNode }) {
   return (
     <div className="w-full animate-fade-in pointer-events-auto">
       {!hideHeader && (
         <div className="border-b border-primary/20 pb-2 mb-4">
-          <div className="font-mono-hud text-[9px] uppercase tracking-[0.3em] text-primary/70">{subtitle ?? "—"}</div>
-          <div className="font-display text-lg uppercase tracking-[0.15em] text-primary text-glow truncate">
-            {title}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex-1 min-w-0">
+              <div className="font-mono-hud text-[9px] uppercase tracking-[0.3em] text-primary/70">{subtitle ?? "—"}</div>
+              <div className="font-display text-lg uppercase tracking-[0.15em] text-primary text-glow truncate">
+                {title}
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {actions}
+              {onBack && (
+                <button 
+                  onClick={onBack}
+                  className="p-1.5 -mr-1 text-primary/40 hover:text-primary transition-all hover:bg-primary/5 rounded-lg border border-transparent hover:border-primary/20"
+                  title="Back"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

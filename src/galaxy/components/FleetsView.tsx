@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import {
   Rocket, Anchor, Ship, Hammer, ArrowRight,
   AlertTriangle, CheckCircle2, Clock, Package,
-  ChevronRight, Trash2, Plus, Users, MapPin, Palette, X
+  ChevronRight, Trash2, Plus, Users, MapPin, Palette, X, Pencil
 } from "lucide-react";
 import { PageHeader } from "./PageHeader";
 import { Button } from "@/components/ui/button";
@@ -42,15 +42,18 @@ const CLASS_ICON: Record<string, React.ReactNode> = {
 
 // ─── Active fleet card ────────────────────────────────────────────────────────
 
-function FleetCard({ fleet, vessels, commanderId, onDisband, onPlayClick, onRefit }: {
+function FleetCard({ fleet, vessels, commanderId, onDisband, onPlayClick, onRefit, onRename }: {
   fleet:       FleetEntity;
   vessels:     Vessel[];
   commanderId: string;
   onDisband:   (id: string) => void;
   onPlayClick: () => void;
   onRefit:     (v: Vessel) => void;
+  onRename:    (id: string, name: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [newName, setNewName] = useState(fleet.name);
   const fleetVessels = vessels.filter(v => fleet.vesselIds.includes(v.id));
 
   return (
@@ -61,7 +64,48 @@ function FleetCard({ fleet, vessels, commanderId, onDisband, onPlayClick, onRefi
             <Ship size={18} />
           </div>
           <div>
-            <h3 className="font-display text-[12px] uppercase tracking-wider text-foreground">{fleet.name}</h3>
+            {isRenaming ? (
+              <div className="flex items-center gap-2">
+                <input
+                  autoFocus
+                  type="text"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      onRename(fleet.id, newName);
+                      setIsRenaming(false);
+                    } else if (e.key === 'Escape') {
+                      setIsRenaming(false);
+                      setNewName(fleet.name);
+                    }
+                  }}
+                  className="bg-background/80 border border-primary/30 rounded px-1.5 py-0.5 text-[11px] font-display uppercase tracking-wider text-foreground focus:outline-none focus:border-primary w-32"
+                />
+                <button 
+                  onClick={() => { onRename(fleet.id, newName); setIsRenaming(false); }}
+                  className="text-success hover:text-success/80 p-0.5"
+                >
+                  <CheckCircle2 size={12} />
+                </button>
+                <button 
+                  onClick={() => setIsRenaming(false)}
+                  className="text-error hover:text-error/80 p-0.5"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 group/title">
+                <h3 className="font-display text-[12px] uppercase tracking-wider text-foreground">{fleet.name}</h3>
+                <button 
+                  onClick={() => setIsRenaming(true)}
+                  className="opacity-0 group-hover/title:opacity-100 p-0.5 hover:text-primary transition-all text-muted-foreground"
+                >
+                  <Pencil size={10} />
+                </button>
+              </div>
+            )}
             <p className="text-[9px] font-mono-hud text-muted-foreground uppercase">
               {fleet.systemId} · {fleetVessels.length} vessel{fleetVessels.length !== 1 ? 's' : ''} · {fleet.status.toUpperCase()}
             </p>
@@ -127,12 +171,13 @@ function FleetCard({ fleet, vessels, commanderId, onDisband, onPlayClick, onRefi
 
 // ─── Docked ship card (selectable for fleet formation) ────────────────────────
 
-function DockedVesselCard({ vessel, selected, onToggle, drydockBody, onRefit }: {
+function DockedVesselCard({ vessel, selected, onToggle, drydockBody, onRefit, onDeploy }: {
   vessel:      Vessel;
   selected:    boolean;
   onToggle:    () => void;
   drydockBody: string;
   onRefit:     () => void;
+  onDeploy:    () => void;
 }) {
   return (
     <div
@@ -175,8 +220,15 @@ function DockedVesselCard({ vessel, selected, onToggle, drydockBody, onRefit }: 
           onClick={(e) => { e.stopPropagation(); onRefit(); }}
           className="p-2.5 rounded-lg bg-primary/5 border border-primary/10 text-primary/40 hover:text-primary hover:bg-primary/20 hover:border-primary/40 transition-all flex items-center gap-2 group"
         >
-          <Palette size={14} className="group-hover:scale-110 transition-transform" />
+          <Palette size={14} className="group-hover:rotate-12 transition-transform" />
           <span className="text-[8px] font-display uppercase tracking-widest hidden lg:inline">Refit</span>
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDeploy(); }}
+          className="p-2.5 rounded-lg bg-primary/20 border border-primary/40 text-primary hover:bg-primary/30 transition-all flex items-center gap-2 group"
+        >
+          <Rocket size={14} className="group-hover:-translate-y-0.5 transition-transform" />
+          <span className="text-[8px] font-display uppercase tracking-widest hidden lg:inline">Deploy</span>
         </button>
       </div>
     </div>
@@ -373,19 +425,26 @@ export function FleetsView({ app, onPlayClick }: { app: any; onPlayClick?: () =>
   const [customizingVessel, setCustomizingVessel] = useState<Vessel | null>(null);
   const play = () => onPlayClick?.();
 
-  const userFleets:   FleetEntity[]              = useMemo(() => [
-    {
-      id: app.vesselId,
-      ownerId: app.user?.id ?? "",
-      name: app.playerName ?? "Commander Fleet",
-      systemId: app.playerSystemId,
-      bodyId: app.playerBodyId,
-      status: "active",
-      vesselIds: [app.vesselId],
-      travel: app.travel,
-    },
-    ...(app.userFleets ?? [])
-  ], [app.vesselId, app.user?.id, app.playerName, app.playerSystemId, app.playerBodyId, app.travel, app.userFleets]);
+  const userFleets: FleetEntity[] = useMemo(() => {
+    const baseFleets = app.userFleets ?? [];
+    const commanderInFleet = baseFleets.some(f => f.vesselIds.includes(app.vesselId));
+    
+    if (commanderInFleet) return baseFleets;
+
+    return [
+      {
+        id: app.vesselId,
+        ownerId: app.user?.id ?? "",
+        name: app.playerName ?? "Commander Fleet",
+        systemId: app.playerSystemId,
+        bodyId: app.playerBodyId,
+        status: "active",
+        vesselIds: [app.vesselId],
+        travel: app.travel,
+      },
+      ...baseFleets
+    ];
+  }, [app.vesselId, app.user?.id, app.playerName, app.playerSystemId, app.playerBodyId, app.travel, app.userFleets]);
   
   const userVessels:  Vessel[]                   = app.userVessels ?? [];
   const constrQueue:  ConstructionQueueEntry[]   = app.constructionQueue ?? [];
@@ -412,11 +471,11 @@ export function FleetsView({ app, onPlayClick }: { app: any; onPlayClick?: () =>
   const drydockForSystem = (systemId: string) =>
     userFactories.find((f: any) => f.type === 'Drydock' && f.systemId === systemId) ?? null;
 
-  // Group docked vessels by drydock body
+  // Group docked vessels by drydock
   const dockedByDrydock = useMemo(() => {
     const groups: Record<string, Vessel[]> = {};
     for (const v of dockedVessels) {
-      const key = v.bodyId ?? 'unknown';
+      const key = v.drydockId ?? 'unknown';
       if (!groups[key]) groups[key] = [];
       groups[key].push(v);
     }
@@ -430,13 +489,26 @@ export function FleetsView({ app, onPlayClick }: { app: any; onPlayClick?: () =>
     );
   };
 
-  // For fleet formation: find the drydock body of the first selected vessel
+  const selectAllDocked = (vesselIds: string[]) => {
+    play();
+    setSelectedDockedIds(prev => {
+      const next = new Set([...prev, ...vesselIds]);
+      return Array.from(next);
+    });
+  };
+
+  const deselectAllDocked = (vesselIds: string[]) => {
+    play();
+    setSelectedDockedIds(prev => prev.filter(id => !vesselIds.includes(id)));
+  };
+
+  // For fleet formation: find the drydock ID of the first selected vessel
   const formationDrydockId = useMemo(() => {
     if (selectedDockedIds.length === 0) return null;
     const firstVessel = dockedVessels.find(v => selectedDockedIds[0] === v.id);
-    if (!firstVessel) return null;
-    return drydockForBody(firstVessel.bodyId ?? '')?.id ?? null;
-  }, [selectedDockedIds, dockedVessels, userFactories]);
+    return firstVessel?.drydockId ?? null;
+  }, [selectedDockedIds, dockedVessels]);
+
 
   const handleFormFleet = async (name: string) => {
     if (!formationDrydockId) return;
@@ -498,6 +570,13 @@ export function FleetsView({ app, onPlayClick }: { app: any; onPlayClick?: () =>
                 </h2>
                 <div className="flex items-center gap-4">
                   <button
+                    onClick={() => { play(); app.setPage("shipyard"); }}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-info/10 border border-info/30 text-info font-display text-[9px] uppercase tracking-widest rounded-lg hover:bg-info/20 transition-all group"
+                  >
+                    <Hammer size={11} className="group-hover:rotate-12 transition-transform" />
+                    Shipyard Hub
+                  </button>
+                  <button
                     onClick={() => { play(); setCustomizingVessel(userVessels.find(v => v.id === app.vesselId) || userVessels[0]); }}
                     className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 border border-primary/30 text-primary font-display text-[9px] uppercase tracking-widest rounded-lg hover:bg-primary/20 transition-all group"
                   >
@@ -506,6 +585,7 @@ export function FleetsView({ app, onPlayClick }: { app: any; onPlayClick?: () =>
                   </button>
                   <span className="text-[9px] font-mono-hud text-muted-foreground/50">{userFleets.length} deployed</span>
                 </div>
+
               </div>
 
               {userFleets.length === 0 ? (
@@ -517,7 +597,7 @@ export function FleetsView({ app, onPlayClick }: { app: any; onPlayClick?: () =>
                 <div className="space-y-3">
                   {userFleets.map(fleet => (
                     <FleetCard key={fleet.id} fleet={fleet} vessels={userVessels} commanderId={app.vesselId}
-                      onDisband={handleDisband} onPlayClick={play} onRefit={setCustomizingVessel} />
+                      onDisband={handleDisband} onPlayClick={play} onRefit={setCustomizingVessel} onRename={app.renameFleet} />
                   ))}
                 </div>
               )}
@@ -546,26 +626,51 @@ export function FleetsView({ app, onPlayClick }: { app: any; onPlayClick?: () =>
                   <p className="text-[10px] font-mono-hud text-muted-foreground/50 uppercase">No docked ships — transfer built vessels from the Shipyard Hangar below</p>
                 </div>
               ) : (
-                Object.entries(dockedByDrydock).map(([bodyId, vessels]) => (
-                  <div key={bodyId} className="mb-6">
-                    <p className="text-[9px] font-mono-hud text-muted-foreground/50 uppercase tracking-widest mb-2 flex items-center gap-2">
-                      <Anchor size={10} /> Drydock · {bodyId}
-                    </p>
-                    <div className="space-y-2">
-                      {vessels.map(v => (
-                        <DockedVesselCard
-                          key={v.id}
-                          vessel={v}
-                          selected={selectedDockedIds.includes(v.id)}
-                          onToggle={() => toggleDockedVessel(v.id)}
-                          drydockBody={bodyId}
-                          onRefit={() => setCustomizingVessel(v)}
-                        />
-                      ))}
+                Object.entries(dockedByDrydock).map(([drydockId, vessels]) => {
+                  const drydock = userFactories.find(f => f.id === drydockId);
+                  const system = drydock ? app.galaxy.systemById[drydock.systemId] : null;
+                  const body = system?.bodies.find(b => b.id === drydock?.bodyId) || (drydock?.bodyId === 'star' ? { name: 'Star' } : null);
+
+                  const locationName = system ? `${system.name} · ${body?.name || 'Orbital Space'}` : 'Unknown Location';
+                  
+                  const allInGroupSelected = vessels.every(v => selectedDockedIds.includes(v.id));
+
+                  return (
+                    <div key={drydockId} className="mb-6">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-[9px] font-mono-hud text-muted-foreground/50 uppercase tracking-widest flex items-center gap-2">
+                          <Anchor size={10} /> Drydock · {locationName}
+                        </p>
+                        <button 
+                          onClick={() => allInGroupSelected ? deselectAllDocked(vessels.map(v => v.id)) : selectAllDocked(vessels.map(v => v.id))}
+                          className="text-[8px] font-bold text-primary/60 uppercase hover:text-primary transition-colors px-2 py-0.5 border border-primary/10 rounded hover:bg-primary/5"
+                        >
+                          {allInGroupSelected ? "Deselect Group" : "Select Group"}
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {vessels.map(v => (
+                          <DockedVesselCard
+                            key={v.id}
+                            vessel={v}
+                            selected={selectedDockedIds.includes(v.id)}
+                            onToggle={() => toggleDockedVessel(v.id)}
+                            drydockBody={locationName}
+                            onRefit={() => setCustomizingVessel(v)}
+                            onDeploy={() => {
+                              if (!selectedDockedIds.includes(v.id)) {
+                                setSelectedDockedIds(prev => [...prev, v.id]);
+                              }
+                              setFormingFleet(true);
+                            }}
+                          />
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
+
 
               {selectedDockedIds.length > 0 && (
                 <p className="text-[9px] font-mono-hud text-primary/50 mt-2">
@@ -574,29 +679,37 @@ export function FleetsView({ app, onPlayClick }: { app: any; onPlayClick?: () =>
               )}
             </section>
 
-            {/* ── Shipyard Hangar ───────────────────────────────────────────── */}
             <section>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="font-display text-[11px] uppercase tracking-[0.2em] text-primary/70 flex items-center gap-2">
-                  <Hammer size={14} /> Shipyard Hangar
-                </h2>
-                <span className="text-[9px] font-mono-hud text-muted-foreground/50">{activeQueue.length} active</span>
+                <div className="flex items-center gap-3">
+                  <h2 className="font-display text-[11px] uppercase tracking-[0.2em] text-primary/70 flex items-center gap-2">
+                    <Hammer size={14} /> Shipyard Hangar
+                  </h2>
+                  <span className="text-[9px] font-mono-hud text-muted-foreground/50">{activeQueue.length} active builds</span>
+                </div>
+                <button
+                  onClick={() => { play(); app.setPage("shipyard"); }}
+                  className="text-[9px] font-bold text-primary/60 uppercase hover:text-primary transition-colors px-2 py-1 border border-primary/10 rounded hover:bg-primary/5 flex items-center gap-2"
+                >
+                  <Plus size={10} /> Commission New Vessel
+                </button>
               </div>
 
               {activeQueue.length === 0 ? (
                 <div className="hud-panel border border-primary/10 bg-background/20 rounded-xl p-8 text-center">
                   <Hammer size={28} className="text-primary/20 mx-auto mb-3" />
-                  <p className="text-[10px] font-mono-hud text-muted-foreground/50 uppercase mb-4">No active builds — commission a vessel at the Orbital Shipyard</p>
+                  <p className="text-[10px] font-mono-hud text-muted-foreground/50 uppercase mb-4">No active builds detected in any shipyard</p>
                   <button
                     onClick={() => { play(); app.setPage("shipyard"); }}
                     className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 border border-primary/30 text-primary font-display text-[10px] uppercase tracking-widest rounded-lg hover:bg-primary/20 transition-all"
                   >
-                    <Hammer size={11} /> Open Shipyard
+                    <Hammer size={11} /> Visit Shipyard
                   </button>
                 </div>
               ) : (
                 <div className="space-y-3">
                   {activeQueue.map((entry: ConstructionQueueEntry) => {
+                    // Check for drydock in system
                     const hasDrydock = !!drydockForSystem(entry.systemId);
                     return (
                       <QueueItem key={entry.id} entry={entry} hasDrydock={hasDrydock}
@@ -606,6 +719,7 @@ export function FleetsView({ app, onPlayClick }: { app: any; onPlayClick?: () =>
                 </div>
               )}
             </section>
+
 
           </div>
         </main>

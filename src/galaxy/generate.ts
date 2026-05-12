@@ -4,7 +4,8 @@
 import * as THREE from "three";
 import {
   Body, BodyType, ContestState, EconomicStatus, Empire,
-  Galaxy, Hyperlane, JumpGate, Sector, StarSystem, StarType, PlanetSubtype, ResourceDeposit, GovernmentType
+  Galaxy, Hyperlane, JumpGate, Sector, StarSystem, StarType, PlanetSubtype, ResourceDeposit, GovernmentType,
+  GalacticRegion, RegionType
 } from "./types";
 import { mulberry32, pick, randInt, weightedPick, sectorName, systemName, stationName, planetName, moonName, Rng } from "./rng";
 
@@ -1034,5 +1035,29 @@ export function generateGalaxy(seed: number = 42, opts?: {
     }
   }
 
-  return { seed, sectors, systems, regions, hyperlanes, empires, systemById, sectorById, bodyById };
+  // 4. Seed Precursor bodies (8-12 bodies)
+  const allEligibleBodies = systems
+    .filter(s => s.id !== "sys-center" && !s.id.startsWith("sys-inner-"))
+    .flatMap(s => s.bodies)
+    .filter(b => b.type === "terrestrial" || b.type === "gas_giant" || b.type === "moon"); // filter out stations/asteroids?
+  // Let's filter out stations and asteroids just to be safe. Actually, the prompt says "exotic bodies... 3x chance. Gas giants and moons bias toward Minor. Terrestrials are balanced."
+  // Precursors can be on any non-Sanctum body. But let's weight exotic higher.
+  
+  const precursorCandidates = systems
+    .filter(s => s.id !== "sys-center" && !s.id.startsWith("sys-inner-"))
+    .flatMap(s => s.bodies)
+    .filter(b => b.type !== "station" && b.type !== "ship" && b.type !== "star");
+  
+  const precursor_bodies: string[] = [];
+  const precursorCount = randInt(rng, 8, 12);
+  
+  for (let i = 0; i < precursorCount; i++) {
+    // We want a deterministic pick. We can just pick randomly since `rng` is deterministic.
+    if (precursorCandidates.length === 0) break;
+    const idx = randInt(rng, 0, precursorCandidates.length - 1);
+    precursor_bodies.push(precursorCandidates[idx].id);
+    precursorCandidates.splice(idx, 1);
+  }
+
+  return { seed, sectors, systems, regions, hyperlanes, empires, systemById, sectorById, bodyById, precursor_bodies };
 }

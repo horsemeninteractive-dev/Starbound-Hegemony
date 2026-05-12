@@ -4,12 +4,13 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 interface PageHeaderProps {
-  title: string;
-  subtitle?: string;
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
   icon?: React.ReactNode;
   onBack: () => void;
   backLabel?: string;
   actions?: React.ReactNode;
+  bottom?: React.ReactNode;
   hue?: number;
   className?: string;
 }
@@ -21,6 +22,7 @@ export function PageHeader({
   onBack, 
   backLabel = "Back to Galaxy", 
   actions, 
+  bottom,
   hue,
   className
 }: PageHeaderProps) {
@@ -84,6 +86,13 @@ export function PageHeader({
           <div className="max-w-7xl mx-auto flex justify-center overflow-x-auto no-scrollbar">
             {actions}
           </div>
+        </div>
+      )}
+
+      {/* Bottom slot for tabs/stats */}
+      {bottom && (
+        <div className="border-t border-primary/20">
+          {bottom}
         </div>
       )}
     </header>

@@ -361,7 +361,13 @@ interface Props {
   fxVolume?: number;
   arrival?: { fromId: string; startTime: number; duration: number } | null;
   otherPlayers?: any[];
+  userFleets?: any[];
   userResidency?: any | null;
+  visibleSitesOfInterest?: any[];
+  vesselId?: string;
+  isTrackingShip?: boolean;
+  selectedEntityId?: string | null;
+  onSetIsTrackingShip?: (tracking: boolean) => void;
 }
 
 /** 
@@ -397,7 +403,8 @@ function MapContent({
   onSelectSystem, onSelectBody, onHoverSystem, hoverSystemId, 
   fogOfWar, exploredSystemIds, knownSystemIds, systemMatchesFilter,
   currentSystemId, playerBodyId, travel, isMobilePanelExpanded, containerRef, graphicsQuality, shipConfig, fxVolume = 0.5,
-  arrival, otherPlayers, userResidency
+  arrival, otherPlayers, userFleets, userResidency, visibleSitesOfInterest = [], vesselId,
+  isTrackingShip, selectedEntityId, onSetIsTrackingShip
 }: Props & { containerRef: React.RefObject<HTMLDivElement> }) {
   const { camera, gl } = useThree();
   const controlsRef = useRef<CameraControls>(null);
@@ -661,6 +668,12 @@ function MapContent({
         )}
 
         <group position={[-shiftX, -shiftY, -shiftZ]}>
+        <SiteOfInterestMarkers 
+          sites={visibleSitesOfInterest} 
+          galaxy={galaxy} 
+          view={view} 
+          system={system} 
+        />
         {/* 2. System Atmosphere (Nebula/Dust) */}
         {view === "system" && system && (
           <SystemRegionAtmosphere 
@@ -703,22 +716,30 @@ function MapContent({
           />
         ))}
 
-        <PlayerFleetVisual 
-          galaxy={galaxy} 
-          playerSystemId={currentSystemId || "sys-center"} 
-          playerBodyId={playerBodyId}
-          viewedSystemId={system?.id || null} 
-          travel={travel} 
-          view={view}
-          controlsRef={controlsRef}
-          trackingShip={view === "ship"}
-          onSelect={() => onSelectBody("ship")}
-          listener={listener}
-          config={shipConfig}
-          arrival={arrival}
-        />
+        {!userFleets?.some(f => f.vesselIds.includes(vesselId || "")) && (
+          <PlayerFleetVisual 
+            galaxy={galaxy} 
+            playerSystemId={currentSystemId || "sys-center"} 
+            playerBodyId={playerBodyId}
+            viewedSystemId={system?.id || null} 
+            travel={travel} 
+            view={view}
+            controlsRef={controlsRef}
+            trackingShip={isTrackingShip && (selectedEntityId === null || selectedEntityId === "ship" || selectedEntityId === vesselId)}
+            onSelect={() => onSelectBody("ship")}
+            onDoubleClick={() => {
+              onSelectBody("ship");
+              onSetIsTrackingShip?.(true);
+            }}
+            listener={listener}
+            config={shipConfig}
+            arrival={arrival}
+          />
+        )}
 
-        {otherPlayers && otherPlayers.map(op => {
+        {otherPlayers && otherPlayers
+          .filter(op => view === 'galaxy' || op.system_id === system?.id)
+          .map(op => {
           // RESOLVE MULTI-JUMP FOR OTHER PLAYERS (Lazy Resolution)
           let opSystemId = op.system_id;
           let opPath = op.travel_path || [];
@@ -784,6 +805,55 @@ function MapContent({
               arrival={opArrival}
               isOtherPlayer={true}
               commanderName={op.profiles?.commander_name}
+            />
+          );
+        })}
+
+        {/* ── Player's own non-commander fleets ─────────────────────────────── */}
+        {(userFleets ?? [])
+          .filter(fleet => view === 'galaxy' || fleet.systemId === system?.id)
+          .map((fleet, fleetIdx) => {
+          // Give each fleet a unique orbit offset so they don't stack on the same star.
+          // Commander is at offset 0; fleet ships are spread at equal angular intervals.
+          const totalEntities = (userFleets?.length ?? 0) + 1; // +1 for commander
+          const fleetOrbitOffset = ((fleetIdx + 1) / totalEntities) * Math.PI * 2;
+          // Use the lead vessel's ShipConfiguration if available (injected by Index.tsx),
+          // otherwise fall back to a generic "other player" appearance.
+          const fleetConfig: ShipConfiguration | undefined = fleet.vesselConfig
+            ? {
+                name: fleet.name,
+                primaryColor: fleet.vesselConfig.primaryColor || '#aaaaaa',
+                accentColor: fleet.vesselConfig.accentColor || '#ffffff',
+                hullId: fleet.vesselConfig.hullId || 'hull_vanguard',
+                wingsId: fleet.vesselConfig.wingsId || 'wings_delta',
+                enginesId: fleet.vesselConfig.enginesId || 'engine_plasma',
+                bridgeId: fleet.vesselConfig.bridgeId || 'bridge_panoramic',
+              }
+            : undefined;
+          return (
+            <PlayerFleetVisual
+              key={fleet.id}
+              galaxy={galaxy}
+              playerSystemId={fleet.systemId || 'sys-center'}
+              playerBodyId={fleet.bodyId || 'star'}
+              viewedSystemId={system?.id || null}
+              travel={fleet.travel ?? null}
+              view={view}
+              controlsRef={controlsRef}
+              trackingShip={isTrackingShip && selectedEntityId === fleet.id}
+              onSelect={view !== 'galaxy' ? () => onSelectBody?.(`fleet:${fleet.id}`) : undefined}
+              onDoubleClick={() => {
+                if (view !== 'galaxy') {
+                  onSelectBody?.(`fleet:${fleet.id}`);
+                  onSetIsTrackingShip?.(true);
+                }
+              }}
+              listener={null}
+              config={fleetConfig}
+              arrival={null}
+              isOtherPlayer={!fleetConfig}
+              commanderName={fleet.name}
+              orbitOffset={fleetOrbitOffset}
             />
           );
         })}
@@ -2169,11 +2239,13 @@ function PlayerFleetVisual({
   controlsRef, 
   trackingShip, 
   onSelect, 
+  onDoubleClick,
   listener, 
   config,
   arrival,
   isOtherPlayer,
-  commanderName
+  commanderName,
+  orbitOffset = 0
 }: { 
   galaxy: Galaxy, 
   playerSystemId: string, 
@@ -2190,11 +2262,13 @@ function PlayerFleetVisual({
   controlsRef?: React.RefObject<CameraControls | null>, 
   trackingShip?: boolean, 
   onSelect?: () => void, 
+  onDoubleClick?: () => void,
   listener: THREE.AudioListener | null, 
   config?: ShipConfiguration,
   arrival?: { fromId: string; startTime: number; duration: number } | null,
   isOtherPlayer?: boolean,
-  commanderName?: string
+  commanderName?: string,
+  orbitOffset?: number
 }) {
   const { camera } = useThree();
   
@@ -2309,7 +2383,8 @@ function PlayerFleetVisual({
         const baseAngle = (seed % 1) * Math.PI * 2;
         const orbitalPeriod = 60000;
         const timeAngle = ((time % orbitalPeriod) / orbitalPeriod) * Math.PI * 2;
-        const angle = baseAngle + timeAngle;
+        // orbitOffset separates multiple ships/fleets at the same star
+        const angle = baseAngle + timeAngle + orbitOffset;
         const starRadius = STAR_BASE_SIZE[sys.starType as keyof typeof STAR_BASE_SIZE] || 2.4;
         
         // Use a much tighter orbit for Galaxy View (0.4 radius)
@@ -2518,9 +2593,8 @@ function PlayerFleetVisual({
         const eased = 1 - Math.pow(1 - Math.max(0, Math.min(1, pTransit)), 2.0);
         
         const gateWorldPos = new THREE.Vector3(sourceSys.pos[0] + gatePos.x, sourceSys.pos[1], sourceSys.pos[2] + gatePos.z);
-        const starWorldPos = new THREE.Vector3(...sourceSys.pos);
-        
-        globalPos.lerpVectors(gateWorldPos, starWorldPos, eased);
+        const targetPos = getShipTargetPos(sourceSys, (playerBodyId as string), now);
+        globalPos.lerpVectors(gateWorldPos, targetPos, eased);
         scale = 1.0;
         hasMattedRef.current = false;
       }
@@ -2698,6 +2772,11 @@ function PlayerFleetVisual({
             if (view === 'galaxy') return;
             e.stopPropagation(); 
             onSelect?.(); 
+          }}
+          onDoubleClick={(e) => {
+            if (view === 'galaxy') return;
+            e.stopPropagation();
+            onDoubleClick?.();
           }}
           onPointerOver={() => { 
             if (view === 'galaxy') return;
@@ -3009,3 +3088,229 @@ const EmpireTerritoryRings = memo(function EmpireTerritoryRings({ galaxy, fogOfW
     </group>
   );
 });
+
+// Galaxy view: sizes are in galaxy world units (~4500 unit radius galaxy).
+// Sector labels use distanceFactor={1500}. SOI markers should be visible but
+// smaller than sector labels, so we use distanceFactor={1000} with ring radii ~100.
+// System view: sizes are in system world units (body orbits are in the 10-300 range),
+// so we scale down to distanceFactor={60} with ring radii ~6.
+
+const SOI_TIER_COLORS: Record<string, string> = {
+  minor:       '#aaaaaa',
+  significant: '#60a5fa',
+  major:       '#a855f7',
+  precursor:   '#f59e0b',
+};
+
+// SiteMarker renders directly on a body or star position — no offset.
+// Galaxy view: a tiny pulsing dot + Html label that behaves like star labels
+//   (the Html has no distanceFactor; the dot is small so it's visible when zoomed out).
+// System view: the dot sits at the body's world position with the label pushed
+//   below the body using the same screenRadius technique as planet labels.
+function SiteMarker({ site, pos, scale, bodySize = 0, body, system }: {
+  site: any;
+  pos: [number, number, number];
+  scale: 'galaxy' | 'system';
+  bodySize?: number;
+  body?: any;
+  system?: any;
+}) {
+  const { camera } = useThree();
+  const groupRef = useRef<THREE.Group>(null);
+  const dotRef   = useRef<THREE.Mesh>(null);
+  const labelRef = useRef<HTMLDivElement>(null);
+  const color = SOI_TIER_COLORS[site.tier as string] || '#a78bfa';
+
+  // Deterministic small angular stagger for multiple sites on the same body
+  const idSuffix = site.id.substring(site.id.length - 2);
+  const offsetIndex = parseInt(idSuffix, 16) % 8 || 0;
+  
+  // In galaxy view stagger slightly so overlapping sites are visible
+  const staggerR = scale === 'galaxy' ? 4 : 0;
+  const staggerA = (offsetIndex / 8) * Math.PI * 2;
+  const staggerX = Math.cos(staggerA) * staggerR;
+  const staggerZ = Math.sin(staggerA) * staggerR;
+
+  const finalPos: [number, number, number] = [
+    pos[0] + staggerX,
+    pos[1],
+    pos[2] + staggerZ,
+  ];
+
+  // Dot geometry: tiny in galaxy, slightly larger in system
+  const dotR = scale === 'galaxy' ? 1.5 : 0.65;
+
+  useFrame((state) => {
+    // Pulse the dot
+    if (dotRef.current) {
+      const s = 1 + Math.sin(state.clock.elapsedTime * 4) * 0.35;
+      dotRef.current.scale.setScalar(s);
+    }
+
+    if (scale === 'system' && body && system && groupRef.current) {
+      const t = state.clock.elapsedTime;
+      const starType = system.starType;
+      
+      // Mirror PlanetNode orbital math exactly for zero-drift
+      const speed = getOrbitalSpeed(body.orbit, starType, !!body.parentId);
+      const angle = (body.phase || 0) + (t * speed);
+      
+      let px = Math.cos(angle) * body.orbit;
+      let pz = Math.sin(angle) * body.orbit;
+      
+      if (body.parentId) {
+        const parent = system.bodies?.find((b: any) => b.id === body.parentId);
+        if (parent) { 
+          const pSpeed = getOrbitalSpeed(parent.orbit, starType, false);
+          const pAngle = (parent.phase || 0) + (t * pSpeed);
+          px += Math.cos(pAngle) * parent.orbit;
+          pz += Math.sin(pAngle) * parent.orbit;
+        }
+      }
+      
+      // Apply stagger and system position
+      // We MUST add system.pos because SiteOfInterestMarkers is a sibling of SystemNode 
+      // in the main shifted group. This ensures the world position is [sys.pos + localPos - shift].
+      groupRef.current.position.set(system.pos[0] + px + staggerX, 0, system.pos[2] + pz + staggerZ);
+
+      // Label offset logic
+      if (labelRef.current && bodySize > 0) {
+        const worldPos = groupRef.current.getWorldPosition(new THREE.Vector3());
+        const d = state.camera.position.distanceTo(worldPos);
+        const vFov = (state.camera as THREE.PerspectiveCamera).fov * Math.PI / 180;
+        const screenRadius = (bodySize / (2 * Math.tan(vFov / 2) * d)) * window.innerHeight;
+        labelRef.current.style.transform = `translateY(${screenRadius + 10}px)`;
+      }
+    }
+  });
+
+  // Galaxy view: render the dot inside a Billboard so it always faces camera.
+  // Use the same no-distanceFactor Html pattern as star labels — the dot itself
+  // provides the visual anchor at galaxy scale, label appears on hover proximity.
+  if (scale === 'galaxy') {
+    return (
+      <group ref={groupRef} position={finalPos}>
+        <Billboard>
+          <mesh ref={dotRef}>
+            <circleGeometry args={[dotR, 8]} />
+            <meshBasicMaterial color={color} transparent opacity={0.9} side={THREE.DoubleSide} />
+          </mesh>
+          {/* Outer ring — same tier colour, low opacity */}
+          <mesh>
+            <ringGeometry args={[dotR * 1.6, dotR * 2.2, 6]} />
+            <meshBasicMaterial color={color} transparent opacity={0.35} side={THREE.DoubleSide} />
+          </mesh>
+        </Billboard>
+        {/* Label — no distanceFactor, positioned slightly above the dot */}
+        <Html center position={[0, dotR * 3, 0]} zIndexRange={[60, 0]} style={{ pointerEvents: 'none' }}>
+          <div
+            ref={labelRef}
+            className="px-1.5 py-0.5 flex items-center gap-1 bg-black/60 border rounded-sm pointer-events-none whitespace-nowrap backdrop-blur-sm"
+            style={{ borderColor: color + '55' }}
+          >
+            <span className="w-1.5 h-1.5 rounded-full inline-block animate-pulse flex-shrink-0" style={{ background: color }} />
+            <span className="font-mono-hud text-[8px] uppercase tracking-widest font-bold" style={{ color }}>
+              {site.tier}
+            </span>
+          </div>
+        </Html>
+      </group>
+    );
+  }
+
+  // System view: marker lives exactly on the body; label pushed below via screenRadius
+  return (
+    <group ref={groupRef} position={finalPos}>
+      <Billboard>
+        <mesh ref={dotRef}>
+          <circleGeometry args={[dotR, 8]} />
+          <meshBasicMaterial color={color} transparent opacity={0.9} side={THREE.DoubleSide} />
+        </mesh>
+        <mesh>
+          <ringGeometry args={[dotR * 1.6, dotR * 2.2, 6]} />
+          <meshBasicMaterial color={color} transparent opacity={0.35} side={THREE.DoubleSide} />
+        </mesh>
+      </Billboard>
+      <Html center position={[0, 0, 0]} zIndexRange={[60, 0]} style={{ pointerEvents: 'none' }}>
+        <div
+          ref={labelRef}
+          className="px-1.5 py-0.5 flex items-center gap-1 bg-black/60 border rounded-sm pointer-events-none whitespace-nowrap backdrop-blur-sm"
+          style={{ borderColor: color + '55' }}
+        >
+          <span className="w-1.5 h-1.5 rounded-full inline-block animate-pulse flex-shrink-0" style={{ background: color }} />
+          <span className="font-mono-hud text-[9px] uppercase tracking-widest font-bold" style={{ color }}>
+            {site.tier} anomaly
+          </span>
+        </div>
+      </Html>
+    </group>
+  );
+}
+
+function SiteOfInterestMarkers({ sites, galaxy, view, system }: {
+  sites: any[];
+  galaxy: Galaxy;
+  view: string;
+  system?: StarSystem | null;
+}) {
+  // The 'sites' prop is already pre-filtered by the application state (useGalaxyApp)
+  // to account for Science Vessel proximity, Deep Space Arrays, and Admin Debug toggles.
+  if (!sites || !sites.length) return null;
+
+  const visibleSites = sites;
+
+  if (view === 'galaxy') {
+    return (
+      <group>
+        {visibleSites.map(site => {
+          const sys = galaxy.systemById[site.systemId];
+          if (!sys) return null;
+          return <SiteMarker key={site.id} site={site} pos={sys.pos} scale="galaxy" />;
+        })}
+      </group>
+    );
+  }
+
+  // System view: place marker exactly on the body using its current orbital position.
+  if ((view === 'system' || view === 'body') && system) {
+    return (
+      <group>
+        {visibleSites
+          .filter(site => site.systemId === system.id)
+          .map(site => {
+            const body = system.bodies?.find((b: any) => b.id === site.bodyId);
+            if (!body) return null;
+            const speed = getOrbitalSpeed(body.orbit, system.starType, !!body.parentId);
+            const angle = (body.phase || 0); // t=0
+            let px = Math.cos(angle) * body.orbit;
+            let pz = Math.sin(angle) * body.orbit;
+            
+            if (body.parentId) {
+              const parent = system.bodies?.find((b: any) => b.id === body.parentId);
+              if (parent) { 
+                const pSpeed = getOrbitalSpeed(parent.orbit, system.starType, false);
+                const pAngle = (parent.phase || 0);
+                px += Math.cos(pAngle) * parent.orbit;
+                pz += Math.sin(pAngle) * parent.orbit;
+              }
+            }
+            const pos: [number, number, number] = [system.pos[0] + px, 0, system.pos[2] + pz];
+            return (
+              <SiteMarker
+                key={site.id}
+                site={site}
+                pos={pos}
+                scale="system"
+                bodySize={body.size ?? 1}
+                body={body}
+                system={system}
+              />
+            );
+          })}
+      </group>
+    );
+  }
+
+  return null;
+}
+

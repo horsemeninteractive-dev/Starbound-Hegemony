@@ -1,3 +1,5 @@
+import { ShipConfiguration } from "./shipPresets";
+
 export type VesselClass = "commander" | "freighter" | "corvette" | "destroyer" | "science";
 
 export interface Vessel {
@@ -8,7 +10,7 @@ export interface Vessel {
   systemId: string;
   bodyId: string | null; // null if in orbiting space
   cargoCapacity: number;
-  status: 'idle' | 'traveling' | 'docked' | 'surveying';
+  status: 'idle' | 'active' | 'traveling' | 'docked' | 'surveying';
   health: number;
   maxHealth: number;
   /** Hull/Wings/Engines/Bridge IDs for visual customization */
@@ -20,6 +22,8 @@ export interface Vessel {
     primaryColor: string;
     accentColor: string;
   };
+  fleetId?: string | null;
+  drydockId?: string | null;
 }
 
 export interface Fleet {
@@ -186,6 +190,7 @@ export interface BodyResource {
 
 export interface UserResource {
   userId: string;
+  fleetId?: string | null;
   resourceType: string;
   amount: number;
 }
@@ -296,11 +301,12 @@ export interface Galaxy {
   systemById: Record<string, StarSystem>;
   sectorById: Record<string, Sector>;
   bodyById: Record<string, Body>;
+  precursor_bodies?: string[];
 }
 
 // --- Political Factions (Parties) ---
 
-export type PartyRole = "head" | "secretary" | "member";
+export type PartyRole = "head" | "officer" | "member";
 
 export interface PartyMember {
   partyId: string;
@@ -436,9 +442,10 @@ export interface FleetEntity {
     targetId:  string;
     startTime: number;
     endTime:   number;
-    type:      'inter';
+    type:      'inter' | 'intra';
     path?:     string[];
   } | null;
+  vesselConfig?: ShipConfiguration;
 }
 
 export interface ConstructionQueueEntry {
@@ -461,4 +468,26 @@ export interface SiloInventoryEntry {
   siloId:       string;
   resourceType: string;
   amount:       number;
+}
+
+export type SiteTier = 'minor' | 'significant' | 'major' | 'precursor';
+
+export interface SiteOfInterest {
+  id: string;
+  systemId: string;
+  bodyId: string;
+  tier: SiteTier;
+  expiresAt: string;
+}
+
+export interface SurveyMission {
+  id: string;
+  siteId: string;
+  vesselId: string;
+  playerId: string;
+  status: 'traveling' | 'researching' | 'succeeded' | 'failed';
+  startedAt: string;
+  completesAt: string;
+  rewardClaimed: boolean;
+  rewardData?: any;
 }

@@ -11,6 +11,21 @@ interface ChangelogEntry {
 
 const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.3.2",
+    title: "Neural Sync & Fleet Logistics",
+    date: "2026-05-12",
+    type: "feature",
+    changes: [
+      "Implemented Neural Sync (Camera Follow) for ships and fleets, accessible via double-click on the map or overview buttons",
+      "Added a dedicated Fleet Overview panel for managing multi-ship assets and viewing combined logistics",
+      "Consolidated Profile headers into the global PageHeader system for a unified UI layout",
+      "Automated Logbook entries for starting and completing scientific survey missions",
+      "Added 'Offline Completion' notifications to ensure survey data is properly claimed upon login",
+      "Updated Fleet Registry to accurately display celestial body orbit telemetry for non-commander fleets",
+      "Resolved a routing issue where Universal Search profiles would get stuck in the viewer's session state"
+    ]
+  },
+  {
     version: "0.3.1",
     title: "Galactic UI Expansion & Network Stabilization",
     date: "2026-05-09",
@@ -406,7 +421,7 @@ export function ChangelogModal({ open, onOpenChange, onPlayClick }: { open: bool
             Acknowledge
           </button>
           <div className="font-mono-hud text-[8px] text-muted-foreground/30 uppercase tracking-[0.2em]">
-            Starbound Hegemony · Build v0.3.1-sb
+            Starbound Hegemony · Build v0.3.2-sb
           </div>
         </div>
       </div>

@@ -1,12 +1,12 @@
 import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Rocket, Box, Shield, Zap, Target, ChevronLeft, ChevronRight, Activity } from "lucide-react";
+import { Rocket, Box, Shield, Zap, Target, ChevronLeft, ChevronRight, Activity, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface FleetInfo {
   id: string;
   name: string;
-  vesselClass: "commander" | "freighter" | "corvette";
+  vesselClass: "commander" | "freighter" | "corvette" | "science";
   systemName: string;
   bodyName?: string;
   status: string;
@@ -22,10 +22,13 @@ interface FleetSidebarProps {
   onSelectFleet: (id: string) => void;
   isOpen: boolean;
   onToggle: () => void;
+  onRenameFleet?: (id: string, newName: string) => void;
   currentTime: number;
 }
 
-export function FleetSidebar({ fleets, selectedFleetId, onSelectFleet, isOpen, onToggle, currentTime }: FleetSidebarProps) {
+export function FleetSidebar({ fleets, selectedFleetId, onSelectFleet, isOpen, onToggle, onRenameFleet, currentTime }: FleetSidebarProps) {
+  const [renamingId, setRenamingId] = React.useState<string | null>(null);
+  const [newName, setNewName] = React.useState("");
   return (
     <div className="absolute right-0 top-1/2 -translate-y-1/2 z-30 pointer-events-none">
       <motion.div 
@@ -92,12 +95,55 @@ export function FleetSidebar({ fleets, selectedFleetId, onSelectFleet, isOpen, o
                       )}>
                         {fleet.vesselClass === "commander" ? <Shield className="w-4 h-4" /> : 
                          fleet.vesselClass === "freighter" ? <Box className="w-4 h-4" /> : 
-                         <Rocket className="w-4 h-4" />}
+                         fleet.vesselClass === "science" ? <Rocket className="w-4 h-4" /> :
+                         <Activity className="w-4 h-4" />}
                       </div>
-                      <div>
-                        <h4 className="font-display text-[10px] text-foreground uppercase tracking-widest truncate max-w-[120px]">
-                          {fleet.name}
-                        </h4>
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-2 group/name">
+                          {renamingId === fleet.id ? (
+                            <input
+                              autoFocus
+                              className="bg-background/80 border border-primary/30 rounded px-1 py-0 text-[10px] font-display uppercase tracking-widest text-foreground outline-none focus:border-primary w-24"
+                              value={newName}
+                              onChange={(e) => setNewName(e.target.value)}
+                              onBlur={() => {
+                                if (onRenameFleet && newName && newName !== fleet.name) {
+                                  onRenameFleet(fleet.id, newName);
+                                }
+                                setRenamingId(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  if (onRenameFleet && newName && newName !== fleet.name) {
+                                    onRenameFleet(fleet.id, newName);
+                                  }
+                                  setRenamingId(null);
+                                } else if (e.key === "Escape") {
+                                  setRenamingId(null);
+                                }
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          ) : (
+                            <>
+                              <h4 className="font-display text-[10px] text-foreground uppercase tracking-widest truncate max-w-[120px]">
+                                {fleet.name}
+                              </h4>
+                              {selectedFleetId === fleet.id && onRenameFleet && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setRenamingId(fleet.id);
+                                    setNewName(fleet.name);
+                                  }}
+                                  className="opacity-0 group-hover/name:opacity-100 p-0.5 hover:text-primary transition-all"
+                                >
+                                  <Pencil size={8} />
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
                         <p className="font-mono-hud text-[8px] text-primary/60">
                           {fleet.vesselClass.toUpperCase()} CLASS
                         </p>

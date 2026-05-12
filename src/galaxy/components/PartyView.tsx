@@ -236,6 +236,41 @@ export function PartyView({ app, isPublic = false }: { app: GalaxyApp; isPublic?
                     </p>
                   </div>
 
+                  {app.partyInvitations && app.partyInvitations.length > 0 && !isCreating && (
+                    <div className="hud-panel p-6 border border-primary/30 bg-primary/10 w-full mb-8">
+                      <h3 className="font-display text-sm text-primary uppercase tracking-[0.2em] mb-4 text-center flex items-center justify-center gap-2">
+                        <Sparkles size={16} /> Pending Invitations
+                      </h3>
+                      <div className="space-y-3">
+                        {app.partyInvitations.map((inv: any) => (
+                          <div key={inv.party_id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 bg-background/50 border border-primary/20 rounded group hover:border-primary/40 transition-colors">
+                            <div>
+                              <div className="text-sm font-display uppercase tracking-widest text-white">{inv.parties?.name || "Unknown Faction"}</div>
+                              <div className="text-[9px] font-mono-hud text-muted-foreground uppercase mt-1">Received {new Date(inv.created_at).toLocaleDateString()}</div>
+                            </div>
+                            <div className="flex gap-2 w-full sm:w-auto">
+                              <Button 
+                                size="sm" 
+                                variant="outline" 
+                                onClick={() => app.declinePartyInvite && app.declinePartyInvite(inv.party_id)}
+                                className="flex-1 sm:flex-none h-9 text-[9px] uppercase tracking-widest text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/20"
+                              >
+                                Decline
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                onClick={() => app.acceptPartyInvite && app.acceptPartyInvite(inv.party_id)}
+                                className="flex-1 sm:flex-none h-9 text-[9px] uppercase tracking-widest bg-success text-background hover:bg-success/80 shadow-[0_0_10px_rgba(var(--success-rgb),0.3)]"
+                              >
+                                Accept & Join
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {!isCreating ? (
                     <div className="flex flex-col items-center gap-6">
                       {app.body ? (

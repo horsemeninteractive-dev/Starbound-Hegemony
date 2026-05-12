@@ -64,7 +64,7 @@ export const WIKI_DATA: WikiSection[] = [
       <p><strong>Starbound Hegemony</strong> is a persistent, browser-based space-opera simulation. It is a world driven entirely by player actions — every ship in the sky, every crate of ore on the market, and every law passed in Congress is the result of a commander's decision.</p>
       <div class="card">
         <h4>Core Gameplay Loop</h4>
-        <p>Command your vessel through the Viridian Expanse. Gather resources, refine materials, and construct massive fleet ships. Participate in inter-empire politics, run corporate networks, and fight for control of strategic star systems.</p>
+        <p>Command your vessel through the Pale Reach. Gather resources, refine materials, and construct massive fleet ships. Participate in inter-empire politics, run corporate networks, and fight for control of strategic star systems.</p>
       </div>
       <div class="callout callout-blue">
         <p><strong>Asymmetric Design:</strong> The game is built on the principle of asymmetric goals. A solo miner, a corporate CEO, and an empire general all play the same game but with completely different win conditions and mechanical focuses.</p>
@@ -287,6 +287,19 @@ export const WIKI_DATA: WikiSection[] = [
         <h4>Shipyard & Drydock</h4>
         <p>Shipyards are the exclusive construction sites for specialized vessels like <strong>Science Ships</strong> and <strong>Cargo Freighters</strong>. Drydocks enable fleet storage and provide passive hull regeneration for your persistent fleet.</p>
       </div>
+      <div class="card">
+        <h4>Deep Space Array</h4>
+        <p>Sensory matrix that reveals Sites of Interest. Level 1 reveals sites in the current system. Level 2 extends range to adjacent systems, and Level 3 extends range to a 2-jump radius.</p>
+        <table class="wiki-table">
+          <thead><tr><th>Tier</th><th>Detection Range</th><th>Build Cost</th></tr></thead>
+          <tbody>
+            <tr><td>T1</td><td>Local System</td><td>5k SC + Ore/Silicates</td></tr>
+            <tr><td>T2</td><td>+1 Jump Radius</td><td>25k SC + T2 Mats</td></tr>
+            <tr><td>T3</td><td>+2 Jump Radius</td><td>100k SC + T3 Mats</td></tr>
+          </tbody>
+        </table>
+      </div>
+
     `
   },
   {
@@ -660,13 +673,16 @@ export const WIKI_DATA: WikiSection[] = [
     title: "Sites of Interest (SoI)",
     category: "Exploration",
     icon: <Target className="w-4 h-4" />,
-    status: "Planned",
+    status: "Live",
     content: `
-      <p>Sites of Interest (SoIs) are high-value tactical and archaeological locations that randomly spawn across the Viridian Expanse. They represent the primary source of "Deep Space" rewards.</p>
+      <p>Sites of Interest (SoIs) are high-value tactical and archaeological locations that randomly spawn across the Pale Reach. They represent the primary source of "Deep Space" rewards.</p>
+      <div class="callout callout-purple">
+        <p><strong>Detection Logic:</strong> SoIs are invisible by default. They are revealed if you have an active <strong>Science Vessel</strong> in the same system, or if the system is within the detection range of one of your <strong>Deep Space Arrays</strong>. Commander and Cargo fleets cannot detect sites alone.</p>
+      </div>
       <div class="card-grid grid-2">
         <div class="card">
           <h4>Rarity & Difficulty</h4>
-          <p>Sites vary from Common to Legendary. Harder sites take significantly more time to complete but offer vastly superior loot pools.</p>
+          <p>Sites vary from Minor to Precursor. Harder sites take significantly more time to complete but offer vastly superior loot pools including T3 components and Skill Points.</p>
         </div>
         <div class="card">
           <h4>Extraction</h4>
@@ -749,7 +765,7 @@ laws            <span class="ck">id</span>, type, passed, takes_effect_at</div>
     icon: <Map className="w-4 h-4" />,
     status: "Active",
     content: `
-      <p>Current development status for the Viridian Expanse.</p>
+      <p>Current development status for the Pale Reach.</p>
       <table class="wiki-table">
         <thead><tr><th>Phase</th><th>Focus</th><th>Status</th></tr></thead>
         <tbody>

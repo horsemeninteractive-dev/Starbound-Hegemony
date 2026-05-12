@@ -12,7 +12,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useGalaxyApp, type GalaxyApp } from "@/galaxy/useGalaxyApp";
 import type { StarSystem, Body, Empire } from "@/galaxy/types";
 import { UnifiedMap } from "@/galaxy/components/UnifiedMap";
-import { GalaxyOverview, SystemOverview, BodyOverview, ShipOverview } from "@/galaxy/components/Overview";
+import { GalaxyOverview, SystemOverview, BodyOverview, ShipOverview, FleetOverview } from "@/galaxy/components/Overview";
 import { TopBar } from "@/galaxy/components/TopBar";
 import { FilterPanel } from "@/galaxy/components/FilterPanel";
 import { Legend } from "@/galaxy/components/Legend";
@@ -43,6 +43,7 @@ import { TUTORIAL_STEPS } from "@/galaxy/tutorials";
 import { Step } from "react-joyride";
 import { RESOURCE_META } from "@/galaxy/meta";
 import logo from "@/assets/logo.png";
+import authBg from "@/assets/auth-bg.png";
 
 const ICON_MAP: Record<string, any> = {
   Shield, Zap, Globe, Anchor, Cpu, Award, Rocket, Star, Flame, Droplets, Target, Hexagon, Circle, Triangle, Briefcase, Crown, TrendingUp
@@ -174,6 +175,14 @@ const Index = () => {
     }
   }, [app.selectedEntityId, app.initiateFleetJump, app.initiateJump]);
 
+  const handleInitiateTravelToBody = useCallback((bodyId: string) => {
+    if (app.selectedEntityId) {
+      app.initiateFleetTravelToBody(app.selectedEntityId, bodyId);
+    } else {
+      app.initiateTravelToBody(bodyId);
+    }
+  }, [app.selectedEntityId, app.initiateFleetTravelToBody, app.initiateTravelToBody]);
+
   const handleBackToSystem = useCallback(withLoading(() => {
     playTransition();
     backToSystem();
@@ -183,6 +192,10 @@ const Index = () => {
     playClick();
     if (id.startsWith("gate:")) {
       openSystem(id.slice(5));
+    } else if (id.startsWith("fleet:")) {
+      const fleetId = id.slice(6);
+      app.setSelectedEntityId(fleetId);
+      app.setView("ship");
     } else if (id === "ship") {
       openShip();
     } else {
@@ -208,16 +221,19 @@ const Index = () => {
   // Page transition
   const [pageKey, setPageKey] = useState(0);
   const [scanning, setScanning] = useState(false);
-  const prevPage = useRef(app.page);
   const navigateTo = (page: "map" | "profile" | "articles" | "market" | "factories" | "fleets" | "party" | "skills" | "wiki", extra?: () => void) => {
-    if (page === prevPage.current && !extra) return;
+    if (page === app.page && !extra) return;
     setScanning(true);
     setTimeout(() => {
-      if (page !== prevPage.current) { app.setPage(page); prevPage.current = page; setPageKey(k => k + 1); }
+      if (page !== app.page) { 
+        app.setPage(page); 
+        setPageKey(k => k + 1); 
+      }
       extra?.();
       setScanning(false);
     }, 200);
   };
+
 
   const isInitialLoading = app.sessionLoading || (!app.initialDataLoaded && !!app.user);
 
@@ -235,6 +251,23 @@ const Index = () => {
   const activeSystemId = activeFleet ? activeFleet.systemId : app.playerSystemId;
   const activeBodyId = activeFleet ? activeFleet.bodyId : app.playerBodyId;
   const activeTravel = activeFleet ? activeFleet.travel : app.travel;
+
+  // Compute cargo info for the currently selected entity
+  const activeCargoCapacity = useMemo(() => {
+    if (!activeFleet) return app.cargoCapacity;
+    // Sum cargoCapacity of all vessels in the fleet
+    const fleetVessels = (app.userVessels ?? []).filter(v => activeFleet.vesselIds?.includes(v.id));
+    return fleetVessels.reduce((sum: number, v: any) => sum + (v.cargoCapacity || 0), 0) || app.cargoCapacity;
+  }, [activeFleet, app.userVessels, app.cargoCapacity]);
+
+  // Enrich fleets with lead vessel config for 3D model rendering
+  const enrichedUserFleets = useMemo(() => {
+    return (app.userFleets ?? []).map((fleet: any) => {
+      const leadVesselId = fleet.vesselIds?.[0];
+      const leadVessel = leadVesselId ? (app.userVessels ?? []).find((v: any) => v.id === leadVesselId) : null;
+      return { ...fleet, vesselConfig: leadVessel?.config ?? null };
+    });
+  }, [app.userFleets, app.userVessels]);
 
   return (
     <main className={`relative flex flex-col h-screen w-screen overflow-hidden bg-background`}>
@@ -256,7 +289,7 @@ const Index = () => {
       <div className="relative z-50">
         <TopBar
           onOpenSettings={() => setIsSettingsOpen(true)}
-          onOpenProfile={() => navigateTo("profile")}
+          onOpenProfile={() => navigateTo("profile", () => app.setViewedUserId(null))}
           onOpenMap={() => navigateTo("map")}
           onOpenArticles={() => navigateTo("articles")}
           onOpenMarket={() => navigateTo("market")}
@@ -296,8 +329,10 @@ const Index = () => {
           }}
           ap={app.ap}
           sc={app.sc}
-          cargoCapacity={app.cargoCapacity}
-          cargoUsed={app.userResources.reduce((sum, r) => sum + r.amount, 0)}
+          cargoCapacity={activeCargoCapacity}
+          cargoUsed={activeFleet 
+            ? app.userResources.filter(r => r.fleetId === activeFleet.id).reduce((sum, r) => sum + r.amount, 0)
+            : app.userResources.filter(r => !r.fleetId).reduce((sum, r) => sum + r.amount, 0)}
           playerName={app.playerName}
           playerLevel={app.playerLevel}
           playerXP={app.playerXP}
@@ -313,13 +348,16 @@ const Index = () => {
           playerSystemId={app.playerSystemId}
           currentTime={app.currentTime}
           galaxy={app.galaxy}
-          onReset={app.resetGalaxy}
           onSetAp={app.setAp}
           onPlayClick={playClick}
           isGameReady={isGameReady}
           nextApTick={app.nextApTick}
           onOpenWiki={() => navigateTo("wiki")}
           isAdmin={app.isAdmin}
+          debugShowAllSites={app.debugShowAllSites}
+          setDebugShowAllSites={app.setDebugShowAllSites}
+          instantBuilds={app.instantBuilds}
+          setInstantBuilds={app.setInstantBuilds}
           searchResults={app.searchResults}
           isSearching={app.isSearching}
           onSearch={app.performSearch}
@@ -368,8 +406,9 @@ const Index = () => {
                   }}
                   isOpen={app.isFleetSidebarOpen}
                   onToggle={app.toggleFleetSidebar}
+                  onRenameFleet={app.renameFleet}
                   fleets={[
-                    {
+                    ...(app.userFleets.some(f => f.vesselIds.includes(app.vesselId)) ? [] : [{
                       id:         app.vesselId,
                       name:       app.playerName ?? 'Commander',
                       vesselClass: 'commander' as const,
@@ -384,17 +423,29 @@ const Index = () => {
                           ? (app.travel.targetId === "star" ? app.galaxy.systemById[app.playerSystemId]?.name : app.galaxy.systemById[app.playerSystemId]?.bodies.find(b => b.id === app.travel.targetId)?.name)
                           : app.galaxy.systemById[app.travel.targetId]?.name
                       ) : null
-                    },
-                    ...(app.userFleets ?? []).map(f => ({
-                      id:         f.id,
-                      name:       f.name,
-                      vesselClass: 'freighter' as const,
-                      systemName: app.galaxy?.systemById[f.systemId]?.name ?? f.systemId,
-                      status:     f.travel ? 'TRAVELING' : f.status.toUpperCase(),
-                      isSelected: app.selectedEntityId === f.id,
-                      travel:     f.travel,
-                      destinationName: f.travel ? app.galaxy.systemById[f.travel.targetId]?.name : null
-                    })),
+                    }]),
+                    ...(app.userFleets ?? []).map(f => {
+                      const fleetVessels = (app.userVessels ?? []).filter(v => f.vesselIds.includes(v.id));
+                      const counts: Record<string, number> = {};
+                      fleetVessels.forEach(v => { counts[v.class] = (counts[v.class] || 0) + 1; });
+                      const majorityClass = (Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] || 'freighter') as any;
+
+                      return {
+                        id:         f.id,
+                        name:       f.name,
+                        vesselClass: majorityClass,
+                        systemName: app.galaxy?.systemById[f.systemId]?.name ?? f.systemId,
+                        bodyName:   f.bodyId && f.bodyId !== "star" ? app.galaxy?.systemById[f.systemId]?.bodies.find(b => b.id === f.bodyId)?.name : undefined,
+                        status:     f.travel ? 'TRAVELING' : f.status.toUpperCase(),
+                        isSelected: app.selectedEntityId === f.id,
+                        travel:     f.travel,
+                        destinationName: f.travel ? (
+                          f.travel.type === "intra" 
+                            ? (f.travel.targetId === "star" ? app.galaxy.systemById[f.systemId]?.name : app.galaxy.systemById[f.systemId]?.bodies.find(b => b.id === f.travel.targetId)?.name)
+                            : app.galaxy.systemById[f.travel.targetId]?.name
+                        ) : null
+                      };
+                    }),
                   ]}
                   selectedFleetId={app.selectedEntityId ?? app.vesselId}
                 />
@@ -439,7 +490,12 @@ const Index = () => {
                     fxVolume={app.audioEnabled ? app.fxVolume : 0}
                     arrival={app.arrival}
                     otherPlayers={app.otherPlayers}
+                    userFleets={enrichedUserFleets}
                     userResidency={app.userResidency}
+                    vesselId={app.vesselId}
+                    visibleSitesOfInterest={app.sitesOfInterest}
+                    isTrackingShip={app.isTrackingShip}
+                    selectedEntityId={app.selectedEntityId}
                   />
                 </Suspense>
               </div>
@@ -583,6 +639,7 @@ const Index = () => {
                     onPlayClick={playClick}
                     onSelectEmpire={handleSelectEmpire}
                     shipName={app.shipConfig.name}
+                    onBack={handleBackToGalaxy}
                   />
                 )}
                 {app.view === "body" && app.body && app.system && (
@@ -598,7 +655,7 @@ const Index = () => {
                       playerBodyId={app.playerBodyId}
                       originBodyId={activeBodyId}
                       travel={activeTravel}
-                      initiateTravelToBody={app.initiateTravelToBody}
+                      initiateTravelToBody={handleInitiateTravelToBody}
                       initiateJump={handleInitiateJump}
                       calculatePath={app.calculatePath}
                       getPathCost={app.getPathCost}
@@ -626,18 +683,47 @@ const Index = () => {
                       onClaimResidency={app.claimResidency}
                       bodyGovernance={app.bodyGovernance}
                       onInitiateGovernance={app.initiateGovernance}
+                      sitesOfInterest={app.sitesOfInterest}
+                      surveyMissions={app.surveyMissions}
+                      userVessels={app.userVessels}
+                      userFleets={app.userFleets}
+                      onAssignSurveyMission={app.assignSurveyMission}
+                      onCollectSurveyReward={app.collectSurveyReward}
+                      onAbandonSurveyMission={app.abandonSurveyMission}
+                      onBack={handleBackToSystem}
                     />
                 )}
                 {app.view === "ship" && (
-                  <ShipOverview
-                    system={app.system}
-                    travel={app.travel}
-                    arrival={app.arrival}
-                    currentTime={app.currentTime}
-                    onDeselect={handleBackToSystem}
-                    onPlayClick={playClick}
-                    shipName={app.shipConfig.name}
-                  />
+                  (() => {
+                    const selectedFleet = app.userFleets.find(f => f.id === app.selectedEntityId);
+                    if (selectedFleet) {
+                      return (
+                        <FleetOverview
+                          fleet={selectedFleet}
+                          vessels={(app.userVessels ?? []).filter(v => selectedFleet.vesselIds.includes(v.id))}
+                          galaxy={app.galaxy}
+                          currentTime={app.currentTime}
+                          onDeselect={handleBackToSystem}
+                          onPlayClick={playClick}
+                          isTracking={app.isTrackingShip}
+                          onToggleTracking={() => app.setIsTrackingShip(!app.isTrackingShip)}
+                        />
+                      );
+                    }
+                    return (
+                      <ShipOverview
+                        system={app.system}
+                        travel={app.travel}
+                        arrival={app.arrival}
+                        currentTime={app.currentTime}
+                        onDeselect={handleBackToSystem}
+                        onPlayClick={playClick}
+                        shipName={app.shipConfig.name}
+                        isTracking={app.isTrackingShip}
+                        onToggleTracking={() => app.setIsTrackingShip(!app.isTrackingShip)}
+                      />
+                    );
+                  })()
                 )}
               </div>
             </aside>
@@ -655,17 +741,17 @@ const Index = () => {
           ) : app.page === "articles" ? (
             <ArticlesView app={app} onPlayClick={playClick} />
           ) : app.page === "empire" ? (
-            <EmpireView app={app} onPlayClick={playClick} isPublic={!!app.viewedStateId} onBack={() => withLoading(app.setPage)("map")} />
+            <EmpireView app={app} onPlayClick={playClick} isPublic={!!app.viewedStateId} onBack={() => navigateTo("map")} />
           ) : app.page === "skills" ? (
             <SkillsView
               playerLevel={app.playerLevel}
               playerXP={app.playerXP}
               playerSkills={app.playerSkills}
               onUnlock={app.unlockSkill}
-              onBack={() => withLoading(app.setPage)("map")}
+              onBack={() => navigateTo("map")}
             />
           ) : app.page === "wiki" ? (
-            <WikiView app={app} onBack={() => withLoading(app.setPage)("map")} />
+            <WikiView app={app} onBack={() => navigateTo("map")} />
           ) : app.page === "shipyard" ? (
             <ShipyardView app={app} onPlayClick={playClick} />
           ) : app.page === "customizer" ? (
@@ -674,7 +760,7 @@ const Index = () => {
                  title="Orbital Drydock"
                  subtitle="Flagship Refit & Hull Calibration Module"
                  icon={<Rocket />}
-                 onBack={() => { playClick(); app.setPage("fleets"); }}
+                 onBack={() => { playClick(); navigateTo("fleets"); }}
                />
                <main className="flex-1 min-h-0 h-full p-4">
                   <div className="max-w-6xl mx-auto w-full h-full flex flex-col">
@@ -887,6 +973,7 @@ const Index = () => {
           onSelectEmpire={handleSelectEmpire}
           onEnterSystem={() => handleEnterSystem(app.system?.id || "")}
           onInitiateJump={handleInitiateJump}
+          onInitiateTravelToBody={handleInitiateTravelToBody}
         />
       )}
     </motion.div>
@@ -997,91 +1084,118 @@ function UplinkBootSequence({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0, scale: 1.05, filter: "blur(10px)" }}
           transition={{ duration: 1, ease: "easeInOut" }}
-          className="fixed inset-0 z-[500] flex items-center justify-center bg-background"
+          className="fixed inset-0 z-[500] flex items-center justify-center bg-black overflow-hidden"
+          style={{
+            backgroundImage: `url(${authBg})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          }}
         >
-          {/* Decorative scanlines overlay */}
-          <div className="absolute inset-0 pointer-events-none opacity-[0.03] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_3px,4px_100%]" />
-          
-          <div className="flex flex-col items-center gap-12 relative z-10 w-full max-w-md px-6">
-            {/* Unified Logo/Ring Component */}
-            <div className="relative w-32 h-32 md:w-40 md:h-40">
-              <motion.div 
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: [1, 1.2, 1], opacity: [0.2, 0.4, 0.2] }}
-                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                className="absolute inset-0 rounded-full bg-primary/5 blur-2xl"
-              />
-              
-              <svg className="absolute inset-[-15px] w-[calc(100%+30px)] h-[calc(100%+30px)] -rotate-90">
-                <motion.circle
-                  cx="50%"
-                  cy="50%"
-                  r="48%"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeDasharray="1 4"
-                  className="text-primary/10"
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
+          {/* Dark tint overlay for atmospheric depth */}
+          <div className="absolute inset-0 bg-black/60 pointer-events-none" />
+
+          {/* Central Neural Band */}
+          <div 
+            className="relative w-full max-w-[800px] h-full flex flex-col items-center justify-center bg-[#02090f]/95 backdrop-blur-3xl shadow-[0_0_100px_rgba(0,0,0,1)] overflow-hidden"
+            style={{
+              maskImage: 'linear-gradient(to right, transparent, black 15%, black 85%, transparent)',
+              WebkitMaskImage: 'linear-gradient(to right, transparent, black 15%, black 85%, transparent)',
+            }}
+          >
+            {/* HUD Polish: Scanlines and Noise */}
+            <div className="absolute inset-0 pointer-events-none opacity-[0.05] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_3px,4px_100%]" />
+            
+            {/* Glowing border accents */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/2 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
+            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1/2 h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
+
+            {/* Vertical scanning line */}
+            <motion.div 
+              className="absolute left-0 right-0 h-32 bg-gradient-to-b from-transparent via-primary/10 to-transparent pointer-events-none"
+              animate={{ y: ["-100vh", "100vh"] }}
+              transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+            />
+            
+            <div className="flex flex-col items-center gap-12 relative z-10 w-full max-w-md px-6">
+              {/* Unified Logo/Ring Component */}
+              <div className="relative w-32 h-32 md:w-40 md:h-40">
+                <motion.div 
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: [1, 1.2, 1], opacity: [0.2, 0.5, 0.2] }}
+                  transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                  className="absolute inset-0 rounded-full bg-primary/10 blur-2xl"
                 />
-                <motion.circle
-                  cx="50%"
-                  cy="50%"
-                  r="48%"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  className="text-primary"
-                  initial={{ pathLength: 0 }}
+                
+                <svg className="absolute inset-[-15px] w-[calc(100%+30px)] h-[calc(100%+30px)] -rotate-90">
+                  <motion.circle
+                    cx="50%"
+                    cy="50%"
+                    r="48%"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeDasharray="1 4"
+                    className="text-primary/20"
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 30, repeat: Infinity, ease: "linear" }}
+                  />
+                  <motion.circle
+                    cx="50%"
+                    cy="50%"
+                    r="48%"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    className="text-primary"
+                    initial={{ pathLength: 0 }}
+                    animate={{ 
+                      pathLength: isInitialLoading ? [0, 0.7, 0.3, 0.9] : 1,
+                      opacity: isInitialLoading ? [0.4, 1, 0.6] : 1
+                    }}
+                    transition={{ 
+                      pathLength: { duration: isInitialLoading ? 5 : 1, repeat: isInitialLoading ? Infinity : 0, ease: "easeInOut" },
+                      opacity: { duration: 2, repeat: Infinity, ease: "linear" }
+                    }}
+                  />
+                </svg>
+
+                <motion.img 
+                  src={logo} 
+                  alt="Logo"
+                  initial={{ scale: 0.8, opacity: 0 }}
                   animate={{ 
-                    pathLength: isInitialLoading ? [0, 0.7, 0.3, 0.9] : 1,
-                    opacity: isInitialLoading ? [0.2, 0.8, 0.5] : 1
+                    scale: 1, 
+                    opacity: 1, 
+                    filter: showWelcome ? 'brightness(1.5) drop-shadow(0 0 20px hsl(var(--primary)/0.6))' : 'brightness(1.2) drop-shadow(0 0 10px hsl(var(--primary)/0.3))'
                   }}
-                  transition={{ 
-                    pathLength: { duration: isInitialLoading ? 5 : 1, repeat: isInitialLoading ? Infinity : 0, ease: "easeInOut" },
-                    opacity: { duration: 2, repeat: Infinity, ease: "linear" }
-                  }}
+                  transition={{ duration: 2 }}
+                  className="w-full h-full object-contain relative z-10"
                 />
-              </svg>
+              </div>
 
-              <motion.img 
-                src={logo} 
-                alt="Logo"
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ 
-                  scale: 1, 
-                  opacity: 1, 
-                  filter: showWelcome ? 'brightness(1.5) drop-shadow(0 0 15px hsl(var(--primary)/0.5))' : 'brightness(1)'
-                }}
-                transition={{ duration: 2 }}
-                className="w-full h-full object-contain relative z-10"
-              />
-            </div>
-
-            {/* Text Information Section */}
-            <div className="text-center w-full min-h-[140px] flex flex-col items-center">
-              <AnimatePresence mode="wait">
-                {isInitialLoading ? (
-                  <motion.div 
-                    key="loading"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="space-y-4"
-                  >
-                    <h2 className="font-display text-2xl md:text-4xl lg:text-5xl text-primary text-glow uppercase tracking-[0.3em] leading-[1.1] flex flex-col items-center gap-1">
-                      <span className="opacity-90">Neural Link</span>
-                      <span className="opacity-100 scale-110 drop-shadow-[0_0_15px_rgba(var(--primary-rgb),0.6)]">Established</span>
-                    </h2>
-                    <div className="flex flex-col items-center mt-12 space-y-4">
-                      <p className="font-mono-hud text-[9px] md:text-[11px] text-primary/70 uppercase tracking-[0.35em] italic max-w-xs leading-relaxed">
-                        Synchronizing command data with<br/>hegemonic core ...
-                      </p>
-                      <div className="flex gap-1.5 justify-center pt-4">
-                        {[0, 1, 2, 3].map(i => (
-                          <motion.div
-                            key={i}
+              {/* Text Information Section */}
+              <div className="text-center w-full min-h-[140px] flex flex-col items-center">
+                <AnimatePresence mode="wait">
+                  {isInitialLoading ? (
+                    <motion.div 
+                      key="loading"
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className="space-y-4"
+                    >
+                      <h2 className="font-display text-2xl md:text-4xl lg:text-5xl text-primary text-glow uppercase tracking-[0.3em] leading-[1.1] flex flex-col items-center gap-1">
+                        <span className="opacity-90 tracking-[0.4em]">Neural Link</span>
+                        <span className="opacity-100 scale-110 tracking-[0.2em] drop-shadow-[0_0_20px_rgba(var(--primary-rgb),0.8)] mt-2">Established</span>
+                      </h2>
+                      <div className="flex flex-col items-center mt-12 space-y-4">
+                        <p className="font-mono-hud text-[9px] md:text-[11px] text-primary/70 uppercase tracking-[0.4em] italic max-w-xs leading-relaxed">
+                          Synchronizing command data with<br/>hegemonic core ...
+                        </p>
+                        <div className="flex gap-1.5 justify-center pt-4">
+                          {[0, 1, 2, 3].map(i => (
+                            <motion.div
+                              key={i}
                             animate={{ 
                                height: [12, 32, 12],
                                opacity: [0.3, 0.8, 0.3] 
@@ -1141,9 +1255,9 @@ function UplinkBootSequence({
               </AnimatePresence>
             </div>
           </div>
+          </div>
 
           {/* Decorative background grid */}
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,hsl(var(--background))_100%)] z-0" />
           <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, hsl(var(--primary)) 1px, transparent 0)', backgroundSize: '24px 24px' }} />
         </motion.div>
       )}
@@ -1269,7 +1383,8 @@ function MobileHUD({
   setExpanded,
   onSelectEmpire,
   onEnterSystem,
-  onInitiateJump
+  onInitiateJump,
+  onInitiateTravelToBody
 }: { 
   app: GalaxyApp; 
   onSelectBody: (id: string) => void; 
@@ -1283,6 +1398,7 @@ function MobileHUD({
   onSelectEmpire: (id: string) => void;
   onEnterSystem: () => void;
   onInitiateJump: (id: string) => void;
+  onInitiateTravelToBody: (id: string) => void;
 }) {
   useEffect(() => {
     setExpanded(false);
@@ -1426,7 +1542,7 @@ function MobileHUD({
           {canTravel && (
             <button
               onClick={() => {
-                app.initiateTravelToBody(app.body!.id);
+                onInitiateTravelToBody(app.body!.id);
                 onPlayClick();
               }}
               className="shrink-0 flex items-center gap-1.5 bg-primary/20 text-primary border border-primary/50 px-3 py-1.5 rounded font-mono-hud font-bold text-[9px] tracking-widest hover:bg-primary/30 active:scale-95 transition-all"
@@ -1527,7 +1643,7 @@ function MobileHUD({
                 playerSystemId={app.playerSystemId}
                 playerBodyId={app.playerBodyId}
                 travel={app.travel}
-                initiateTravelToBody={app.initiateTravelToBody}
+                initiateTravelToBody={onInitiateTravelToBody}
                 initiateJump={onInitiateJump}
                 calculatePath={app.calculatePath}
                 getPathCost={app.getPathCost}
@@ -1557,6 +1673,13 @@ function MobileHUD({
                 onInitiateGovernance={app.initiateGovernance}
                 isExplored={!app.fogOfWar || app.exploredSystemIds.has(app.system.id)}
                 isVisited={app.exploredBodyIds.has(`${app.system.id}:${app.body.id}`)}
+                sitesOfInterest={app.sitesOfInterest}
+                surveyMissions={app.surveyMissions}
+                userVessels={app.userVessels}
+                userFleets={app.userFleets}
+                onAssignSurveyMission={app.assignSurveyMission}
+                onCollectSurveyReward={app.collectSurveyReward}
+                onAbandonSurveyMission={app.abandonSurveyMission}
               />
             )}
             {app.view === "ship" && (

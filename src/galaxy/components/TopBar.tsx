@@ -51,10 +51,13 @@ interface Props {
   setFogOfWar: (v: boolean) => void;
   instantJump: boolean;
   setInstantJump: (v: boolean) => void;
+  debugShowAllSites?: boolean;
+  setDebugShowAllSites?: (v: boolean) => void;
+  instantBuilds?: boolean;
+  setInstantBuilds?: (v: boolean) => void;
   playerSystemId?: string;
   currentTime: number;
   galaxy: Galaxy;
-  onReset: () => void;
   onSetAp: (val: number) => void;
   onPlayClick?: () => void;
   isGameReady?: boolean;
@@ -99,7 +102,8 @@ export function TopBar({
   ap, sc, vt = 0, cargoCapacity = 500, cargoUsed = 0, playerName, playerLevel, playerXP, xpToNextLevel, playerSkills = [], playerAvatar,
   playerPartyIcon, playerPartyHue,
   fogOfWar, setFogOfWar, instantJump, setInstantJump,
-  playerSystemId, currentTime, galaxy, onReset, onSetAp, onPlayClick, isGameReady = true,
+  debugShowAllSites, setDebugShowAllSites, instantBuilds, setInstantBuilds,
+  playerSystemId, currentTime, galaxy, onSetAp, onPlayClick, isGameReady = true,
   nextApTick, isAdmin = false,
   searchResults = { users: [], parties: [], states: [] },
   isSearching = false,
@@ -614,13 +618,7 @@ export function TopBar({
                 <DropdownMenuLabel className="text-primary/40 text-[9px]">Neural Debug Interface</DropdownMenuLabel>
                 <DropdownMenuSeparator className="bg-primary/10" />
                 
-                <DropdownMenuItem 
-                  onClick={() => { onReset(); onPlayClick?.(); }}
-                  className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5"
-                >
-                  <Compass size={14} />
-                  <span>Reset Ship & Logs</span>
-                </DropdownMenuItem>
+                <DropdownMenuSeparator className="bg-primary/10" />
   
                 <DropdownMenuItem 
                   onClick={() => { setFogOfWar(!fogOfWar); onPlayClick?.(); }}
@@ -636,6 +634,22 @@ export function TopBar({
                 >
                   <ZapIcon size={14} fill={instantJump ? "currentColor" : "none"} />
                   <span>{instantJump ? "Disable Instant FTL" : "Enable Instant FTL"}</span>
+                </DropdownMenuItem>
+
+                <DropdownMenuItem 
+                  onClick={() => { setDebugShowAllSites?.(!debugShowAllSites); onPlayClick?.(); }}
+                  className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5"
+                >
+                  <Radio size={14} className={debugShowAllSites ? "text-primary" : "text-muted-foreground"} />
+                  <span>{debugShowAllSites ? "Hide Undiscovered SoIs" : "Show All SoIs (Debug)"}</span>
+                </DropdownMenuItem>
+
+                <DropdownMenuItem 
+                  onClick={() => { setInstantBuilds?.(!instantBuilds); onPlayClick?.(); }}
+                  className="focus:bg-primary/10 focus:text-primary cursor-pointer gap-3 py-2.5"
+                >
+                  <Rocket size={14} className={instantBuilds ? "text-primary" : "text-muted-foreground"} />
+                  <span>{instantBuilds ? "Disable Instant Builds" : "Enable Instant Builds"}</span>
                 </DropdownMenuItem>
   
                 <DropdownMenuSeparator className="bg-primary/10" />
@@ -759,7 +773,7 @@ export function TopBar({
               </button>
             </div>
             <span className="font-mono-hud text-[7px] uppercase tracking-[0.25em] text-primary/30">
-              Starbound Hegemony OS v0.3.1
+              Starbound Hegemony OS v0.3.2
             </span>
           </div>
         </SheetContent>

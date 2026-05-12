@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { 
   Globe, Zap, Shield, Rocket, TrendingUp, Anchor, History, Factory, Award, Hexagon,
-  ShieldAlert, Coins, Newspaper, Sparkles, User as UserIcon, Users as UsersIcon
+  ShieldAlert, Coins, Newspaper, Sparkles, User as UserIcon, Users as UsersIcon,
+  Settings, Check
 } from "lucide-react";
 import { GalaxyIcon } from "./ResourceIcon";
 import { PartyView } from "./PartyView";
@@ -60,12 +61,16 @@ function LogEntry({ date, event, type, description }: { date: string, event: str
 
 export function ProfileView({ app, onPlayClick, isPublic = false }: { app: GalaxyApp; onPlayClick: () => void; isPublic?: boolean }) {
   const [activeTab, setActiveTab] = useState("Overview");
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(app.playerName);
+  const [editAvatar, setEditAvatar] = useState(app.playerAvatar);
   const [targetProfile, setTargetProfile] = useState<{ 
     name: string; 
     avatar: string; 
     level: number; 
     id: string;
     partyName?: string;
+    partyId?: string;
     residencyBodyId?: string;
     factoryCount?: number;
     exploredCount?: number;
@@ -95,6 +100,7 @@ export function ProfileView({ app, onPlayClick, isPublic = false }: { app: Galax
             updatedAt: data.updated_at,
             createdAt: data.created_at,
             partyName: (party?.parties as any)?.name,
+            partyId: (party?.parties as any)?.id,
             residencyBodyId: residency?.body_id,
             factoryCount: factoryCount || 0,
             exploredCount: exploredCount || 0
@@ -185,97 +191,173 @@ export function ProfileView({ app, onPlayClick, isPublic = false }: { app: Galax
       <div className="absolute inset-0 pointer-events-none scanline opacity-10" />
       
       <PageHeader 
-        title={isPublic ? displayUser.name : "Commander Profile"} 
-        subtitle={isPublic ? `Archive: ${displayUser.name}` : "Personal Personnel Records"}
-        icon={<UserIcon />}
+        title={
+          <div className="flex items-center gap-3 md:gap-6">
+            <UserAvatar 
+              avatarUrl={displayUser.avatar} 
+              level={displayUser.level}
+              partyIcon={isPublic ? undefined : app.playerPartyIcon}
+              partyHue={isPublic ? undefined : app.playerPartyHue}
+              size={window.innerWidth < 640 ? "sm" : "xl"}
+            />
+            <div className="flex flex-col text-left min-w-0 flex-1">
+              {isEditing ? (
+                <div className="space-y-2">
+                  <input 
+                    value={editName}
+                    onChange={e => setEditName(e.target.value)}
+                    className="bg-background/50 border border-primary/30 rounded px-2 py-1 font-display text-sm md:text-xl text-primary uppercase w-full max-w-md focus:border-primary outline-none"
+                    placeholder="Commander Name"
+                  />
+                  <div className="flex flex-col gap-1">
+                    <span className="font-mono-hud text-[8px] text-muted-foreground uppercase">Avatar Uplink URL</span>
+                    <input 
+                      value={editAvatar}
+                      onChange={e => setEditAvatar(e.target.value)}
+                      className="bg-background/50 border border-primary/30 rounded px-2 py-1 font-mono-hud text-[8px] md:text-[10px] text-muted-foreground w-full max-w-md focus:border-primary outline-none"
+                      placeholder="Neural Identity (Image URL)"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <h2 className="font-display text-base md:text-3xl text-primary text-glow uppercase tracking-wider truncate leading-tight">
+                    {displayUser.name}
+                  </h2>
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                    <div className="flex items-center gap-1.5 px-1.5 py-0.5 bg-primary/10 border border-primary/20 rounded">
+                      <Award className="w-2 h-2 md:w-3 md:h-3 text-primary" />
+                      <span className="font-mono-hud text-[7px] md:text-[8px] uppercase text-primary">LVL {displayUser.level}</span>
+                    </div>
+                    <p className="font-mono-hud text-[7px] md:text-xs text-muted-foreground uppercase tracking-widest">
+                      {isPublic ? "Foreign Commander" : "Hegemony Commander"}
+                    </p>
+                    {isPublic && (
+                      <div className="flex items-center gap-1.5 px-1.5 py-0.5 bg-warning/10 border border-warning/20 rounded">
+                        <ShieldAlert className="w-2 h-2 md:w-3 md:h-3 text-warning" />
+                        <span className="font-mono-hud text-[7px] md:text-[8px] uppercase text-warning">Encrypted</span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        }
+        subtitle={null}
         onBack={() => app.setPage("map")}
         actions={
-          isPublic && friendStatus === 'none' && targetProfile && targetProfile.id !== app.user?.id ? (
-            <Button 
-              onClick={handleAddFriend}
-              size="sm"
-              className="bg-primary text-background font-display text-[10px] font-bold uppercase tracking-widest rounded hover:bg-primary/80 transition-all flex items-center gap-1.5 shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)]"
-            >
-              <UsersIcon size={12} /> Add Friend
-            </Button>
-          ) : isPublic && friendStatus === 'pending_received' ? (
-            <Button 
-              onClick={() => targetProfile && handleAcceptFriend(targetProfile.id)}
-              size="sm"
-              className="bg-success text-background font-display text-[10px] font-bold uppercase tracking-widest rounded hover:bg-success/80 transition-all flex items-center gap-1.5 shadow-[0_0_15px_rgba(var(--success-rgb),0.3)]"
-            >
-              <UsersIcon size={12} /> Accept Request
-            </Button>
-          ) : null
+          <div className="flex items-center gap-2">
+            {!isPublic && (
+              <>
+                {isEditing && (
+                  <Button 
+                    onClick={() => setIsEditing(false)}
+                    size="sm"
+                    variant="ghost"
+                    className="text-[10px] font-bold uppercase tracking-widest rounded text-muted-foreground hover:text-white"
+                  >
+                    Cancel
+                  </Button>
+                )}
+                <Button 
+                  onClick={() => {
+                    if (isEditing) {
+                      app.updateProfile && app.updateProfile(editName, editAvatar);
+                      setIsEditing(false);
+                    } else {
+                      setEditName(app.playerName);
+                      setEditAvatar(app.playerAvatar);
+                      setIsEditing(true);
+                    }
+                  }}
+                  size="sm"
+                  variant="outline"
+                  className="text-[10px] font-bold uppercase tracking-widest rounded flex items-center gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+                >
+                  {isEditing ? <Check size={12} /> : <Settings size={12} />} {isEditing ? "Save Identity" : "Edit Identity"}
+                </Button>
+              </>
+            )}
+            
+            {isPublic && app.userPartyMember && (app.userPartyMember.role === 'head' || app.userPartyMember.role === 'officer') && targetProfile && targetProfile.id !== app.user?.id && targetProfile.partyName !== app.userParty?.name && (
+              <Button 
+                onClick={() => targetProfile && app.inviteToParty && app.inviteToParty(targetProfile.id)}
+                size="sm"
+                variant="outline"
+                className="text-[10px] font-bold uppercase tracking-widest rounded flex items-center gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+              >
+                <Rocket size={12} /> Invite to Faction
+              </Button>
+            )}
+            
+            {isPublic && friendStatus === 'none' && targetProfile && targetProfile.id !== app.user?.id ? (
+              <Button 
+                onClick={handleAddFriend}
+                size="sm"
+                className="bg-primary text-background font-display text-[10px] font-bold uppercase tracking-widest rounded hover:bg-primary/80 transition-all flex items-center gap-1.5 shadow-[0_0_15px_rgba(var(--primary-rgb),0.3)]"
+              >
+                <UsersIcon size={12} /> Add Friend
+              </Button>
+            ) : isPublic && friendStatus === 'pending_received' ? (
+              <Button 
+                onClick={() => targetProfile && handleAcceptFriend(targetProfile.id)}
+                size="sm"
+                className="bg-success text-background font-display text-[10px] font-bold uppercase tracking-widest rounded hover:bg-success/80 transition-all flex items-center gap-1.5 shadow-[0_0_15px_rgba(var(--success-rgb),0.3)]"
+              >
+                <UsersIcon size={12} /> Accept Request
+              </Button>
+            ) : isPublic && friendStatus === 'pending_sent' ? (
+               <div className="px-3 py-1 bg-primary/10 border border-primary/20 text-primary/60 font-display text-[10px] font-bold uppercase tracking-widest rounded flex items-center gap-2">
+                  <Sparkles size={12} /> Friend Request Sent
+               </div>
+            ) : isPublic && friendStatus === 'accepted' ? (
+               <div className="px-3 py-1 bg-success/10 border border-success/20 text-success font-display text-[10px] font-bold uppercase tracking-widest rounded flex items-center gap-2">
+                  <Shield size={12} /> Trusted Contact
+               </div>
+            ) : null}
+          </div>
+        }
+        bottom={
+          <div className="bg-background/20 px-4 py-2 md:px-8 border-t border-primary/10">
+            <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
+              <nav className="flex items-center gap-1 overflow-x-auto no-scrollbar scroll-smooth">
+                {TABS.map((tab) => {
+                  const Icon = tab.icon;
+                  return (
+                    <button
+                      key={tab.label}
+                      onClick={() => {
+                        setActiveTab(tab.label);
+                        onPlayClick();
+                      }}
+                      className={`flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded transition-all whitespace-nowrap ${
+                        activeTab === tab.label 
+                          ? "bg-primary/20 text-primary border border-primary/40 shadow-[inset_0_0_10px_hsl(var(--primary)/0.1)]" 
+                          : "text-muted-foreground hover:text-primary hover:bg-primary/5 border border-transparent"
+                      }`}
+                    >
+                      <Icon size={window.innerWidth < 640 ? 12 : 14} />
+                      <span className="font-display text-[9px] md:text-[10px] uppercase tracking-widest">{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+
+              {!isPublic && (
+                <div className="hidden md:flex items-center gap-4">
+                  <div className="flex flex-col items-end">
+                    <span className="font-mono-hud text-[8px] text-muted-foreground uppercase">Commander Net Worth</span>
+                    <span className="font-display text-sm text-warning tracking-widest">{Math.floor(app.sc).toLocaleString()} SC</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         }
       />
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Profile Stats & Tabs Bar */}
-        <div className="border-b border-primary/20 bg-primary/5 shrink-0 px-4 py-1.5 md:py-4 md:px-8">
-          <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center md:items-start lg:items-center gap-2 md:gap-10">
-            <div className="flex items-center gap-3 w-full md:w-auto">
-              <UserAvatar 
-                avatarUrl={displayUser.avatar} 
-                level={displayUser.level}
-                partyIcon={isPublic ? undefined : app.playerPartyIcon}
-                partyHue={isPublic ? undefined : app.playerPartyHue}
-                size={window.innerWidth < 640 ? "sm" : "xl"}
-              />
-              
-              <div className="flex flex-col text-left min-w-0 flex-1">
-                <h2 className="font-display text-base md:text-4xl text-primary text-glow uppercase tracking-wider truncate leading-tight">{displayUser.name}</h2>
-                <p className="font-mono-hud text-[7px] md:text-sm text-muted-foreground uppercase tracking-widest mt-0.5">{isPublic ? "Foreign Commander" : "Hegemony Commander"}</p>
-                
-                <div className="flex flex-wrap items-center gap-2 mt-1">
-                  <div className="flex items-center gap-1.5 px-1.5 py-0.5 bg-primary/10 border border-primary/20 rounded">
-                    <Award className="w-2 h-2 md:w-3 md:h-3 text-primary" />
-                    <span className="font-mono-hud text-[7px] md:text-[8px] uppercase text-primary">LVL {displayUser.level}</span>
-                  </div>
-                  {isPublic && (
-                    <div className="flex items-center gap-1.5 px-1.5 py-0.5 bg-warning/10 border border-warning/20 rounded">
-                      <ShieldAlert className="w-2 h-2 md:w-3 md:h-3 text-warning" />
-                      <span className="font-mono-hud text-[7px] md:text-[8px] uppercase text-warning">Encrypted</span>
-                    </div>
-                  )}
-                  {isPublic && friendStatus === 'pending_sent' && (
-                    <div className="px-2 py-0.5 bg-primary/10 border border-primary/20 text-primary/60 font-display text-[7px] font-bold uppercase tracking-widest rounded flex items-center gap-1">
-                      <Sparkles size={8} /> Request Sent
-                    </div>
-                  )}
-                  {isPublic && friendStatus === 'accepted' && (
-                    <div className="px-2 py-0.5 bg-success/10 border border-success/20 text-success font-display text-[7px] font-bold uppercase tracking-widest rounded flex items-center gap-1">
-                      <Shield size={8} /> Trusted
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <nav className="flex items-center gap-1 overflow-x-auto no-scrollbar w-full md:w-auto mt-2 md:mt-0 pb-1 md:pb-0 scroll-smooth">
-              {TABS.map((tab) => {
-                const Icon = tab.icon;
-                return (
-                  <button
-                    key={tab.label}
-                    onClick={() => {
-                      setActiveTab(tab.label);
-                      onPlayClick();
-                    }}
-                    className={`flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded transition-all whitespace-nowrap ${
-                      activeTab === tab.label 
-                        ? "bg-primary/20 text-primary border border-primary/40 shadow-[inset_0_0_10px_hsl(var(--primary)/0.1)]" 
-                        : "text-muted-foreground hover:text-primary hover:bg-primary/5 border border-transparent"
-                    }`}
-                  >
-                    <Icon size={window.innerWidth < 640 ? 12 : 14} />
-                    <span className="font-display text-[9px] md:text-[10px] uppercase tracking-widest">{tab.label}</span>
-                  </button>
-                );
-              })}
-            </nav>
-          </div>
-        </div>
 
         {/* Profile Main Content Area */}
         <main className="flex-1 overflow-y-auto p-4 md:p-10 custom-scrollbar relative z-10">
@@ -320,9 +402,23 @@ export function ProfileView({ app, onPlayClick, isPublic = false }: { app: Galax
                       </div>
                       <div className="flex justify-between items-center bg-background/20 p-3 rounded">
                         <span className="font-mono-hud text-[10px] text-muted-foreground uppercase">Party Affiliation</span>
-                        <span className="font-display text-[10px] text-primary uppercase tracking-widest px-2 py-0.5 border border-primary/40 rounded">
-                          {isPublic ? (targetProfile?.partyName || "Independent") : (app.galaxy.empires.find(e => e.logo.symbol === app.playerPartyIcon)?.name || "Independent")}
-                        </span>
+                        <button 
+                          onClick={() => {
+                            if (!isPublic) {
+                              app.setPage("political");
+                            } else if (targetProfile?.partyName) {
+                              // If public, we might want to go to political and filter
+                              app.setPage("political");
+                            }
+                          }}
+                          className={`font-display text-[10px] uppercase tracking-widest px-2 py-0.5 border rounded transition-all ${
+                            (isPublic ? targetProfile?.partyName : app.userParty?.name) 
+                              ? "text-primary border-primary/40 hover:bg-primary/10 hover:border-primary cursor-pointer" 
+                              : "text-muted-foreground border-muted-foreground/20 cursor-default"
+                          }`}
+                        >
+                          {isPublic ? (targetProfile?.partyName || "Independent") : (app.userParty?.name || "Independent")}
+                        </button>
                       </div>
                       <div className="flex justify-between items-center bg-background/20 p-3 rounded">
                         <span className="font-mono-hud text-[10px] text-muted-foreground uppercase">Planet Residency</span>
@@ -348,25 +444,34 @@ export function ProfileView({ app, onPlayClick, isPublic = false }: { app: Galax
                   <div className="hud-panel p-6 border border-primary/20 bg-primary/5">
                     <div className="flex items-center gap-3 mb-6">
                       <TrendingUp className="text-primary" size={20} />
-                      <h3 className="font-display text-xs uppercase tracking-[0.2em] text-primary">Performance</h3>
+                      <h3 className="font-display text-xs uppercase tracking-[0.2em] text-primary">Asset Distribution</h3>
                     </div>
-                    <div className="h-24 flex items-end justify-between gap-1">
-                      {[40, 20, 60, 80, 45, 90, 100].map((h, i) => (
-                        <div 
-                          key={i} 
-                          className="flex-1 bg-primary/20 relative group"
-                          style={{ height: `${h}%` }}
-                        >
-                          <div className="absolute inset-0 bg-primary opacity-0 group-hover:opacity-40 transition-opacity" />
-                          <div className="absolute bottom-full left-0 right-0 mb-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <span className="font-mono-hud text-[6px] text-primary text-center block">{h}%</span>
+                    <div className="space-y-4">
+                      {[
+                        { label: "Fleet Command", count: isPublic ? "???" : app.fleetCount, icon: Rocket, color: "text-primary" },
+                        { label: "Industrial Hubs", count: isPublic ? (targetProfile?.factoryCount || 0) : (app.userFactories?.length || 0), icon: Factory, color: "text-cyan-400" },
+                        { label: "Exploration Log", count: isPublic ? (targetProfile?.exploredCount || "???") : app.exploredSystemIds.size, icon: Globe, color: "text-success" }
+                      ].map((asset, i) => (
+                        <div key={i} className="flex items-center justify-between group">
+                          <div className="flex items-center gap-3">
+                            <asset.icon size={14} className={asset.color} />
+                            <span className="font-mono-hud text-[10px] text-muted-foreground uppercase group-hover:text-foreground transition-colors">{asset.label}</span>
+                          </div>
+                          <div className="flex flex-col items-end">
+                            <span className={`font-display text-xs ${asset.color} text-glow`}>{asset.count}</span>
+                            <div className="w-20 h-0.5 bg-background mt-1 rounded-full overflow-hidden">
+                              <div 
+                                className={`h-full bg-current ${asset.color}`} 
+                                style={{ width: typeof asset.count === 'number' ? `${Math.min(100, (asset.count / 10) * 100)}%` : '0%' }} 
+                              />
+                            </div>
                           </div>
                         </div>
                       ))}
                     </div>
-                    <div className="flex justify-between mt-2">
-                       <span className="font-mono-hud text-[6px] text-muted-foreground uppercase">Projected Output</span>
-                       <span className="font-mono-hud text-[6px] text-success uppercase">+12.4% Weekly</span>
+                    <div className="mt-6 pt-4 border-t border-primary/5 flex justify-between">
+                       <span className="font-mono-hud text-[7px] text-muted-foreground uppercase">Neural Link Sync Status</span>
+                       <span className="font-mono-hud text-[7px] text-success uppercase">Optimal</span>
                     </div>
                   </div>
                 </div>
@@ -519,36 +624,83 @@ export function ProfileView({ app, onPlayClick, isPublic = false }: { app: Galax
                       <div className="h-px flex-1 bg-primary/20" />
                     </div>
                     <div className="flex flex-col items-end shrink-0">
-                      <span className="font-mono-hud text-[10px] uppercase text-muted-foreground">Cargo Hold</span>
-                      <span className="font-display text-xs text-info">{app.userResources?.reduce((sum, r) => sum + r.amount, 0) || 0} / {app.cargoCapacity}</span>
+                      <span className="font-mono-hud text-[10px] uppercase text-muted-foreground">Global Cargo Hold</span>
+                      <span className="font-display text-xs text-info">
+                        {app.userResources?.reduce((sum, r) => sum + r.amount, 0) || 0} / {(app.userVessels ?? []).reduce((sum, v) => sum + (v.cargoCapacity || 0), 0) || app.cargoCapacity}
+                      </span>
                     </div>
                   </div>
                   
                   <div className="h-1 bg-primary/10 rounded-full overflow-hidden w-full">
                     <div 
-                      className={`h-full transition-all ${(app.userResources?.reduce((sum, r) => sum + r.amount, 0) || 0) >= app.cargoCapacity ? 'bg-warning' : 'bg-info'}`}
-                      style={{ width: `${Math.min(100, ((app.userResources?.reduce((sum, r) => sum + r.amount, 0) || 0) / app.cargoCapacity) * 100)}%` }}
+                      className={`h-full transition-all ${(app.userResources?.reduce((sum, r) => sum + r.amount, 0) || 0) >= ((app.userVessels ?? []).reduce((sum, v) => sum + (v.cargoCapacity || 0), 0) || app.cargoCapacity) ? 'bg-warning' : 'bg-info'}`}
+                      style={{ width: `${Math.min(100, ((app.userResources?.reduce((sum, r) => sum + r.amount, 0) || 0) / ((app.userVessels ?? []).reduce((sum, v) => sum + (v.cargoCapacity || 0), 0) || app.cargoCapacity)) * 100)}%` }}
                     />
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
-                    {app.userResources?.map(r => {
-                      const meta = (RESOURCE_META as any)[r.resourceType];
-                      return (
-                        <div key={r.resourceType} className="hud-panel p-3 border border-primary/10 bg-primary/5 flex flex-col items-center text-center group hover:border-primary/30 transition-all">
-                          <div className="mb-2 group-hover:scale-110 transition-all" style={{ color: meta?.color || 'hsl(var(--primary))' }}>
-                            <GalaxyIcon name={meta?.icon} className="w-6 h-6" />
+                    {(() => {
+                      const aggregated = (app.userResources ?? []).reduce((acc: Record<string, number>, r) => {
+                        acc[r.resourceType] = (acc[r.resourceType] || 0) + r.amount;
+                        return acc;
+                      }, {});
+                      return Object.entries(aggregated).map(([type, amount]) => {
+                        const meta = (RESOURCE_META as any)[type];
+                        return (
+                          <div key={type} className="hud-panel p-3 border border-primary/10 bg-primary/5 flex flex-col items-center text-center group hover:border-primary/30 transition-all">
+                            <div className="mb-2 group-hover:scale-110 transition-all" style={{ color: meta?.color || 'hsl(var(--primary))' }}>
+                              <GalaxyIcon name={meta?.icon} className="w-6 h-6" />
+                            </div>
+                            <span className="font-mono-hud text-[8px] text-primary/60 uppercase truncate w-full">{type}</span>
+                            <span className="font-display text-xs text-foreground mt-1">{amount.toLocaleString()}</span>
                           </div>
-                          <span className="font-mono-hud text-[8px] text-primary/60 uppercase truncate w-full">{r.resourceType}</span>
-                          <span className="font-display text-xs text-foreground mt-1">{r.amount.toLocaleString()}</span>
-                        </div>
-                      );
-                    })}
+                        );
+                      });
+                    })()}
                     {(!app.userResources || app.userResources.length === 0) && (
                       <div className="col-span-full py-8 text-center border border-dashed border-primary/10 rounded">
                         <span className="font-mono-hud text-[10px] text-muted-foreground uppercase italic">Cargo bay empty</span>
                       </div>
                     )}
+                  </div>
+
+                  {/* Fleet Cargo Breakdown */}
+                  <div className="space-y-4 mt-8">
+                    <div className="flex items-center gap-4">
+                      <div className="h-px w-8 bg-primary/20" />
+                      <h3 className="font-display text-sm uppercase tracking-[0.3em] text-primary/60">Fleet Cargo Breakdown</h3>
+                      <div className="h-px flex-1 bg-primary/20" />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                       {(app.userFleets ?? []).map(f => {
+                         const fleetVessels = (app.userVessels ?? []).filter(v => f.vesselIds?.includes(v.id));
+                         const fleetCapacity = fleetVessels.reduce((sum, v) => sum + (v.cargoCapacity || 0), 0);
+                         const fleetResources = (app.userResources ?? []).filter(r => r.fleetId === f.id);
+                         const fleetCargoUsed = fleetResources.reduce((sum, r) => sum + r.amount, 0);
+
+                         return (
+                           <div key={f.id} className="hud-panel p-4 border border-primary/10 bg-primary/5">
+                             <div className="flex justify-between items-center mb-2">
+                               <span className="font-display text-xs uppercase tracking-widest">{f.name}</span>
+                               <span className={`font-mono-hud text-[9px] ${fleetCargoUsed >= fleetCapacity ? 'text-error' : 'text-info'}`}>
+                                 {fleetCargoUsed} / {fleetCapacity}
+                               </span>
+                             </div>
+                             <div className="space-y-1">
+                               {fleetResources.map(r => (
+                                 <div key={r.resourceType} className="flex justify-between text-[8px] uppercase font-mono-hud text-muted-foreground">
+                                   <span>{r.resourceType}</span>
+                                   <span className="text-foreground">{r.amount.toLocaleString()}</span>
+                                 </div>
+                               ))}
+                               {fleetResources.length === 0 && (
+                                 <div className="text-[8px] font-mono-hud text-muted-foreground italic uppercase">Empty</div>
+                               )}
+                             </div>
+                           </div>
+                         );
+                       })}
+                    </div>
                   </div>
                 </div>
               </div>

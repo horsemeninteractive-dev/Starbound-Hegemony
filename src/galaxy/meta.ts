@@ -44,9 +44,9 @@ export function getOrbitalSpeed(r: number, starType: StarType, isMoon: boolean) 
   return 0.04 * Math.sqrt(mass / Math.max(1, r));
 }
 
-export function getBodyPosition(body: { orbit: number; phase: number; type: string }, starType: StarType, time: number) {
+export function getBodyPosition(body: { orbit: number; phase: number; type: string; parentId?: string | null }, starType: StarType, time: number) {
   const t = time * 0.001;
-  const speed = getOrbitalSpeed(body.orbit, starType, body.type === "moon");
+  const speed = getOrbitalSpeed(body.orbit, starType, !!body.parentId || body.type === "moon");
   const angle = (body.phase || 0) + (t * speed) % (Math.PI * 2);
   
   return {
@@ -185,6 +185,17 @@ export const INFRA_META = {
       { level: 2, capacity: 20, costSC: 25000, mats: [{ resource: "Hull Plating", qty: 200 }] },
       { level: 3, capacity: 100, costSC: 125000, mats: [{ resource: "Xenotech Frames", qty: 150 }] }
     ]
+  },
+  deep_space_array: {
+    label: "Deep Space Array",
+    type: "Deep Space Array",
+    icon: "Activity",
+    description: "High-gain sensory matrix. Reveals Sites of Interest in current system. Upgrades expand detection to adjacent systems.",
+    tiers: [
+      { level: 1, range: 0, costSC: 5000, mats: [{ resource: "Ore", qty: 200 }, { resource: "Silicates", qty: 200 }] },
+      { level: 2, range: 1, costSC: 25000, mats: [{ resource: "Crystal Circuits", qty: 50 }, { resource: "Superconductors", qty: 25 }] },
+      { level: 3, range: 2, costSC: 100000, mats: [{ resource: "Neural Arrays", qty: 20 }] }
+    ]
   }
 } as const;
 
@@ -293,3 +304,10 @@ export type ShipBlueprintKey = keyof typeof SHIP_BLUEPRINTS;
 
 /** AP cost multiplier for warship fleets — not used yet, reserved for warfare */
 export const WARSHIP_JUMP_MULTIPLIER = 0.2; // +20% per warship, max 3×
+
+export const SITE_TIERS = {
+  minor:       { label: 'Minor Anomaly',       color: 'text-muted-foreground', lifespan: 48,    researchHours: 3,  successRate: 0.75, apCost: 5,  consolationXp: 100  },
+  significant: { label: 'Significant Anomaly', color: 'text-info',             lifespan: 72,    researchHours: 12, successRate: 0.60, apCost: 5,  consolationXp: 400  },
+  major:       { label: 'Major Anomaly',        color: 'text-warning',          lifespan: 96,    researchHours: 24, successRate: 0.45, apCost: 10, consolationXp: 1500 },
+  precursor:   { label: 'Precursor Site',       color: 'text-purple-400',       lifespan: 336,   researchHours: 72, successRate: 0.30, apCost: 10, consolationXp: 8000 },
+} as const;
